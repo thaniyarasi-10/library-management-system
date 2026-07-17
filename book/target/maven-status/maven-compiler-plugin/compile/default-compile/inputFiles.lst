@@ -1,0 +1,7 @@
+D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\controller\BookController.java
+D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\dto\BookRequest.java
+D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\dto\BookResponse.java
+D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\entity\Book.java
+D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\repository\BookRepository.java
+D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\service\BookService.java
+D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\service\BookServiceImpl.java
