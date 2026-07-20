@@ -1,7 +1,7 @@
-D:\KovanLabInternTasks\multimodularstructure\library-management\user\src\main\java\com\example\library\user\controller\UserController.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\user\src\main\java\com\example\library\user\dto\UserRequest.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\user\src\main\java\com\example\library\user\dto\UserResponse.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\user\src\main\java\com\example\library\user\entity\User.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\user\src\main\java\com\example\library\user\repository\UserRepository.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\user\src\main\java\com\example\library\user\service\UserService.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\user\src\main\java\com\example\library\user\service\UserServiceImpl.java
+D:\library-management\user\src\main\java\com\kovanlabs\librarymanagement\user\controller\UserController.java
+D:\library-management\user\src\main\java\com\kovanlabs\librarymanagement\user\dto\UserRequest.java
+D:\library-management\user\src\main\java\com\kovanlabs\librarymanagement\user\dto\UserResponse.java
+D:\library-management\user\src\main\java\com\kovanlabs\librarymanagement\user\entity\User.java
+D:\library-management\user\src\main\java\com\kovanlabs\librarymanagement\user\repository\UserRepository.java
+D:\library-management\user\src\main\java\com\kovanlabs\librarymanagement\user\service\UserService.java
+D:\library-management\user\src\main\java\com\kovanlabs\librarymanagement\user\service\UserServiceImpl.java

@@ -1,8 +1,8 @@
-com\example\library\user\entity\User$UserBuilder.class
-com\example\library\user\controller\UserController.class
-com\example\library\user\entity\User.class
-com\example\library\user\dto\UserResponse.class
-com\example\library\user\dto\UserRequest.class
-com\example\library\user\repository\UserRepository.class
-com\example\library\user\service\UserServiceImpl.class
-com\example\library\user\service\UserService.class
+com\kovanlabs\librarymanagement\user\entity\User.class
+com\kovanlabs\librarymanagement\user\repository\UserRepository.class
+com\kovanlabs\librarymanagement\user\controller\UserController.class
+com\kovanlabs\librarymanagement\user\dto\UserResponse.class
+com\kovanlabs\librarymanagement\user\service\UserServiceImpl.class
+com\kovanlabs\librarymanagement\user\dto\UserRequest.class
+com\kovanlabs\librarymanagement\user\service\UserService.class
+com\kovanlabs\librarymanagement\user\entity\User$UserBuilder.class

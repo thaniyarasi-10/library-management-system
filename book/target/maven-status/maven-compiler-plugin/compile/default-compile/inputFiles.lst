@@ -1,7 +1,9 @@
-D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\controller\BookController.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\dto\BookRequest.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\dto\BookResponse.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\entity\Book.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\repository\BookRepository.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\service\BookService.java
-D:\KovanLabInternTasks\multimodularstructure\library-management\book\src\main\java\com\example\library\book\service\BookServiceImpl.java
+D:\library-management\book\src\main\java\com\kovanlabs\librarymanagement\book\config\S3Config.java
+D:\library-management\book\src\main\java\com\kovanlabs\librarymanagement\book\controller\BookController.java
+D:\library-management\book\src\main\java\com\kovanlabs\librarymanagement\book\dto\BookRequest.java
+D:\library-management\book\src\main\java\com\kovanlabs\librarymanagement\book\dto\BookResponse.java
+D:\library-management\book\src\main\java\com\kovanlabs\librarymanagement\book\entity\Book.java
+D:\library-management\book\src\main\java\com\kovanlabs\librarymanagement\book\repository\BookRepository.java
+D:\library-management\book\src\main\java\com\kovanlabs\librarymanagement\book\service\BookService.java
+D:\library-management\book\src\main\java\com\kovanlabs\librarymanagement\book\service\BookServiceImpl.java
+D:\library-management\book\src\main\java\com\kovanlabs\librarymanagement\book\service\S3Service.java
