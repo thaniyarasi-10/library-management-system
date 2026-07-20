@@ -2,12 +2,14 @@ package com.kovanlabs.librarymanagement.book.service;
 
 import com.kovanlabs.librarymanagement.book.dto.BookRequest;
 import com.kovanlabs.librarymanagement.book.dto.BookResponse;
+import com.kovanlabs.librarymanagement.book.dto.S3UploadResponse;
 import com.kovanlabs.librarymanagement.book.entity.Book;
 import com.kovanlabs.librarymanagement.book.repository.BookRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -82,17 +84,31 @@ public class BookServiceImpl implements BookService {
     }
 
     @Transactional
+    @ResponseStatus
     public String uploadBookCover(Long bookId, MultipartFile file)  {
+
         Book book = bookRepository.findById(bookId)
                 .orElseThrow(() -> new RuntimeException("Book not found"));
-        String key = null;
+
         try {
-            key = s3Service.uploadFile(file);
+            S3UploadResponse response = s3Service.uploadFile(file);
+
+            book.setCoverImageKey(response.coverImageKey());
+            book.setCoverImageUrl(response.coverImageUrl());
+
+            bookRepository.save(book);
+
+            return "Book cover updated";
+
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        book.setCoverImageKey(key);
-        bookRepository.save(book);
-        return key;
+    }
+
+    public String getImageCoverById(Long id){
+        Book book = bookRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Book not found"));
+
+        return book.getCoverImageUrl();
     }
 }

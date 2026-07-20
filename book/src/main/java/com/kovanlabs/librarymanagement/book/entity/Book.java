@@ -30,7 +30,8 @@ public class Book {
     
     private String isbn;
 
-    private String coverImageKey;
+    private String coverImageUrl;
 
+    private String  coverImageKey;
 
 }

@@ -55,4 +55,9 @@ public class BookController {
         return ResponseEntity.ok(key);
     }
 
+    @GetMapping("/{bookId}/cover")
+    public ResponseEntity<String> getBookCover(@PathVariable("bookId") Long bookId) {
+        return ResponseEntity.ok(bookService.getImageCoverById(bookId));
+    }
+
 }
