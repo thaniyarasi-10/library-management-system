@@ -52,17 +52,4 @@ public class UserController {
         userService.deleteUser(id);
     }
 
-    @PostMapping("/{userId}/borrow/{bookId}")
-    public UserResponse borrowBook(
-            @PathVariable Long userId,
-            @PathVariable Long bookId) {
-        return userService.borrowBook(userId, bookId);
-    }
-
-    @PostMapping("/{userId}/return/{bookId}")
-    public UserResponse returnBook(
-            @PathVariable Long userId,
-            @PathVariable Long bookId) {
-        return userService.returnBook(userId, bookId);
-    }
 }

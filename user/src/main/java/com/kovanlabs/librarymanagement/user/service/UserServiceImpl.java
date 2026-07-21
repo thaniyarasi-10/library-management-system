@@ -72,54 +72,13 @@ public class UserServiceImpl implements UserService {
         userRepository.deleteById(id);
     }
 
-    @Override
-    @Transactional
-    public UserResponse borrowBook(Long userId, Long bookId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
-        BookResponse bookResponse = bookService.getBookById(bookId);
-        Book book = Book.builder()
-                .id(bookResponse.id())
-                .title(bookResponse.title())
-                .author(bookResponse.author())
-                .isbn(bookResponse.isbn())
-                .build();
-        
-        if (user.getBorrowedBooks().stream().noneMatch(b -> b.getId().equals(bookId))) {
-            user.getBorrowedBooks().add(book);
-            userRepository.save(user);
-        }
-        
-        return mapToResponse(user);
-    }
-
-    @Override
-    @Transactional
-    public UserResponse returnBook(Long userId, Long bookId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
-        
-        bookService.getBookById(bookId);
-        user.getBorrowedBooks().removeIf(b -> b.getId().equals(bookId));
-        userRepository.save(user);
-        return mapToResponse(user);
-    }
 
     private UserResponse mapToResponse(User user) {
-        List<BookResponse> borrowed = user.getBorrowedBooks() != null ? user.getBorrowedBooks().stream()
-                .map(book -> new BookResponse(
-                        book.getId(),
-                        book.getTitle(),
-                        book.getAuthor(),
-                        book.getIsbn()
-                ))
-                .collect(Collectors.toList()) : new ArrayList<>();
 
         return new UserResponse(
                 user.getId(),
                 user.getName(),
-                user.getEmail(),
-                borrowed
+                user.getEmail()
         );
     }
 }

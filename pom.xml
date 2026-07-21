@@ -14,7 +14,7 @@
 
     <properties>
         <java.version>21</java.version>
-        <spring-boot.version>3.3.1</spring-boot.version>
+        <spring-boot.version>4.0.7</spring-boot.version>
         <lombok.version>1.18.32</lombok.version>
     </properties>
 
@@ -22,6 +22,7 @@
         <module>book</module>
         <module>user</module>
         <module>application</module>
+        <module>borrow</module>
     </modules>
 
     <dependencyManagement>
@@ -45,6 +46,12 @@
             <dependency>
                 <groupId>com.kovanlabs</groupId>
                 <artifactId>user</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.kovanlabs</groupId>
+                <artifactId>borrow</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>
