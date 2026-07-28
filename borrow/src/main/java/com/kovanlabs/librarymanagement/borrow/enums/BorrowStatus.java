@@ -1,4 +1,4 @@
-package com.kovanlabs.borrow.enums;
+package com.kovanlabs.librarymanagement.borrow.enums;
 
 public enum BorrowStatus {
     BORROWED,

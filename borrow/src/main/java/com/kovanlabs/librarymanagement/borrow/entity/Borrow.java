@@ -1,10 +1,10 @@
-package com.kovanlabs.borrow.entity;
+package com.kovanlabs.librarymanagement.borrow.entity;
 
-import com.kovanlabs.borrow.enums.BorrowStatus;
+import com.kovanlabs.librarymanagement.borrow.enums.BorrowStatus;
+import com.kovanlabs.librarymanagement.user.entity.Users;
 import jakarta.persistence.*;
 
 import com.kovanlabs.librarymanagement.book.entity.Book;
-import com.kovanlabs.librarymanagement.user.entity.User;
 import lombok.*;
 
 import java.time.LocalDate;
@@ -28,7 +28,7 @@ public class Borrow {
 
     @ManyToOne
     @JoinColumn(name = "user_id")
-    private User user;
+    private Users users;
 
     private LocalDate borrowDate;
 

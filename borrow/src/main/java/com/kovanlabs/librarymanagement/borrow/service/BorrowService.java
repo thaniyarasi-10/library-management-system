@@ -1,7 +1,7 @@
-package com.kovanlabs.borrow.service;
+package com.kovanlabs.librarymanagement.borrow.service;
 
-import com.kovanlabs.borrow.dto.BorrowRequestDto;
-import com.kovanlabs.borrow.dto.BorrowResponseDto;
+import com.kovanlabs.librarymanagement.borrow.dto.BorrowRequestDto;
+import com.kovanlabs.librarymanagement.borrow.dto.BorrowResponseDto;
 import org.springframework.stereotype.Service;
 
 @Service

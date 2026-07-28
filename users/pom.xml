@@ -7,12 +7,15 @@
         <groupId>com.kovanlabs</groupId>
         <artifactId>library-management</artifactId>
         <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>borrow</artifactId>
-
+    <artifactId>users</artifactId>
+    <name>users</name>
+    <description>User Management Module</description>
 
     <dependencies>
+        <!-- Spring Boot Starter Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -21,6 +24,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <!-- Book Module -->
+        <dependency>
+            <groupId>com.kovanlabs</groupId>
+            <artifactId>book</artifactId>
         </dependency>
         <!-- Spring Boot Starter Data JPA -->
         <dependency>
@@ -34,29 +42,31 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Spring Security -->
         <dependency>
-            <groupId>com.kovanlabs</groupId>
-            <artifactId>book</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <!-- JWT -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.7</version>
         </dependency>
 
         <dependency>
-            <groupId>com.kovanlabs</groupId>
-            <artifactId>users</artifactId>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.7</version>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>
-            <groupId>com.kovanlabs</groupId>
-            <artifactId>notification</artifactId>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.7</version>
+            <scope>runtime</scope>
         </dependency>
-
-
     </dependencies>
-
-
-    <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
-
 </project>

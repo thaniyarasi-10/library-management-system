@@ -1,8 +1,8 @@
-package com.kovanlabs.borrow.controller;
+package com.kovanlabs.librarymanagement.borrow.controller;
 
-import com.kovanlabs.borrow.dto.BorrowRequestDto;
-import com.kovanlabs.borrow.dto.BorrowResponseDto;
-import com.kovanlabs.borrow.service.BorrowService;
+import com.kovanlabs.librarymanagement.borrow.dto.BorrowRequestDto;
+import com.kovanlabs.librarymanagement.borrow.dto.BorrowResponseDto;
+import com.kovanlabs.librarymanagement.borrow.service.BorrowService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
