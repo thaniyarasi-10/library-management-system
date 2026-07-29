@@ -2,6 +2,7 @@ package com.kovanlabs.librarymanagement.book.controller;
 
 import com.kovanlabs.librarymanagement.book.dto.BookRequest;
 import com.kovanlabs.librarymanagement.book.dto.BookResponse;
+import com.kovanlabs.librarymanagement.book.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.book.service.BookService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -26,8 +27,12 @@ public class BookController {
     }
 
     @GetMapping
-    public List<BookResponse> getAllBooks() {
-        return bookService.getAllBooks();
+    public PagedResponse<BookResponse> getAllBooks(
+            @RequestParam(defaultValue = "0", required = false) int page,
+            @RequestParam(defaultValue = "10", required = false) int size,
+            @RequestParam(defaultValue = "id", required = false) String sortBy,
+            @RequestParam(defaultValue = "asc", required = false) String sortDir) {
+        return bookService.getAllBooks(page, size, sortBy, sortDir);
     }
 
     @GetMapping("/{id}")

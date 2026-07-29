@@ -2,10 +2,15 @@ package com.kovanlabs.librarymanagement.book.service;
 
 import com.kovanlabs.librarymanagement.book.dto.BookRequest;
 import com.kovanlabs.librarymanagement.book.dto.BookResponse;
+import com.kovanlabs.librarymanagement.book.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.book.dto.S3UploadResponse;
 import com.kovanlabs.librarymanagement.book.entity.Book;
 import com.kovanlabs.librarymanagement.book.repository.BookRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +47,26 @@ public class BookServiceImpl implements BookService {
         return bookRepository.findAll().stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public PagedResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDir) {
+        Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
+                : Sort.by(sortBy).descending();
+        Pageable pageable = PageRequest.of(page, size, sort);
+        Page<Book> booksPage = bookRepository.findAll(pageable);
+        List<BookResponse> content = booksPage.getContent().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+
+        return new PagedResponse<>(
+                content,
+                booksPage.getNumber(),
+                booksPage.getSize(),
+                booksPage.getTotalElements(),
+                booksPage.getTotalPages(),
+                booksPage.isLast()
+        );
     }
 
     @Override

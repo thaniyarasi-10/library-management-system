@@ -1,11 +1,16 @@
 package com.kovanlabs.librarymanagement.user.service;
 
+import com.kovanlabs.librarymanagement.book.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.book.service.BookService;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import com.kovanlabs.librarymanagement.user.entity.Users;
 import com.kovanlabs.librarymanagement.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -41,6 +46,26 @@ import java.util.stream.Collectors;
             return userRepository.findAll().stream()
                     .map(this::mapToResponse)
                     .collect(Collectors.toList());
+        }
+
+        @Override
+        public PagedResponse<UserResponse> getAllUsers(int page, int size, String sortBy, String sortDir) {
+            Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
+                    : Sort.by(sortBy).descending();
+            Pageable pageable = PageRequest.of(page, size, sort);
+            Page<Users> usersPage = userRepository.findAll(pageable);
+            List<UserResponse> content = usersPage.getContent().stream()
+                    .map(this::mapToResponse)
+                    .collect(Collectors.toList());
+
+            return new PagedResponse<>(
+                    content,
+                    usersPage.getNumber(),
+                    usersPage.getSize(),
+                    usersPage.getTotalElements(),
+                    usersPage.getTotalPages(),
+                    usersPage.isLast()
+            );
         }
 
         @Override
