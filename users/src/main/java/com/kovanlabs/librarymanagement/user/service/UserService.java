@@ -4,6 +4,8 @@ import com.kovanlabs.librarymanagement.book.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 
+import com.kovanlabs.librarymanagement.user.entity.Users;
+
 import java.util.List;
 
 public interface UserService {
@@ -13,4 +15,5 @@ public interface UserService {
     UserResponse getUserById(Long id);
     UserResponse updateUser(Long id, UserRequest request);
     void deleteUser(Long id);
+    Users findOrCreateGoogleUser(String googleId, String email, String name);
 }

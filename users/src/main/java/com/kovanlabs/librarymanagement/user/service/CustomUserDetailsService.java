@@ -25,7 +25,7 @@ public class CustomUserDetailsService implements UserDetailsService {
         return User //spring sec user
                 .builder()
                 .username(users.getEmail())
-                .password(users.getPassword())
+                .password(users.getPassword() != null ? users.getPassword() : "")
                 .roles(users.getRole().name()) //name() is a enum method to give the value as string instead of enum
                 .build();
     }
