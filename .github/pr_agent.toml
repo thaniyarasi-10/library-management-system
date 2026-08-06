@@ -1,0 +1,11 @@
+[github_action_config]
+auto_review = true
+auto_describe = true
+auto_improve = false
+
+pr_actions = [
+  "opened",
+  "reopened",
+  "ready_for_review",
+  "synchronize"
+]
