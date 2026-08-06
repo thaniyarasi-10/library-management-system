@@ -2,6 +2,8 @@ on:
   pull_request:
     types: [opened, reopened, ready_for_review, synchronize]
   issue_comment:
+    types: [created]
+
 jobs:
   pr_agent_job:
     if: ${{ github.event.sender.type != 'Bot' }}
@@ -11,11 +13,16 @@ jobs:
       pull-requests: write
       contents: write
       checks: write
-    name: Run pr agent on every pull request, respond to user comments
+
     steps:
-      - name: PR Agent action step
-        id: pragent
+      - name: PR Agent
         uses: the-pr-agent/pr-agent@v0.41.1
         env:
           OPENAI_KEY: ${{ secrets.OPENAI_API }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "true"
+          github_action_config.auto_improve: "false"
+
+          github_action_config.pr_actions: '["opened","reopened","ready_for_review","synchronize"]'
