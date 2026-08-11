@@ -24,9 +24,13 @@ jobs:
 
           config.model: "gemini/gemini-3.1-flash-lite"
           config.fallback_models: '["gemini/gemini-3.1-flash-lite"]'
+          config.custom_model_max_tokens: "32000"
           GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+
 
           github_action_config.auto_review: "false"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "false"
           github_action_config.handle_push_trigger: "true"
+          github_action_config.push_commands: '["/describe"]'
