@@ -31,6 +31,6 @@ jobs:
 
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
-          github_action_config.auto_improve: "false"
+          github_action_config.auto_improve: "true"
           github_action_config.handle_push_trigger: "true"
-          github_action_config.push_commands: '["/describe", "/review"]'
+          github_action_config.push_commands: '["/describe", "/review", "/improve"]'
