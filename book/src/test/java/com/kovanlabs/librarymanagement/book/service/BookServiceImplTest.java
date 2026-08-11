@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.book.service;
 
+import com.kovanlabs.librarymanagement.book.dto.BookRequest;
 import com.kovanlabs.librarymanagement.book.dto.BookResponse;
 import com.kovanlabs.librarymanagement.book.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.book.entity.Book;
@@ -119,5 +120,76 @@ class BookServiceImplTest {
         assertEquals("Clean Code", response.content().get(0).title());
 
         verify(bookRepository, times(1)).findAll(any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("updateBook when book exists should update book details and return BookResponse")
+    void updateBook_WhenBookExists_ShouldUpdateAndReturnBookResponse() {
+        BookRequest request = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166");
+        Book updatedBook = Book.builder()
+                .id(1L)
+                .title("Clean Architecture")
+                .author("Robert C. Martin")
+                .isbn("9780134494166")
+                .build();
+
+        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(bookRepository.save(any(Book.class))).thenReturn(updatedBook);
+
+        BookResponse response = bookService.updateBook(1L, request);
+
+        assertNotNull(response);
+        assertEquals(1L, response.id());
+        assertEquals("Clean Architecture", response.title());
+        assertEquals("9780134494166", response.isbn());
+        verify(bookRepository, times(1)).findById(1L);
+        verify(bookRepository, times(1)).save(book1);
+        assertEquals("Clean Architecture", book1.getTitle());
+    }
+
+    @Test
+    @DisplayName("updateBook when book not found should throw ResponseStatusException NOT_FOUND")
+    void updateBook_WhenBookNotFound_ShouldThrowResponseStatusException() {
+        BookRequest request = new BookRequest("Updated Title", "Author", "12345");
+
+        when(bookRepository.findById(99L)).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> bookService.updateBook(99L, request)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("Book not found with ID: 99"));
+        verify(bookRepository, times(1)).findById(99L);
+        verify(bookRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("deleteBook when book exists should delete book by ID")
+    void deleteBook_WhenBookExists_ShouldDeleteBook() {
+        when(bookRepository.existsById(1L)).thenReturn(true);
+        doNothing().when(bookRepository).deleteById(1L);
+
+        assertDoesNotThrow(() -> bookService.deleteBook(1L));
+
+        verify(bookRepository, times(1)).existsById(1L);
+        verify(bookRepository, times(1)).deleteById(1L);
+    }
+
+    @Test
+    @DisplayName("deleteBook when book not found should throw ResponseStatusException NOT_FOUND")
+    void deleteBook_WhenBookNotFound_ShouldThrowResponseStatusException() {
+        when(bookRepository.existsById(99L)).thenReturn(false);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> bookService.deleteBook(99L)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("Book not found with ID: 99"));
+        verify(bookRepository, times(1)).existsById(99L);
+        verify(bookRepository, never()).deleteById(any());
     }
 }

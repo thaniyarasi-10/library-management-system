@@ -11,6 +11,7 @@ public interface BookService {
     BookResponse createBook(BookRequest request);
     List<BookResponse> getAllBooks();
     PagedResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDir);
+    PagedResponse<BookResponse> searchBooks(String query, int page, int size, String sortBy, String sortDir);
     BookResponse getBookById(Long id);
     BookResponse updateBook(Long id, BookRequest request);
     void deleteBook(Long id);
