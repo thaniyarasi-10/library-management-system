@@ -20,6 +20,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -158,6 +159,29 @@ class UserControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(userService, never()).updateUser(any(), any());
+    }
+
+    @Test
+    @DisplayName("DELETE /users/{id} when user exists should return 204 No Content")
+    void deleteUser_WhenUserExists_ShouldReturn204NoContent() throws Exception {
+        doNothing().when(userService).deleteUser(1L);
+
+        mockMvc.perform(delete("/users/1"))
+                .andExpect(status().isNoContent());
+
+        verify(userService, times(1)).deleteUser(1L);
+    }
+
+    @Test
+    @DisplayName("DELETE /users/{id} when user not found should return 404 NOT_FOUND")
+    void deleteUser_WhenUserNotFound_ShouldReturn404() throws Exception {
+        doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Users not found with ID: 99"))
+                .when(userService).deleteUser(99L);
+
+        mockMvc.perform(delete("/users/99"))
+                .andExpect(status().isNotFound());
+
+        verify(userService, times(1)).deleteUser(99L);
     }
 }
 

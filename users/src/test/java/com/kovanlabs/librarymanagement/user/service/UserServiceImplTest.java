@@ -170,4 +170,32 @@ class UserServiceImplTest {
         verify(userRepository, times(1)).findById(99L);
         verify(userRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("deleteUser when user exists should delete user by ID")
+    void deleteUser_WhenUserExists_ShouldDeleteUser() {
+        when(userRepository.existsById(1L)).thenReturn(true);
+        doNothing().when(userRepository).deleteById(1L);
+
+        assertDoesNotThrow(() -> userService.deleteUser(1L));
+
+        verify(userRepository, times(1)).existsById(1L);
+        verify(userRepository, times(1)).deleteById(1L);
+    }
+
+    @Test
+    @DisplayName("deleteUser when user not found should throw ResponseStatusException NOT_FOUND")
+    void deleteUser_WhenUserNotFound_ShouldThrowResponseStatusException() {
+        when(userRepository.existsById(99L)).thenReturn(false);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> userService.deleteUser(99L)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("Users not found with ID: 99"));
+        verify(userRepository, times(1)).existsById(99L);
+        verify(userRepository, never()).deleteById(any());
+    }
 }
