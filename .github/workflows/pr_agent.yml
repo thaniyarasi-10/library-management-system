@@ -29,3 +29,4 @@ jobs:
           github_action_config.auto_review: "false"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "false"
+          github_action_config.handle_push_trigger: "true"
