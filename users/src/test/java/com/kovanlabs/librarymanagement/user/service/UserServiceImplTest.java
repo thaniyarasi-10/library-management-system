@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.user.service;
 
 import com.kovanlabs.librarymanagement.book.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import com.kovanlabs.librarymanagement.user.entity.Users;
 import com.kovanlabs.librarymanagement.user.enums.AuthProvider;
@@ -15,9 +16,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.*;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -122,5 +126,48 @@ class UserServiceImplTest {
         assertTrue(response.content().isEmpty());
         assertEquals(0, response.totalElements());
         assertEquals(0, response.totalPages());
+    }
+
+    @Test
+    @DisplayName("updateUser when user exists should update email and return UserResponse")
+    void updateUser_WhenUserExists_ShouldUpdateAndReturnUserResponse() {
+        UserRequest request = new UserRequest("updated@example.com", "newpassword123", "Alice Updated");
+        Users updatedUser = Users.builder()
+                .id(1L)
+                .name("Alice")
+                .email("updated@example.com")
+                .role(RoleEnum.USER)
+                .provider(AuthProvider.USERNAME_PASSWORD)
+                .build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+        when(userRepository.save(any(Users.class))).thenReturn(updatedUser);
+
+        UserResponse response = userService.updateUser(1L, request);
+
+        assertNotNull(response);
+        assertEquals(1L, response.id());
+        assertEquals("updated@example.com", response.email());
+        verify(userRepository, times(1)).findById(1L);
+        verify(userRepository, times(1)).save(user1);
+        assertEquals("updated@example.com", user1.getEmail());
+    }
+
+    @Test
+    @DisplayName("updateUser when user not found should throw ResponseStatusException NOT_FOUND")
+    void updateUser_WhenUserNotFound_ShouldThrowResponseStatusException() {
+        UserRequest request = new UserRequest("updated@example.com", "newpassword123", "Alice Updated");
+
+        when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> userService.updateUser(99L, request)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("Users not found with ID: 99"));
+        verify(userRepository, times(1)).findById(99L);
+        verify(userRepository, never()).save(any());
     }
 }
