@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -112,16 +113,10 @@ public class BookServiceImpl implements BookService {
     @Override
     @Transactional
     public void deleteBook(Long id) {
-        Book book = bookRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
-
-        String oldKey = book.getCoverImageKey();
-        bookRepository.delete(book);
-        bookRepository.flush();
-
-        if (oldKey != null && !oldKey.isBlank()) {
-            registerAfterCommitTask(() -> s3Service.deleteFile(oldKey));
+        if (!bookRepository.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id);
         }
+        bookRepository.deleteById(id);
     }
 
     private BookResponse mapToResponse(Book book) {
@@ -129,95 +124,37 @@ public class BookServiceImpl implements BookService {
                 book.getId(),
                 book.getTitle(),
                 book.getAuthor(),
-                book.getIsbn());
+                book.getIsbn()
+        );
     }
 
-    @Override
     @Transactional
-    public String uploadBookCover(Long bookId, MultipartFile file) {
+    @ResponseStatus
+    public String uploadBookCover(Long bookId, MultipartFile file)  {
+
         Book book = bookRepository.findById(bookId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
 
-        String oldCoverKey = book.getCoverImageKey();
-
-        S3UploadResponse response;
         try {
-            response = s3Service.uploadFile(file);
-        } catch (IOException e) {
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Failed to read upload file",
-                    e);
-        }
+            S3UploadResponse response = s3Service.uploadFile(file);
 
-        try {
             book.setCoverImageKey(response.coverImageKey());
             book.setCoverImageUrl(response.coverImageUrl());
-            bookRepository.saveAndFlush(book);
 
-            if (TransactionSynchronizationManager.isActualTransactionActive()) {
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        if (oldCoverKey != null && !oldCoverKey.isBlank()) {
-                            s3Service.deleteFile(oldCoverKey);
-                        }
-                    }
-
-                    @Override
-                    public void afterCompletion(int status) {
-                        if (status != TransactionSynchronization.STATUS_COMMITTED) {
-                            s3Service.deleteFile(response.coverImageKey());
-                        }
-                    }
-                });
-            } else {
-                if (oldCoverKey != null && !oldCoverKey.isBlank()) {
-                    s3Service.deleteFile(oldCoverKey);
-                }
-            }
+            bookRepository.save(book);
 
             return "Book cover updated";
-        } catch (Exception e) {
-            s3Service.deleteFile(response.coverImageKey());
-            throw e;
+
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
-    @Override
-    public String getImageCoverById(Long id) {
+    public String getImageCoverById(Long id){
         Book book = bookRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
+                .orElseThrow(() -> new RuntimeException("Book not found"));
 
         return book.getCoverImageUrl();
     }
-
-    @Override
-    @Transactional
-    public void deleteBookCover(Long bookId) {
-        Book book = bookRepository.findById(bookId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
-
-        String oldKey = book.getCoverImageKey();
-        if (oldKey != null && !oldKey.isBlank()) {
-            book.setCoverImageKey(null);
-            book.setCoverImageUrl(null);
-            bookRepository.saveAndFlush(book);
-
-            registerAfterCommitTask(() -> s3Service.deleteFile(oldKey));
-        }
-    }
-
-    private void registerAfterCommitTask(Runnable task) {
-        if (TransactionSynchronizationManager.isActualTransactionActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    task.run();
-                }
-            });
-        } else {
-            task.run();
-        }
-    }
 }
+
