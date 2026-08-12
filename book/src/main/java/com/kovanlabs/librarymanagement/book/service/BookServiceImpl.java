@@ -129,11 +129,10 @@ public class BookServiceImpl implements BookService {
     }
 
     @Transactional
-    @ResponseStatus
     public String uploadBookCover(Long bookId, MultipartFile file)  {
 
         Book book = bookRepository.findById(bookId)
-                .orElseThrow(() -> new RuntimeException("Book not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
 
         try {
             S3UploadResponse response = s3Service.uploadFile(file);
