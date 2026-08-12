@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.borrow.service;
 
+import com.kovanlabs.librarymanagement.book.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.borrow.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.borrow.dto.BorrowResponseDto;
 import com.kovanlabs.librarymanagement.borrow.entity.Borrow;
@@ -13,11 +14,19 @@ import com.kovanlabs.librarymanagement.notification.dto.NotificationRequest;
 import com.kovanlabs.librarymanagement.notification.enums.NotificationTypeEnum;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import com.kovanlabs.librarymanagement.book.entity.Book;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -69,6 +78,26 @@ public class BorrowServiceImpl implements BorrowService {
         borrowRepository.save(borrow);
         return mapToResponse(borrow);
     }
+
+    public PagedResponse<BorrowResponseDto> searchBorrowedBooks(String query, int page, int size, String sortBy, String sortDir){
+        Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
+                : Sort.by(sortBy).descending();
+        Pageable pageable = PageRequest.of(page, size, sort);
+        Page<Borrow> borrowPage = borrowRepository.searchBorrowedBooks(query, pageable);
+        List<BorrowResponseDto> content = borrowPage.getContent().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+
+        return new PagedResponse<>(
+                content,
+                borrowPage.getNumber(),
+                borrowPage.getSize(),
+                borrowPage.getTotalElements(),
+                borrowPage.getTotalPages(),
+                borrowPage.isLast()
+        );
+    }
+
 
 
     private BorrowResponseDto mapToResponse(Borrow borrow) {
