@@ -12,6 +12,7 @@ public interface UserService {
     UserResponse createUser(UserRequest request);
     List<UserResponse> getAllUsers();
     PagedResponse<UserResponse> getAllUsers(int page, int size, String sortBy, String sortDir);
+    PagedResponse<UserResponse> searchUsers(String query, int page, int size, String sortBy, String sortDir);
     UserResponse getUserById(Long id);
     UserResponse updateUser(Long id, UserRequest request);
     void deleteUser(Long id);

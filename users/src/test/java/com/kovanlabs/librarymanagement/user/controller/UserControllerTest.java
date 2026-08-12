@@ -183,5 +183,59 @@ class UserControllerTest {
 
         verify(userService, times(1)).deleteUser(99L);
     }
+
+    @Test
+    @DisplayName("GET /users/search with query param should return 200 OK and PagedResponse")
+    void searchUsers_WithQueryParam_ShouldReturnPagedUsers() throws Exception {
+        UserResponse u1 = new UserResponse(1L, "Alice Smith", "alice@example.com");
+        PagedResponse<UserResponse> pagedResponse = new PagedResponse<>(
+                List.of(u1), 0, 10, 1L, 1, true
+        );
+
+        when(userService.searchUsers("Alice", 0, 10, "id", "asc")).thenReturn(pagedResponse);
+
+        mockMvc.perform(get("/users/search")
+                        .param("query", "Alice")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].name").value("Alice Smith"))
+                .andExpect(jsonPath("$.content[0].email").value("alice@example.com"))
+                .andExpect(jsonPath("$.pageNo").value(0))
+                .andExpect(jsonPath("$.pageSize").value(10))
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.totalPages").value(1))
+                .andExpect(jsonPath("$.last").value(true));
+
+        verify(userService, times(1)).searchUsers("Alice", 0, 10, "id", "asc");
+    }
+
+    @Test
+    @DisplayName("GET /users/search with custom pagination and sort params should pass to service")
+    void searchUsers_WithCustomParams_ShouldPassParamsToService() throws Exception {
+        UserResponse u1 = new UserResponse(2L, "Bob Builder", "bob@example.com");
+        PagedResponse<UserResponse> pagedResponse = new PagedResponse<>(
+                List.of(u1), 1, 5, 6L, 2, false
+        );
+
+        when(userService.searchUsers("bob", 1, 5, "name", "desc")).thenReturn(pagedResponse);
+
+        mockMvc.perform(get("/users/search")
+                        .param("query", "bob")
+                        .param("page", "1")
+                        .param("size", "5")
+                        .param("sortBy", "name")
+                        .param("sortDir", "desc")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].name").value("Bob Builder"))
+                .andExpect(jsonPath("$.pageNo").value(1))
+                .andExpect(jsonPath("$.pageSize").value(5))
+                .andExpect(jsonPath("$.totalElements").value(6))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.last").value(false));
+
+        verify(userService, times(1)).searchUsers("bob", 1, 5, "name", "desc");
+    }
 }
 

@@ -43,6 +43,16 @@ public class UserController {
         return userService.getAllUsers(page, size, sortBy, sortDir);
     }
 
+    @GetMapping("/search")
+    public PagedResponse<UserResponse> searchUsers(
+            @RequestParam(name = "query") String query,
+            @RequestParam(name = "page", defaultValue = "0", required = false) int page,
+            @RequestParam(name = "size", defaultValue = "10", required = false) int size,
+            @RequestParam(name = "sortBy", defaultValue = "id", required = false) String sortBy,
+            @RequestParam(name = "sortDir", defaultValue = "asc", required = false) String sortDir) {
+        return userService.searchUsers(query, page, size, sortBy, sortDir);
+    }
+
     @GetMapping("/{id}")
     public UserResponse getUserById(@PathVariable("id") Long id) {
         return userService.getUserById(id);
