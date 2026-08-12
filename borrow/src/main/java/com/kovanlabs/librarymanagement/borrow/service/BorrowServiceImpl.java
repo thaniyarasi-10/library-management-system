@@ -34,11 +34,10 @@ public class BorrowServiceImpl implements BorrowService {
     public BorrowResponseDto borrowBook(BorrowRequestDto request) {
 
         Users users = userRepository.findById(request.userId())
-                .orElseThrow(() -> new RuntimeException("Users not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + request.userId()));
 
         Book book = bookRepository.findById(request.bookId())
-                .orElseThrow(() -> new RuntimeException("Book not found"));
-
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + request.bookId()));
         Borrow borrow = Borrow.builder()
                 .users(users)
                 .book(book)
