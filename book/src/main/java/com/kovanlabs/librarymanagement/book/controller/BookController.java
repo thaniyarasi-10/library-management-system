@@ -2,6 +2,7 @@ package com.kovanlabs.librarymanagement.book.controller;
 
 import com.kovanlabs.librarymanagement.book.dto.BookRequest;
 import com.kovanlabs.librarymanagement.book.dto.BookResponse;
+import com.kovanlabs.librarymanagement.book.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.book.service.BookService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -26,23 +27,37 @@ public class BookController {
     }
 
     @GetMapping
-    public List<BookResponse> getAllBooks() {
-        return bookService.getAllBooks();
+    public PagedResponse<BookResponse> getAllBooks(
+            @RequestParam(name = "page", defaultValue = "0", required = false) int page,
+            @RequestParam(name = "size", defaultValue = "10", required = false) int size,
+            @RequestParam(name = "sortBy", defaultValue = "id", required = false) String sortBy,
+            @RequestParam(name = "sortDir", defaultValue = "asc", required = false) String sortDir) {
+        return bookService.getAllBooks(page, size, sortBy, sortDir);
+    }
+
+    @GetMapping("/search")
+    public PagedResponse<BookResponse> searchBooks(
+            @RequestParam(name = "query") String query,
+            @RequestParam(name = "page", defaultValue = "0", required = false) int page,
+            @RequestParam(name = "size", defaultValue = "10", required = false) int size,
+            @RequestParam(name = "sortBy", defaultValue = "id", required = false) String sortBy,
+            @RequestParam(name = "sortDir", defaultValue = "asc", required = false) String sortDir) {
+        return bookService.searchBooks(query, page, size, sortBy, sortDir);
     }
 
     @GetMapping("/{id}")
-    public BookResponse getBookById(@PathVariable Long id) {
+    public BookResponse getBookById(@PathVariable("id") Long id) {
         return bookService.getBookById(id);
     }
 
     @PutMapping("/{id}")
-    public BookResponse updateBook(@PathVariable Long id, @RequestBody BookRequest request) {
+    public BookResponse updateBook(@PathVariable("id") Long id, @RequestBody BookRequest request) {
         return bookService.updateBook(id, request);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteBook(@PathVariable Long id) {
+    public void deleteBook(@PathVariable("id") Long id) {
         bookService.deleteBook(id);
     }
 

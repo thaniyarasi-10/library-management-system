@@ -15,6 +15,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.function.Function;
 
+import com.kovanlabs.librarymanagement.user.entity.Users;
+
 @Service
 public class JwtService {
 
@@ -42,6 +44,18 @@ public class JwtService {
 
         return Jwts.builder()
                 .subject(authentication.getName())
+                .claim("roles", roles)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + expiration))
+                .signWith(signingKey)
+                .compact();
+    }
+
+    public String generateToken(Users user) {
+        List<String> roles = List.of("ROLE_" + user.getRole().name());
+
+        return Jwts.builder()
+                .subject(user.getEmail())
                 .claim("roles", roles)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expiration))

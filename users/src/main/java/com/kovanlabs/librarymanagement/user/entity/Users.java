@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.user.entity;
 
+import com.kovanlabs.librarymanagement.user.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.user.enums.RoleEnum;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -30,7 +31,7 @@ public class Users{
     @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private String password;
 
     @Enumerated(EnumType.STRING)
@@ -54,5 +55,11 @@ public class Users{
     public void preUpdate() {
         updatedAt = LocalDateTime.now();
     }
+
+    private String providerId;
+
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private AuthProvider provider = AuthProvider.USERNAME_PASSWORD;
 
 }

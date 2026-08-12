@@ -2,8 +2,11 @@ package com.kovanlabs.librarymanagement.notification.service;
 
 import com.kovanlabs.librarymanagement.notification.dto.NotificationRequest;
 import com.kovanlabs.librarymanagement.notification.enums.NotificationTypeEnum;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 public class SlackNotificationService implements NotificationService {
 
@@ -13,7 +16,9 @@ public class SlackNotificationService implements NotificationService {
     }
 
     @Override
+    @Async
     public void send(NotificationRequest request) {
-        System.out.println("Sending SMS");
+        log.info("Sending SMS notification to:" + request.recipient());
     }
+
 }
