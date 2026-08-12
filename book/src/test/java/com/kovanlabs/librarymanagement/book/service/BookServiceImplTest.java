@@ -3,6 +3,7 @@ package com.kovanlabs.librarymanagement.book.service;
 import com.kovanlabs.librarymanagement.book.dto.BookRequest;
 import com.kovanlabs.librarymanagement.book.dto.BookResponse;
 import com.kovanlabs.librarymanagement.book.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.book.dto.S3UploadResponse;
 import com.kovanlabs.librarymanagement.book.entity.Book;
 import com.kovanlabs.librarymanagement.book.repository.BookRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.*;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -204,13 +206,48 @@ class BookServiceImplTest {
 
         when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
         doNothing().when(s3Service).deleteFile("book-cover-123.jpg");
-        when(bookRepository.save(any(Book.class))).thenReturn(book1);
+        when(bookRepository.saveAndFlush(any(Book.class))).thenReturn(book1);
 
         assertDoesNotThrow(() -> bookService.deleteBookCover(1L));
 
         verify(s3Service, times(1)).deleteFile("book-cover-123.jpg");
         assertNull(book1.getCoverImageKey());
         assertNull(book1.getCoverImageUrl());
-        verify(bookRepository, times(1)).save(book1);
+        verify(bookRepository, times(1)).saveAndFlush(book1);
+    }
+
+    @Test
+    @DisplayName("uploadBookCover when DB save fails should delete newly uploaded S3 file and throw exception")
+    void uploadBookCover_WhenDBSaveFails_ShouldDeleteNewlyUploadedS3File() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "cover.jpg", "image/jpeg", "content".getBytes());
+        S3UploadResponse response = new S3UploadResponse("new-key-123.jpg", "https://s3.com/new-key-123.jpg");
+
+        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(s3Service.uploadFile(file)).thenReturn(response);
+        when(bookRepository.saveAndFlush(any(Book.class))).thenThrow(new RuntimeException("DB Connection Error"));
+
+        assertThrows(RuntimeException.class, () -> bookService.uploadBookCover(1L, file));
+
+        verify(s3Service, times(1)).uploadFile(file);
+        verify(s3Service, times(1)).deleteFile("new-key-123.jpg");
+    }
+
+    @Test
+    @DisplayName("uploadBookCover when successful should update book with key and url")
+    void uploadBookCover_WhenSuccessful_ShouldUpdateBookWithS3Details() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "cover.jpg", "image/jpeg", "content".getBytes());
+        S3UploadResponse response = new S3UploadResponse("new-key-123.jpg", "https://s3.com/new-key-123.jpg");
+
+        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(s3Service.uploadFile(file)).thenReturn(response);
+        when(bookRepository.saveAndFlush(any(Book.class))).thenReturn(book1);
+
+        String result = bookService.uploadBookCover(1L, file);
+
+        assertEquals("Book cover updated", result);
+        assertEquals("new-key-123.jpg", book1.getCoverImageKey());
+        assertEquals("https://s3.com/new-key-123.jpg", book1.getCoverImageUrl());
+        verify(s3Service, times(1)).uploadFile(file);
+        verify(bookRepository, times(1)).saveAndFlush(book1);
     }
 }

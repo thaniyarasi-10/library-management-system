@@ -14,7 +14,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -65,8 +66,7 @@ public class BookServiceImpl implements BookService {
                 booksPage.getSize(),
                 booksPage.getTotalElements(),
                 booksPage.getTotalPages(),
-                booksPage.isLast()
-        );
+                booksPage.isLast());
     }
 
     @Override
@@ -85,8 +85,7 @@ public class BookServiceImpl implements BookService {
                 booksPage.getSize(),
                 booksPage.getTotalElements(),
                 booksPage.getTotalPages(),
-                booksPage.isLast()
-        );
+                booksPage.isLast());
     }
 
     @Override
@@ -101,11 +100,11 @@ public class BookServiceImpl implements BookService {
     public BookResponse updateBook(Long id, BookRequest request) {
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
-        
+
         book.setTitle(request.title());
         book.setAuthor(request.author());
         book.setIsbn(request.isbn());
-        
+
         Book updatedBook = bookRepository.save(book);
         return mapToResponse(updatedBook);
     }
@@ -116,11 +115,13 @@ public class BookServiceImpl implements BookService {
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
 
-        if (book.getCoverImageKey() != null && !book.getCoverImageKey().isBlank()) {
-            s3Service.deleteFile(book.getCoverImageKey());
-        }
-
+        String oldKey = book.getCoverImageKey();
         bookRepository.delete(book);
+        bookRepository.flush();
+
+        if (oldKey != null && !oldKey.isBlank()) {
+            registerAfterCommitTask(() -> s3Service.deleteFile(oldKey));
+        }
     }
 
     private BookResponse mapToResponse(Book book) {
@@ -128,8 +129,7 @@ public class BookServiceImpl implements BookService {
                 book.getId(),
                 book.getTitle(),
                 book.getAuthor(),
-                book.getIsbn()
-        );
+                book.getIsbn());
     }
 
     @Override
@@ -138,21 +138,49 @@ public class BookServiceImpl implements BookService {
         Book book = bookRepository.findById(bookId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
 
-        if (book.getCoverImageKey() != null && !book.getCoverImageKey().isBlank()) {
-            s3Service.deleteFile(book.getCoverImageKey());
+        String oldCoverKey = book.getCoverImageKey();
+
+        S3UploadResponse response;
+        try {
+            response = s3Service.uploadFile(file);
+        } catch (IOException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to read upload file",
+                    e);
         }
 
         try {
-            S3UploadResponse response = s3Service.uploadFile(file);
-
             book.setCoverImageKey(response.coverImageKey());
             book.setCoverImageUrl(response.coverImageUrl());
+            bookRepository.saveAndFlush(book);
 
-            bookRepository.save(book);
+            if (TransactionSynchronizationManager.isActualTransactionActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        if (oldCoverKey != null && !oldCoverKey.isBlank()) {
+                            s3Service.deleteFile(oldCoverKey);
+                        }
+                    }
+
+                    @Override
+                    public void afterCompletion(int status) {
+                        if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                            s3Service.deleteFile(response.coverImageKey());
+                        }
+                    }
+                });
+            } else {
+                if (oldCoverKey != null && !oldCoverKey.isBlank()) {
+                    s3Service.deleteFile(oldCoverKey);
+                }
+            }
 
             return "Book cover updated";
-        } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to read upload file", e);
+        } catch (Exception e) {
+            s3Service.deleteFile(response.coverImageKey());
+            throw e;
         }
     }
 
@@ -170,11 +198,26 @@ public class BookServiceImpl implements BookService {
         Book book = bookRepository.findById(bookId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
 
-        if (book.getCoverImageKey() != null && !book.getCoverImageKey().isBlank()) {
-            s3Service.deleteFile(book.getCoverImageKey());
+        String oldKey = book.getCoverImageKey();
+        if (oldKey != null && !oldKey.isBlank()) {
             book.setCoverImageKey(null);
             book.setCoverImageUrl(null);
-            bookRepository.save(book);
+            bookRepository.saveAndFlush(book);
+
+            registerAfterCommitTask(() -> s3Service.deleteFile(oldKey));
+        }
+    }
+
+    private void registerAfterCommitTask(Runnable task) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    task.run();
+                }
+            });
+        } else {
+            task.run();
         }
     }
 }
