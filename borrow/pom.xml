@@ -41,7 +41,12 @@
 
         <dependency>
             <groupId>com.kovanlabs</groupId>
-            <artifactId>user</artifactId>
+            <artifactId>users</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.kovanlabs</groupId>
+            <artifactId>notification</artifactId>
         </dependency>
 
 

@@ -20,9 +20,10 @@
 
     <modules>
         <module>book</module>
-        <module>user</module>
+        <module>users</module>
         <module>application</module>
         <module>borrow</module>
+        <module>notification</module>
     </modules>
 
     <dependencyManagement>
@@ -45,7 +46,7 @@
 
             <dependency>
                 <groupId>com.kovanlabs</groupId>
-                <artifactId>user</artifactId>
+                <artifactId>users</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -54,7 +55,15 @@
                 <artifactId>borrow</artifactId>
                 <version>${project.version}</version>
             </dependency>
+
+            <dependency>
+                <groupId>com.kovanlabs</groupId>
+                <artifactId>notification</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
         </dependencies>
+
     </dependencyManagement>
 
     <build>
