@@ -15,7 +15,6 @@
     <description>Library Management Main Application</description>
 
     <dependencies>
-        <!-- Book Module -->
         <dependency>
             <groupId>com.kovanlabs</groupId>
             <artifactId>book</artifactId>
@@ -23,7 +22,17 @@
 
         <dependency>
             <groupId>com.kovanlabs</groupId>
-            <artifactId>user</artifactId>
+            <artifactId>users</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.kovanlabs</groupId>
+            <artifactId>borrow</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.kovanlabs</groupId>
+            <artifactId>notification</artifactId>
         </dependency>
 
         
@@ -54,6 +63,8 @@
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+
+
     </dependencies>
 
     <build>
