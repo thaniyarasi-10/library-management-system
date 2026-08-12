@@ -1,18 +1,18 @@
 package com.kovanlabs.librarymanagement.borrow.service;
 
 import com.kovanlabs.librarymanagement.book.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.book.entity.Book;
+import com.kovanlabs.librarymanagement.book.repository.BookRepository;
 import com.kovanlabs.librarymanagement.borrow.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.borrow.dto.BorrowResponseDto;
 import com.kovanlabs.librarymanagement.borrow.entity.Borrow;
 import com.kovanlabs.librarymanagement.borrow.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.borrow.repository.BorrowRepository;
-import com.kovanlabs.librarymanagement.book.repository.BookRepository;
-import com.kovanlabs.librarymanagement.user.entity.Users;
-import com.kovanlabs.librarymanagement.user.repository.UserRepository;
-import com.kovanlabs.librarymanagement.notification.factory.NotificationFactory;
 import com.kovanlabs.librarymanagement.notification.dto.NotificationRequest;
 import com.kovanlabs.librarymanagement.notification.enums.NotificationTypeEnum;
-
+import com.kovanlabs.librarymanagement.notification.factory.NotificationFactory;
+import com.kovanlabs.librarymanagement.user.entity.Users;
+import com.kovanlabs.librarymanagement.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -20,7 +20,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import com.kovanlabs.librarymanagement.book.entity.Book;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -59,7 +58,7 @@ public class BorrowServiceImpl implements BorrowService {
         NotificationRequest notificationRequest = new NotificationRequest(
                 users.getEmail(),
                 "Book Borrowed",
-                "You have successfully borrowed \"" +book.getTitle() + "\". Return it before " + borrow.getDueDate()
+                "You have successfully borrowed \"" + book.getTitle() + "\". Return it before " + borrow.getDueDate()
         );
 
         notificationFactory.get(NotificationTypeEnum.EMAIL).send(notificationRequest);
@@ -67,6 +66,7 @@ public class BorrowServiceImpl implements BorrowService {
         return mapToResponse(borrow);
     }
 
+    @Override
     @Transactional
     public BorrowResponseDto returnBook(Long borrowId) {
 
@@ -79,11 +79,14 @@ public class BorrowServiceImpl implements BorrowService {
         return mapToResponse(borrow);
     }
 
-    public PagedResponse<BorrowResponseDto> searchBorrowedBooks(String query, int page, int size, String sortBy, String sortDir){
+    @Override
+    public PagedResponse<BorrowResponseDto> searchBorrowedBooks(String query, int page, int size, String sortBy, String sortDir) {
         Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
-        Page<Borrow> borrowPage = borrowRepository.searchBorrowedBooks(query, pageable);
+        String sanitizedQuery = escapeLikePattern(query);
+        String searchPattern = "%" + sanitizedQuery + "%";
+        Page<Borrow> borrowPage = borrowRepository.searchBorrowedBooks(searchPattern, pageable);
         List<BorrowResponseDto> content = borrowPage.getContent().stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
@@ -98,7 +101,14 @@ public class BorrowServiceImpl implements BorrowService {
         );
     }
 
-
+    private String escapeLikePattern(String input) {
+        if (input == null || input.isBlank()) {
+            return "";
+        }
+        return input.replace("\\", "\\\\")
+                    .replace("%", "\\%")
+                    .replace("_", "\\_");
+    }
 
     private BorrowResponseDto mapToResponse(Borrow borrow) {
 
