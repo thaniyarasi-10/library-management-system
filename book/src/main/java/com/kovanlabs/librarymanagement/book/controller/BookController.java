@@ -75,4 +75,9 @@ public class BookController {
         return ResponseEntity.ok(bookService.getImageCoverById(bookId));
     }
 
+    @DeleteMapping("/{bookId}/cover")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteBookCover(@PathVariable("bookId") Long bookId) {
+        bookService.deleteBookCover(bookId);
+    }
 }

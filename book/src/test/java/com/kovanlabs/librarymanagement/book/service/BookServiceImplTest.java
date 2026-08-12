@@ -166,21 +166,24 @@ class BookServiceImplTest {
     }
 
     @Test
-    @DisplayName("deleteBook when book exists should delete book by ID")
+    @DisplayName("deleteBook when book exists should delete S3 file and book")
     void deleteBook_WhenBookExists_ShouldDeleteBook() {
-        when(bookRepository.existsById(1L)).thenReturn(true);
-        doNothing().when(bookRepository).deleteById(1L);
+        book1.setCoverImageKey("book-cover-123.jpg");
+        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        doNothing().when(s3Service).deleteFile("book-cover-123.jpg");
+        doNothing().when(bookRepository).delete(book1);
 
         assertDoesNotThrow(() -> bookService.deleteBook(1L));
 
-        verify(bookRepository, times(1)).existsById(1L);
-        verify(bookRepository, times(1)).deleteById(1L);
+        verify(bookRepository, times(1)).findById(1L);
+        verify(s3Service, times(1)).deleteFile("book-cover-123.jpg");
+        verify(bookRepository, times(1)).delete(book1);
     }
 
     @Test
     @DisplayName("deleteBook when book not found should throw ResponseStatusException NOT_FOUND")
     void deleteBook_WhenBookNotFound_ShouldThrowResponseStatusException() {
-        when(bookRepository.existsById(99L)).thenReturn(false);
+        when(bookRepository.findById(99L)).thenReturn(Optional.empty());
 
         ResponseStatusException exception = assertThrows(
                 ResponseStatusException.class,
@@ -189,7 +192,25 @@ class BookServiceImplTest {
 
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
         assertTrue(exception.getReason().contains("Book not found with ID: 99"));
-        verify(bookRepository, times(1)).existsById(99L);
-        verify(bookRepository, never()).deleteById(any());
+        verify(bookRepository, times(1)).findById(99L);
+        verify(bookRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("deleteBookCover when cover exists should delete S3 file and reset entity fields")
+    void deleteBookCover_WhenCoverExists_ShouldDeleteS3FileAndResetFields() {
+        book1.setCoverImageKey("book-cover-123.jpg");
+        book1.setCoverImageUrl("https://s3.amazonaws.com/book-cover-123.jpg");
+
+        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        doNothing().when(s3Service).deleteFile("book-cover-123.jpg");
+        when(bookRepository.save(any(Book.class))).thenReturn(book1);
+
+        assertDoesNotThrow(() -> bookService.deleteBookCover(1L));
+
+        verify(s3Service, times(1)).deleteFile("book-cover-123.jpg");
+        assertNull(book1.getCoverImageKey());
+        assertNull(book1.getCoverImageUrl());
+        verify(bookRepository, times(1)).save(book1);
     }
 }

@@ -17,4 +17,5 @@ public interface BookService {
     void deleteBook(Long id);
     String uploadBookCover(Long bookId, MultipartFile file);
     String getImageCoverById(Long id);
+    void deleteBookCover(Long bookId);
 }

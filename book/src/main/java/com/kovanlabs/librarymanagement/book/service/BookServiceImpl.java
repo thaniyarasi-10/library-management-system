@@ -113,10 +113,14 @@ public class BookServiceImpl implements BookService {
     @Override
     @Transactional
     public void deleteBook(Long id) {
-        if (!bookRepository.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id);
+        Book book = bookRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
+
+        if (book.getCoverImageKey() != null && !book.getCoverImageKey().isBlank()) {
+            s3Service.deleteFile(book.getCoverImageKey());
         }
-        bookRepository.deleteById(id);
+
+        bookRepository.delete(book);
     }
 
     private BookResponse mapToResponse(Book book) {
@@ -128,11 +132,15 @@ public class BookServiceImpl implements BookService {
         );
     }
 
+    @Override
     @Transactional
-    public String uploadBookCover(Long bookId, MultipartFile file)  {
-
+    public String uploadBookCover(Long bookId, MultipartFile file) {
         Book book = bookRepository.findById(bookId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
+
+        if (book.getCoverImageKey() != null && !book.getCoverImageKey().isBlank()) {
+            s3Service.deleteFile(book.getCoverImageKey());
+        }
 
         try {
             S3UploadResponse response = s3Service.uploadFile(file);
@@ -143,16 +151,30 @@ public class BookServiceImpl implements BookService {
             bookRepository.save(book);
 
             return "Book cover updated";
-
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to read upload file", e);
         }
     }
 
-    public String getImageCoverById(Long id){
+    @Override
+    public String getImageCoverById(Long id) {
         Book book = bookRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Book not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
 
         return book.getCoverImageUrl();
+    }
+
+    @Override
+    @Transactional
+    public void deleteBookCover(Long bookId) {
+        Book book = bookRepository.findById(bookId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
+
+        if (book.getCoverImageKey() != null && !book.getCoverImageKey().isBlank()) {
+            s3Service.deleteFile(book.getCoverImageKey());
+            book.setCoverImageKey(null);
+            book.setCoverImageUrl(null);
+            bookRepository.save(book);
+        }
     }
 }
