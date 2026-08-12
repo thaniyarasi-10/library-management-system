@@ -70,6 +70,26 @@ public class BookServiceImpl implements BookService {
     }
 
     @Override
+    public PagedResponse<BookResponse> searchBooks(String query, int page, int size, String sortBy, String sortDir) {
+        Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
+                : Sort.by(sortBy).descending();
+        Pageable pageable = PageRequest.of(page, size, sort);
+        Page<Book> booksPage = bookRepository.searchBooks(query, pageable);
+        List<BookResponse> content = booksPage.getContent().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+
+        return new PagedResponse<>(
+                content,
+                booksPage.getNumber(),
+                booksPage.getSize(),
+                booksPage.getTotalElements(),
+                booksPage.getTotalPages(),
+                booksPage.isLast()
+        );
+    }
+
+    @Override
     public BookResponse getBookById(Long id) {
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
@@ -109,11 +129,10 @@ public class BookServiceImpl implements BookService {
     }
 
     @Transactional
-    @ResponseStatus
     public String uploadBookCover(Long bookId, MultipartFile file)  {
 
         Book book = bookRepository.findById(bookId)
-                .orElseThrow(() -> new RuntimeException("Book not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
 
         try {
             S3UploadResponse response = s3Service.uploadFile(file);

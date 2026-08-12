@@ -17,6 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.kovanlabs.librarymanagement.user.enums.AuthProvider;
+import com.kovanlabs.librarymanagement.user.enums.RoleEnum;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -69,6 +72,26 @@ import java.util.stream.Collectors;
         }
 
         @Override
+        public PagedResponse<UserResponse> searchUsers(String query, int page, int size, String sortBy, String sortDir) {
+            Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
+                    : Sort.by(sortBy).descending();
+            Pageable pageable = PageRequest.of(page, size, sort);
+            Page<Users> usersPage = userRepository.searchUsers(query, pageable);
+            List<UserResponse> content = usersPage.getContent().stream()
+                    .map(this::mapToResponse)
+                    .collect(Collectors.toList());
+
+            return new PagedResponse<>(
+                    content,
+                    usersPage.getNumber(),
+                    usersPage.getSize(),
+                    usersPage.getTotalElements(),
+                    usersPage.getTotalPages(),
+                    usersPage.isLast()
+            );
+        }
+
+        @Override
         public UserResponse getUserById(Long id) {
             Users users = userRepository.findById(id)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Users not found with ID: " + id));
@@ -94,6 +117,29 @@ import java.util.stream.Collectors;
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Users not found with ID: " + id);
             }
             userRepository.deleteById(id);
+        }
+
+        @Override
+        @Transactional
+        public Users findOrCreateGoogleUser(String googleId, String email, String name) {
+            return userRepository.findByEmail(email)
+                    .map(existingUser -> {
+                        if (existingUser.getProviderId() == null) {
+                            existingUser.setProviderId(googleId);
+                            existingUser.setProvider(AuthProvider.GOOGLE_OAUTH);
+                        }
+                        return userRepository.save(existingUser);
+                    })
+                    .orElseGet(() -> {
+                        Users newUser = Users.builder()
+                                .email(email)
+                                .name(name)
+                                .providerId(googleId)
+                                .provider(AuthProvider.GOOGLE_OAUTH)
+                                .role(RoleEnum.USER)
+                                .build();
+                        return userRepository.save(newUser);
+                    });
         }
 
 
