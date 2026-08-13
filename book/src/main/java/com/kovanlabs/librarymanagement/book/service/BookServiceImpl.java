@@ -14,6 +14,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
@@ -65,8 +67,7 @@ public class BookServiceImpl implements BookService {
                 booksPage.getSize(),
                 booksPage.getTotalElements(),
                 booksPage.getTotalPages(),
-                booksPage.isLast()
-        );
+                booksPage.isLast());
     }
 
     @Override
@@ -85,8 +86,7 @@ public class BookServiceImpl implements BookService {
                 booksPage.getSize(),
                 booksPage.getTotalElements(),
                 booksPage.getTotalPages(),
-                booksPage.isLast()
-        );
+                booksPage.isLast());
     }
 
     @Override
@@ -101,11 +101,11 @@ public class BookServiceImpl implements BookService {
     public BookResponse updateBook(Long id, BookRequest request) {
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
-        
+
         book.setTitle(request.title());
         book.setAuthor(request.author());
         book.setIsbn(request.isbn());
-        
+
         Book updatedBook = bookRepository.save(book);
         return mapToResponse(updatedBook);
     }
@@ -129,6 +129,7 @@ public class BookServiceImpl implements BookService {
     }
 
     @Transactional
+    @ResponseStatus
     public String uploadBookCover(Long bookId, MultipartFile file)  {
 
         Book book = bookRepository.findById(bookId)
@@ -156,3 +157,4 @@ public class BookServiceImpl implements BookService {
         return book.getCoverImageUrl();
     }
 }
+
