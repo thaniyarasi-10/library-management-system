@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.borrow.controller;
 
+import com.kovanlabs.librarymanagement.book.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.borrow.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.borrow.dto.BorrowResponseDto;
 import com.kovanlabs.librarymanagement.borrow.service.BorrowService;
@@ -11,9 +12,10 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/borrow")
 public class BorrowController {
 
-    private BorrowService borrowService;
+    private final BorrowService borrowService;
+
     public BorrowController(BorrowService borrowService){
-        this.borrowService= borrowService;
+        this.borrowService = borrowService;
     }
 
     @PostMapping
@@ -25,5 +27,15 @@ public class BorrowController {
     @PatchMapping("/{borrowId}")
     public BorrowResponseDto returnBook(@PathVariable("borrowId") Long borrowId){
         return borrowService.returnBook(borrowId);
+    }
+
+    @GetMapping("/search")
+    public PagedResponse<BorrowResponseDto> searchBorrowedBooks(
+            @RequestParam(name = "query") String query,
+            @RequestParam(name = "page", defaultValue = "0", required = false) int page,
+            @RequestParam(name = "size", defaultValue = "10", required = false) int size,
+            @RequestParam(name = "sortBy", defaultValue = "id", required = false) String sortBy,
+            @RequestParam(name = "sortDir", defaultValue = "asc", required = false) String sortDir) {
+        return borrowService.searchBorrowedBooks(query, page, size, sortBy, sortDir);
     }
 }
