@@ -25,11 +25,16 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class BorrowServiceImpl implements BorrowService {
+
+    private static final Set<String> ALLOWED_SORT_FIELDS = Set.of(
+            "id", "book", "users", "borrowDate", "dueDate", "returnedDate", "status"
+    );
 
     private final BorrowRepository borrowRepository;
     private final BookRepository bookRepository;
@@ -81,6 +86,13 @@ public class BorrowServiceImpl implements BorrowService {
 
     @Override
     public PagedResponse<BorrowResponseDto> searchBorrowedBooks(String query, int page, int size, String sortBy, String sortDir) {
+        if (sortBy == null || !ALLOWED_SORT_FIELDS.contains(sortBy)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid sortBy field: " + sortBy + ". Allowed fields are: " + ALLOWED_SORT_FIELDS);
+        }
+        if (sortDir == null || (!sortDir.equalsIgnoreCase("ASC") && !sortDir.equalsIgnoreCase("DESC"))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid sortDir: " + sortDir + ". Must be ASC or DESC");
+        }
+
         Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
@@ -105,9 +117,9 @@ public class BorrowServiceImpl implements BorrowService {
         if (input == null || input.isBlank()) {
             return "";
         }
-        return input.replace("\\", "\\\\")
-                    .replace("%", "\\%")
-                    .replace("_", "\\_");
+        return input.replace("!", "!!")
+                    .replace("%", "!%")
+                    .replace("_", "!_");
     }
 
     private BorrowResponseDto mapToResponse(Borrow borrow) {

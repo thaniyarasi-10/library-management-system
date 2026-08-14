@@ -14,6 +14,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.time.LocalDate;
 import java.util.List;
 
@@ -68,5 +71,29 @@ class BorrowControllerTest {
                 .andExpect(jsonPath("$.totalElements").value(1));
 
         verify(borrowService).searchBorrowedBooks("clean", 0, 10, "id", "asc");
+    }
+
+    @Test
+    @DisplayName("GET /borrow/search with invalid sortBy should return 400 Bad Request")
+    void searchBorrowedBooks_WithInvalidSortBy_ShouldReturnBadRequest() throws Exception {
+        when(borrowService.searchBorrowedBooks("clean", 0, 10, "invalidField", "asc"))
+                .thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid sortBy field: invalidField"));
+
+        mockMvc.perform(get("/borrow/search")
+                        .param("query", "clean")
+                        .param("sortBy", "invalidField"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("GET /borrow/search with invalid sortDir should return 400 Bad Request")
+    void searchBorrowedBooks_WithInvalidSortDir_ShouldReturnBadRequest() throws Exception {
+        when(borrowService.searchBorrowedBooks("clean", 0, 10, "id", "invalidDir"))
+                .thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid sortDir: invalidDir"));
+
+        mockMvc.perform(get("/borrow/search")
+                        .param("query", "clean")
+                        .param("sortDir", "invalidDir"))
+                .andExpect(status().isBadRequest());
     }
 }

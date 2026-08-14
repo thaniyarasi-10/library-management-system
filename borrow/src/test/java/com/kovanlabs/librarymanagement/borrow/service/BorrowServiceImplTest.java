@@ -22,12 +22,16 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -91,5 +95,27 @@ class BorrowServiceImplTest {
         assertEquals(3L, response.content().get(0).bookId());
         assertEquals(0, response.pageNo());
         assertEquals(1L, response.totalElements());
+    }
+
+    @Test
+    @DisplayName("searchBorrowedBooks with invalid sortBy should throw ResponseStatusException BAD_REQUEST")
+    void searchBorrowedBooks_WithInvalidSortBy_ShouldThrowResponseStatusException() {
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> borrowService.searchBorrowedBooks("clean", 0, 10, "invalidField", "asc")
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("searchBorrowedBooks with invalid sortDir should throw ResponseStatusException BAD_REQUEST")
+    void searchBorrowedBooks_WithInvalidSortDir_ShouldThrowResponseStatusException() {
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> borrowService.searchBorrowedBooks("clean", 0, 10, "id", "INVALID_DIR")
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
     }
 }
