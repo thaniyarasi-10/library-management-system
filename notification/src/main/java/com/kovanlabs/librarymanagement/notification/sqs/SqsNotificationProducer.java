@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
+import software.amazon.awssdk.services.sqs.model.SqsException;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +34,8 @@ public class SqsNotificationProducer {
 
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize notification", e);
+        }catch (SqsException e) {
+            throw new RuntimeException("Failed to send notification to SQS", e);
         }
     }
 }
