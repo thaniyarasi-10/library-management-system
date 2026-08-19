@@ -60,6 +60,9 @@ public class SecurityConfig {
                         .requestMatchers("/borrow/**")
                         .hasAnyRole("USER", "ADMIN")
 
+                        .requestMatchers("/fines/**")
+                        .hasAnyRole("USER", "ADMIN")
+
                         .requestMatchers(HttpMethod.GET, "/users/**")
                         .hasRole("ADMIN")
 

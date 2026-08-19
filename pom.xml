@@ -24,6 +24,7 @@
         <module>application</module>
         <module>borrow</module>
         <module>notification</module>
+        <module>fine</module>
     </modules>
 
     <dependencyManagement>
@@ -59,6 +60,12 @@
             <dependency>
                 <groupId>com.kovanlabs</groupId>
                 <artifactId>notification</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.kovanlabs</groupId>
+                <artifactId>fine</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

@@ -35,6 +35,10 @@
             <artifactId>notification</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.kovanlabs</groupId>
+            <artifactId>fine</artifactId>
+        </dependency>
         
         <!-- Spring Boot Starter Web -->
         <dependency>

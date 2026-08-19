@@ -11,10 +11,11 @@ import java.util.stream.Collectors;
 
 @Component
 public class NotificationFactory {
-    private final Map<NotificationTypeEnum, NotificationService> notificationMap ;
 
-    public NotificationFactory (List<NotificationService> notificationServices){
-        this.notificationMap =  notificationServices.stream()
+    private final Map<NotificationTypeEnum, NotificationService> notificationMap;
+
+    public NotificationFactory(List<NotificationService> notificationServices) {
+        this.notificationMap = notificationServices.stream()
                 .collect(Collectors.toMap(
                         NotificationService::getType,
                         Function.identity()
@@ -22,15 +23,10 @@ public class NotificationFactory {
     }
 
     public NotificationService get(NotificationTypeEnum type) {
-
         NotificationService service = notificationMap.get(type);
         if (service == null) {
-            throw new IllegalArgumentException(
-                    "Notification type not supported : " + type
-            );
+            throw new IllegalArgumentException("Notification type not supported: " + type);
         }
         return service;
     }
-
-
 }

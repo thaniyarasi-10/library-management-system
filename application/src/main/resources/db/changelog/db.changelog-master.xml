@@ -11,5 +11,6 @@
     <include file="db/changelog/changes/02-add-coverimage.xml"/>
     <include file="/db/changelog/changes/03-rename-coverimage.xml"/>
     <include file="db/changelog/changes/04-add-coverimage-key.xml"/>
+    <include file="db/changelog/changes/05-create-fine-table.xml"/>
 
 </databaseChangeLog>
