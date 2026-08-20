@@ -12,6 +12,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,13 +25,16 @@ import java.util.List;
 import java.util.stream.Collectors;
 
     @Service
-    @RequiredArgsConstructor
     @Transactional(readOnly = true)
     public class UserServiceImpl implements UserService {
 
         private final UserRepository userRepository;
-        private final BookService bookService;
         private final PasswordEncoder passwordEncoder;
+
+        public UserServiceImpl(UserRepository userRepository, @Lazy PasswordEncoder passwordEncoder) {
+            this.userRepository = userRepository;
+            this.passwordEncoder = passwordEncoder;
+        }
 
         @Override
         @Transactional
