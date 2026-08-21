@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Overdue Books Notice</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.5; color: #333;">
+
+    <h2>Overdue Books Notice</h2>
+    <p>Dear {{USER_NAME}},</p>
+    <p>The following book(s) borrowed by you are past their due date. Please return them as soon as possible.</p>
+
+    <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+        <thead>
+            <tr style="background-color: #f2f2f2;">
+                <th>Title</th>
+                <th>Author</th>
+                <th>Due Date</th>
+                <th>Days Overdue</th>
+                <th>Fine</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{BOOK_ROWS}}
+        </tbody>
+    </table>
+
+    <p style="font-weight: bold; margin-top: 15px;">
+        Total Pending Fine: {{TOTAL_FINE}}
+    </p>
+
+    <p>Thank you,<br/>Library Management Team</p>
+
+</body>
+</html>

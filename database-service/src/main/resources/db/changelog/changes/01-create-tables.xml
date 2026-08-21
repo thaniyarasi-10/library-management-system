@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="1" author="thani">
+        <createTable tableName="books">
+            <column name="uuid" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="title" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="author" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="isbn" type="varchar(50)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+        </createTable>
+
+
+        <createTable tableName="user">
+            <column name="uuid" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="email" type="varchar(255)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+        </createTable>
+
+        <createTable tableName="user_books">
+            <column name="user_uuid" type="varchar(36)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="book_uuid" type="varchar(36)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addPrimaryKey tableName="user_books" columnNames="user_uuid, book_uuid" constraintName="pk_user_books"/>
+
+
+        <addForeignKeyConstraint baseTableName="user_books" baseColumnNames="user_uuid"
+                                 constraintName="fk_user_books_user"
+                                 referencedTableName="user" referencedColumnNames="uuid"
+                                 onDelete="CASCADE"/>
+
+        <addForeignKeyConstraint baseTableName="user_books" baseColumnNames="book_uuid"
+                                 constraintName="fk_user_books_books"
+                                 referencedTableName="books" referencedColumnNames="uuid"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+</databaseChangeLog>
