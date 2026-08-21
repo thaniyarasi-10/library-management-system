@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="7-update-user-uuid" author="thani">
+        <!-- Generate UUIDs for any user records where uuid is NULL or empty -->
+        <sql>
+            UPDATE user SET uuid = UUID() WHERE uuid IS NULL OR uuid = '';
+            UPDATE books SET uuid = UUID() WHERE uuid IS NULL OR uuid = '';
+            UPDATE fine SET uuid = UUID() WHERE uuid IS NULL OR uuid = '';
+            UPDATE borrow SET uuid = UUID() WHERE uuid IS NULL OR uuid = '';
+        </sql>
+
+        <!-- Make uuid column NOT NULL -->
+        <addNotNullConstraint tableName="user" columnName="uuid" columnDataType="varchar(36)"/>
+    </changeSet>
+
+</databaseChangeLog>
