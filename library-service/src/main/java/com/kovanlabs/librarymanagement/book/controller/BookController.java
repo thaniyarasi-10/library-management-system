@@ -14,6 +14,8 @@ import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.validation.Valid;
+
 @RestController
 @RequestMapping("/books")
 @RequiredArgsConstructor
@@ -23,7 +25,7 @@ public class BookController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public BookResponse createBook(@RequestBody BookRequest request) {
+    public BookResponse createBook(@Valid @RequestBody BookRequest request) {
         return bookService.createBook(request);
     }
 
@@ -52,7 +54,7 @@ public class BookController {
     }
 
     @PutMapping("/{id}")
-    public BookResponse updateBook(@PathVariable("id") Long id, @RequestBody BookRequest request) {
+    public BookResponse updateBook(@PathVariable("id") Long id, @Valid @RequestBody BookRequest request) {
         return bookService.updateBook(id, request);
     }
 
