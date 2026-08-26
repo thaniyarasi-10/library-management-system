@@ -3,6 +3,7 @@ package com.kovanlabs.librarymanagement.user.service;
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
+import com.kovanlabs.librarymanagement.user.mapping.UserMapping;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import org.springframework.data.domain.Page;
@@ -16,6 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 
@@ -37,21 +40,19 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "users", allEntries = true)
     public UserResponse createUser(UserRequest request) {
-        User user = User.builder()
-                .email(request.email())
-                .password(passwordEncoder.encode(request.password()))
-                .name(request.name())
-                .build();
+        User user = UserMapping.mapToEntity(request);
+        if (user != null && request.password() != null) {
+            user.setPassword(passwordEncoder.encode(request.password()));
+        }
         User savedUser = userRepository.save(user);
-        return mapToResponse(savedUser);
+        return UserMapping.mapToResponse(savedUser);
     }
 
     @Override
     public List<UserResponse> getAllUsers() {
-        return userRepository.findAll().stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
+        return UserMapping.mapToResponse(userRepository.findAll());
     }
 
     @Override
@@ -61,7 +62,7 @@ public class UserServiceImpl implements UserService {
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<User> usersPage = userRepository.findAll(pageable);
         List<UserResponse> content = usersPage.getContent().stream()
-                .map(this::mapToResponse)
+                .map(UserMapping::mapToResponse)
                 .collect(Collectors.toList());
 
         return new PagedResponse<>(
@@ -81,7 +82,7 @@ public class UserServiceImpl implements UserService {
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<User> usersPage = userRepository.searchUsers(query, pageable);
         List<UserResponse> content = usersPage.getContent().stream()
-                .map(this::mapToResponse)
+                .map(UserMapping::mapToResponse)
                 .collect(Collectors.toList());
 
         return new PagedResponse<>(
@@ -95,14 +96,16 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Cacheable(value = "users", key = "#p0")
     public UserResponse getUserById(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
-        return mapToResponse(user);
+        return UserMapping.mapToResponse(user);
     }
 
     @Override
     @Transactional
+    @CacheEvict(value = "users", key = "#p0")
     public UserResponse updateUser(Long id, UserRequest request) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
@@ -110,11 +113,12 @@ public class UserServiceImpl implements UserService {
         user.setEmail(request.email());
 
         User updatedUser = userRepository.save(user);
-        return mapToResponse(updatedUser);
+        return UserMapping.mapToResponse(updatedUser);
     }
 
     @Override
     @Transactional
+    @CacheEvict(value = "users", key = "#p0")
     public void deleteUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
@@ -142,14 +146,5 @@ public class UserServiceImpl implements UserService {
                             .build();
                     return userRepository.save(newUser);
                 });
-    }
-
-    private UserResponse mapToResponse(User user) {
-        return new UserResponse(
-                user.getUuid(),
-                user.getId(),
-                user.getName(),
-                user.getEmail()
-        );
     }
 }

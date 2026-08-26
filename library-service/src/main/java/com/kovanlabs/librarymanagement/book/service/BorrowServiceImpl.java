@@ -2,6 +2,7 @@ package com.kovanlabs.librarymanagement.book.service;
 
 import com.kovanlabs.librarymanagement.book.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.book.dto.BorrowResponseDto;
+import com.kovanlabs.librarymanagement.book.mapping.BookMapping;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
@@ -41,25 +42,11 @@ public class BorrowServiceImpl implements BorrowService {
         Book book = bookRepository.findById(borrowRequestDto.bookId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with id: " + borrowRequestDto.bookId()));
 
-        Borrow borrow = Borrow.builder()
-                .book(book)
-                .user(user)
-                .borrowDate(LocalDate.now())
-                .dueDate(LocalDate.now().plusDays(14))
-                .status(BorrowStatus.BORROWED)
-                .build();
+        Borrow borrow = BookMapping.mapToEntity(borrowRequestDto, book, user);
 
         Borrow savedBorrow = borrowRepository.save(borrow);
 
-        return BorrowResponseDto.builder()
-                .borrowUuid(savedBorrow.getUuid())
-                .id(savedBorrow.getId())
-                .bookId(savedBorrow.getBook().getUuid())
-                .userId(savedBorrow.getUser().getUuid())
-                .borrowDate(savedBorrow.getBorrowDate())
-                .dueDate(savedBorrow.getDueDate())
-                .status(savedBorrow.getStatus())
-                .build();
+        return BookMapping.mapToResponse(savedBorrow);
     }
 
     @Override
@@ -80,15 +67,6 @@ public class BorrowServiceImpl implements BorrowService {
 
         Borrow updatedBorrow = borrowRepository.save(borrow);
 
-        return BorrowResponseDto.builder()
-                .borrowUuid(updatedBorrow.getUuid())
-                .id(updatedBorrow.getId())
-                .bookId(updatedBorrow.getBook().getUuid())
-                .userId(updatedBorrow.getUser().getUuid())
-                .borrowDate(updatedBorrow.getBorrowDate())
-                .dueDate(updatedBorrow.getDueDate())
-                .returnedDate(updatedBorrow.getReturnedDate())
-                .status(updatedBorrow.getStatus())
-                .build();
+        return BookMapping.mapToResponse(updatedBorrow);
     }
 }
