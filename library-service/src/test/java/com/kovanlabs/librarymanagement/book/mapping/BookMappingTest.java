@@ -8,7 +8,9 @@ import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mapstruct.factory.Mappers;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -16,7 +18,14 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class BookMappingTest {
+class BookMapperTest {
+
+    private BookMapper bookMapper;
+
+    @BeforeEach
+    void setUp() {
+        bookMapper = Mappers.getMapper(BookMapper.class);
+    }
 
     @Test
     void testMapToResponse_SingleBook() {
@@ -29,7 +38,7 @@ class BookMappingTest {
                 .isbn("978-0134685991")
                 .build();
 
-        BookResponse response = BookMapping.mapToResponse(book);
+        BookResponse response = bookMapper.mapToResponse(book);
 
         assertNotNull(response);
         assertEquals(uuid, response.uuid());
@@ -41,7 +50,7 @@ class BookMappingTest {
 
     @Test
     void testMapToResponse_NullBook() {
-        assertNull(BookMapping.mapToResponse((Book) null));
+        assertNull(bookMapper.mapToResponse((Book) null));
     }
 
     @Test
@@ -49,7 +58,7 @@ class BookMappingTest {
         Book book1 = Book.builder().id(1L).title("Book 1").build();
         Book book2 = Book.builder().id(2L).title("Book 2").build();
 
-        List<BookResponse> responses = BookMapping.mapToResponse(List.of(book1, book2));
+        List<BookResponse> responses = bookMapper.mapToResponse(List.of(book1, book2));
 
         assertNotNull(responses);
         assertEquals(2, responses.size());
@@ -59,9 +68,8 @@ class BookMappingTest {
 
     @Test
     void testMapToResponse_NullBookList() {
-        List<BookResponse> responses = BookMapping.mapToResponse((List<Book>) null);
-        assertNotNull(responses);
-        assertTrue(responses.isEmpty());
+        List<BookResponse> responses = bookMapper.mapToResponse((List<Book>) null);
+        assertNull(responses);
     }
 
     @Test
@@ -82,7 +90,7 @@ class BookMappingTest {
                 .status(BorrowStatus.BORROWED)
                 .build();
 
-        BorrowResponseDto response = BookMapping.mapToResponse(borrow);
+        BorrowResponseDto response = bookMapper.mapToResponse(borrow);
 
         assertNotNull(response);
         assertEquals(borrowUuid, response.borrowUuid());
@@ -94,7 +102,7 @@ class BookMappingTest {
 
     @Test
     void testMapToResponse_NullBorrow() {
-        assertNull(BookMapping.mapToResponse((Borrow) null));
+        assertNull(bookMapper.mapToResponse((Borrow) null));
     }
 
     @Test
@@ -102,7 +110,7 @@ class BookMappingTest {
         Borrow b1 = Borrow.builder().id(1L).status(BorrowStatus.BORROWED).build();
         Borrow b2 = Borrow.builder().id(2L).status(BorrowStatus.RETURNED).build();
 
-        List<BorrowResponseDto> responses = BookMapping.mapToResponseForBorrows(List.of(b1, b2));
+        List<BorrowResponseDto> responses = bookMapper.mapToResponseForBorrows(List.of(b1, b2));
 
         assertNotNull(responses);
         assertEquals(2, responses.size());
@@ -112,16 +120,15 @@ class BookMappingTest {
 
     @Test
     void testMapToResponse_NullBorrowList() {
-        List<BorrowResponseDto> responses = BookMapping.mapToResponseForBorrows((List<Borrow>) null);
-        assertNotNull(responses);
-        assertTrue(responses.isEmpty());
+        List<BorrowResponseDto> responses = bookMapper.mapToResponseForBorrows((List<Borrow>) null);
+        assertNull(responses);
     }
 
     @Test
     void testMapToEntity_BookRequest() {
         BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "978-0132350884");
 
-        Book book = BookMapping.mapToEntity(request);
+        Book book = bookMapper.mapToEntity(request);
 
         assertNotNull(book);
         assertEquals("Clean Code", book.getTitle());
@@ -131,7 +138,7 @@ class BookMappingTest {
 
     @Test
     void testMapToEntity_NullBookRequest() {
-        assertNull(BookMapping.mapToEntity((BookRequest) null));
+        assertNull(bookMapper.mapToEntity((BookRequest) null));
     }
 
     @Test
@@ -140,7 +147,7 @@ class BookMappingTest {
         Book book = Book.builder().id(100L).build();
         User user = User.builder().id(200L).build();
 
-        Borrow borrow = BookMapping.mapToEntity(request, book, user);
+        Borrow borrow = bookMapper.mapToEntity(request, book, user);
 
         assertNotNull(borrow);
         assertEquals(book, borrow.getBook());

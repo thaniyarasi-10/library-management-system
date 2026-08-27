@@ -3,14 +3,23 @@ package com.kovanlabs.librarymanagement.user.mapping;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mapstruct.factory.Mappers;
 
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class UserMappingTest {
+class UserMapperTest {
+
+    private UserMapper userMapper;
+
+    @BeforeEach
+    void setUp() {
+        userMapper = Mappers.getMapper(UserMapper.class);
+    }
 
     @Test
     void testMapToResponse_SingleUser() {
@@ -22,7 +31,7 @@ class UserMappingTest {
                 .email("john@example.com")
                 .build();
 
-        UserResponse response = UserMapping.mapToResponse(user);
+        UserResponse response = userMapper.mapToResponse(user);
 
         assertNotNull(response);
         assertEquals(uuid, response.uuid());
@@ -33,7 +42,7 @@ class UserMappingTest {
 
     @Test
     void testMapToResponse_NullUser() {
-        assertNull(UserMapping.mapToResponse((User) null));
+        assertNull(userMapper.mapToResponse((User) null));
     }
 
     @Test
@@ -41,7 +50,7 @@ class UserMappingTest {
         User user1 = User.builder().id(1L).name("User 1").email("user1@example.com").build();
         User user2 = User.builder().id(2L).name("User 2").email("user2@example.com").build();
 
-        List<UserResponse> responses = UserMapping.mapToResponse(List.of(user1, user2));
+        List<UserResponse> responses = userMapper.mapToResponse(List.of(user1, user2));
 
         assertNotNull(responses);
         assertEquals(2, responses.size());
@@ -51,16 +60,15 @@ class UserMappingTest {
 
     @Test
     void testMapToResponse_NullList() {
-        List<UserResponse> responses = UserMapping.mapToResponse((List<User>) null);
-        assertNotNull(responses);
-        assertTrue(responses.isEmpty());
+        List<UserResponse> responses = userMapper.mapToResponse((List<User>) null);
+        assertNull(responses);
     }
 
     @Test
     void testMapToEntity() {
         UserRequest request = new UserRequest("test@example.com", "password123", "Test User");
 
-        User entity = UserMapping.mapToEntity(request);
+        User entity = userMapper.mapToEntity(request);
 
         assertNotNull(entity);
         assertEquals("test@example.com", entity.getEmail());
@@ -69,6 +77,6 @@ class UserMappingTest {
 
     @Test
     void testMapToEntity_NullRequest() {
-        assertNull(UserMapping.mapToEntity(null));
+        assertNull(userMapper.mapToEntity(null));
     }
 }

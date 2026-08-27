@@ -24,13 +24,13 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class OverdueNotificationScheduler {
+public class NotificationScheduler {
 
     private final BorrowRepository borrowRepository;
     private final SqsNotificationProducer sqsNotificationProducer;
     private final FineService fineService;
 
-    @Scheduled(cron = "${notification.scheduling.cron:0 0/5 * * * *}")
+    @Scheduled(cron = "${notification.scheduling.cron:0 0 0 * * *}")
     @Transactional
     public void sendOverdueNotifications() {
 
@@ -60,8 +60,8 @@ public class OverdueNotificationScheduler {
                     .map(b -> {
                         if (b.getStatus() != BorrowStatus.OVERDUE) {
                             b.setStatus(BorrowStatus.OVERDUE);
-                            borrowRepository.save(b);
                         }
+
 
                         FineResult result = fineService.calculateFine(b);
                         fineService.processFineForBorrow(b);
@@ -75,6 +75,7 @@ public class OverdueNotificationScheduler {
                         );
                     })
                     .toList();
+            borrowRepository.saveAll(borrows);
 
             BigDecimal userTotalPendingFine = fineService.calculateTotalPendingFineForUser(user.getUuid());
             double totalFine = userTotalPendingFine.doubleValue();
