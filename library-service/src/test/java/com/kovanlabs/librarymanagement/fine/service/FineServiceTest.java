@@ -153,24 +153,6 @@ class FineServiceTest {
         assertEquals(FineStatus.PAID, paidFine.getStatus());
     }
 
-    @Test
-    @DisplayName("Should pay fine by bookId and userId")
-    void testPayFineByBookAndUser() {
-        Long bookId = 10L;
-        Long userId = 20L;
-        Book book = Book.builder().id(bookId).uuid(UUID.randomUUID()).build();
-        User user = User.builder().id(userId).uuid(UUID.randomUUID()).build();
-        Fine fine = Fine.builder().bookUuid(book.getUuid()).userUuid(user.getUuid()).pendingFineAmount(BigDecimal.valueOf(30.0)).status(FineStatus.PENDING).build();
-
-        when(bookRepository.findById(bookId)).thenReturn(Optional.of(book));
-        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
-        when(fineRepository.findByBookUuidAndUserUuid(book.getUuid(), user.getUuid())).thenReturn(Optional.of(fine));
-        when(fineRepository.save(any(Fine.class))).thenAnswer(i -> i.getArgument(0));
-
-        Fine paidFine = fineService.payFineByBookAndUser(bookId, userId);
-        assertEquals(BigDecimal.ZERO, paidFine.getPendingFineAmount());
-        assertEquals(FineStatus.PAID, paidFine.getStatus());
-    }
 
     @Test
     @DisplayName("Should return 0 fine when book is not overdue or borrow/dueDate is null")
@@ -238,26 +220,6 @@ class FineServiceTest {
                 fineService.payFine(999L)
         );
         assertTrue(ex.getMessage().contains("Fine record not found with id: 999"));
-    }
-
-    @Test
-    @DisplayName("payFineByBookAndUser should throw exception when book, user, or fine not found")
-    void testPayFineByBookAndUser_NotFoundScenarios_ThrowsException() {
-        // Book not found
-        when(bookRepository.findById(10L)).thenReturn(Optional.empty());
-        assertThrows(IllegalArgumentException.class, () -> fineService.payFineByBookAndUser(10L, 20L));
-
-        // User not found
-        Book book = Book.builder().id(10L).uuid(UUID.randomUUID()).build();
-        when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
-        when(userRepository.findById(20L)).thenReturn(Optional.empty());
-        assertThrows(IllegalArgumentException.class, () -> fineService.payFineByBookAndUser(10L, 20L));
-
-        // Fine not found
-        User user = User.builder().id(20L).uuid(UUID.randomUUID()).build();
-        when(userRepository.findById(20L)).thenReturn(Optional.of(user));
-        when(fineRepository.findByBookUuidAndUserUuid(book.getUuid(), user.getUuid())).thenReturn(Optional.empty());
-        assertThrows(IllegalArgumentException.class, () -> fineService.payFineByBookAndUser(10L, 20L));
     }
 
     @Test

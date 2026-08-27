@@ -105,7 +105,7 @@ public class BookServiceImpl implements BookService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "books", key = "#p0")
+    @CacheEvict(value = "books", allEntries = true)
     public BookResponse updateBook(Long id, BookRequest request) {
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
@@ -120,7 +120,7 @@ public class BookServiceImpl implements BookService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "books", key = "#p0")
+    @CacheEvict(value = "books", allEntries = true)
     public void deleteBook(Long id) {
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
@@ -128,7 +128,7 @@ public class BookServiceImpl implements BookService {
     }
 
     @Transactional
-    @CacheEvict(value = "books", key = "#p0")
+    @CacheEvict(value = "books",allEntries = true)
     public String uploadBookCover(Long bookId, MultipartFile file)  {
 
         Book book = bookRepository.findById(bookId)
