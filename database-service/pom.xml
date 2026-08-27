@@ -47,4 +47,29 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.liquibase</groupId>
+                <artifactId>liquibase-maven-plugin</artifactId>
+                <version>5.0.1</version>
+
+                <configuration>
+                    <changeLogFile>
+                        src/main/resources/db/changelog/db.changelog-master.xml
+                    </changeLogFile>
+
+                    <url>
+                        jdbc:mysql://localhost:3306/library?allowPublicKeyRetrieval=true&amp;useSSL=false&amp;serverTimezone=UTC
+                    </url>
+
+                    <username>root</username>
+
+                    <password>${env.DB_PASSWORD}</password>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>

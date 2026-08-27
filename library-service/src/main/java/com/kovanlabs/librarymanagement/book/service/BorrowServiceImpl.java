@@ -2,7 +2,7 @@ package com.kovanlabs.librarymanagement.book.service;
 
 import com.kovanlabs.librarymanagement.book.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.book.dto.BorrowResponseDto;
-import com.kovanlabs.librarymanagement.book.mapping.BookMapping;
+import com.kovanlabs.librarymanagement.book.mapping.BookMapper;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
@@ -25,6 +25,7 @@ public class BorrowServiceImpl implements BorrowService {
     private final BookRepository bookRepository;
     private final UserRepository userRepository;
     private final UserFineChecker userFineChecker;
+    private final BookMapper bookMapper;
 
     @Override
     public BorrowResponseDto borrowBook(BorrowRequestDto borrowRequestDto) {
@@ -42,11 +43,11 @@ public class BorrowServiceImpl implements BorrowService {
         Book book = bookRepository.findById(borrowRequestDto.bookId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with id: " + borrowRequestDto.bookId()));
 
-        Borrow borrow = BookMapping.mapToEntity(borrowRequestDto, book, user);
+        Borrow borrow = bookMapper.mapToEntity(borrowRequestDto, book, user);
 
         Borrow savedBorrow = borrowRepository.save(borrow);
 
-        return BookMapping.mapToResponse(savedBorrow);
+        return bookMapper.mapToResponse(savedBorrow);
     }
 
     @Override
@@ -67,6 +68,6 @@ public class BorrowServiceImpl implements BorrowService {
 
         Borrow updatedBorrow = borrowRepository.save(borrow);
 
-        return BookMapping.mapToResponse(updatedBorrow);
+        return bookMapper.mapToResponse(updatedBorrow);
     }
 }

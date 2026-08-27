@@ -9,12 +9,15 @@ import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.book.mapping.BookMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mapstruct.factory.Mappers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -40,6 +43,9 @@ class BorrowServiceImplTest {
 
     @Mock
     private UserFineChecker userFineChecker;
+
+    @Spy
+    private BookMapper bookMapper = Mappers.getMapper(BookMapper.class);
 
     @InjectMocks
     private BorrowServiceImpl borrowService;
@@ -174,7 +180,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook and returnBook with null userFineChecker should succeed")
     void borrowAndReturnBook_withNullUserFineChecker_ShouldSucceed() {
-        BorrowServiceImpl serviceWithoutFineChecker = new BorrowServiceImpl(borrowRepository, bookRepository, userRepository, null);
+        BorrowServiceImpl serviceWithoutFineChecker = new BorrowServiceImpl(borrowRepository, bookRepository, userRepository, null, bookMapper);
 
         BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));

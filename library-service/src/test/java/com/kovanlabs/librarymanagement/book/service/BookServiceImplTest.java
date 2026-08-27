@@ -7,11 +7,14 @@ import com.kovanlabs.librarymanagement.book.dto.BookResponse;
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
+import com.kovanlabs.librarymanagement.book.mapping.BookMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mapstruct.factory.Mappers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.*;
 import org.springframework.mock.web.MockMultipartFile;
@@ -34,6 +37,9 @@ class BookServiceImplTest {
 
     @Mock
     private S3Service s3Service;
+
+    @Spy
+    private BookMapper bookMapper = Mappers.getMapper(BookMapper.class);
 
     @InjectMocks
     private BookServiceImpl bookService;

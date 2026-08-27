@@ -3,9 +3,10 @@ package com.kovanlabs.librarymanagement.user.service;
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
-import com.kovanlabs.librarymanagement.user.mapping.UserMapping;
+import com.kovanlabs.librarymanagement.user.mapping.UserMapper;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -28,31 +29,34 @@ import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
+@Slf4j
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final UserMapper userMapper;
 
-    public UserServiceImpl(UserRepository userRepository, @Lazy PasswordEncoder passwordEncoder) {
+    public UserServiceImpl(UserRepository userRepository, @Lazy PasswordEncoder passwordEncoder, UserMapper userMapper) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.userMapper = userMapper;
     }
 
     @Override
     @Transactional
     @CacheEvict(value = "users", allEntries = true)
     public UserResponse createUser(UserRequest request) {
-        User user = UserMapping.mapToEntity(request);
+        User user = userMapper.mapToEntity(request);
         if (user != null && request.password() != null) {
             user.setPassword(passwordEncoder.encode(request.password()));
         }
         User savedUser = userRepository.save(user);
-        return UserMapping.mapToResponse(savedUser);
+        return userMapper.mapToResponse(savedUser);
     }
 
     @Override
     public List<UserResponse> getAllUsers() {
-        return UserMapping.mapToResponse(userRepository.findAll());
+        return userMapper.mapToResponse(userRepository.findAll());
     }
 
     @Override
@@ -62,7 +66,7 @@ public class UserServiceImpl implements UserService {
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<User> usersPage = userRepository.findAll(pageable);
         List<UserResponse> content = usersPage.getContent().stream()
-                .map(UserMapping::mapToResponse)
+                .map(userMapper::mapToResponse)
                 .collect(Collectors.toList());
 
         return new PagedResponse<>(
@@ -82,7 +86,7 @@ public class UserServiceImpl implements UserService {
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<User> usersPage = userRepository.searchUsers(query, pageable);
         List<UserResponse> content = usersPage.getContent().stream()
-                .map(UserMapping::mapToResponse)
+                .map(userMapper::mapToResponse)
                 .collect(Collectors.toList());
 
         return new PagedResponse<>(
@@ -98,9 +102,10 @@ public class UserServiceImpl implements UserService {
     @Override
     @Cacheable(value = "users", key = "#p0")
     public UserResponse getUserById(Long id) {
+        log.info("CACHE MISS - Fetching user {} from DATABASE", id);
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
-        return UserMapping.mapToResponse(user);
+        return userMapper.mapToResponse(user);
     }
 
     @Override
@@ -113,7 +118,7 @@ public class UserServiceImpl implements UserService {
         user.setEmail(request.email());
 
         User updatedUser = userRepository.save(user);
-        return UserMapping.mapToResponse(updatedUser);
+        return userMapper.mapToResponse(updatedUser);
     }
 
     @Override
