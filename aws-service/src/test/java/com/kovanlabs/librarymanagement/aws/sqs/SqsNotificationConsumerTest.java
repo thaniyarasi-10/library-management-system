@@ -21,6 +21,7 @@ import software.amazon.awssdk.services.sqs.model.ReceiveMessageResponse;
 import java.util.Collections;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -97,5 +98,33 @@ class SqsNotificationConsumerTest {
 
         verify(notificationService, never()).send(any());
         verify(sqsClient, never()).deleteMessage(any(DeleteMessageRequest.class));
+    }
+
+    @Test
+    @DisplayName("Should handle message processing error and continue")
+    void testConsumeMessages_ProcessingError() {
+        Message message = Message.builder()
+                .messageId("msg-bad")
+                .receiptHandle("handle-bad")
+                .body("invalid-json")
+                .build();
+
+        ReceiveMessageResponse response = ReceiveMessageResponse.builder()
+                .messages(List.of(message))
+                .build();
+
+        when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class))).thenReturn(response);
+
+        assertDoesNotThrow(() -> consumer.consumeMessages());
+        verify(sqsClient, never()).deleteMessage(any(DeleteMessageRequest.class));
+    }
+
+    @Test
+    @DisplayName("Should handle SQS receive exception gracefully")
+    void testConsumeMessages_SqsException() {
+        when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
+                .thenThrow(new RuntimeException("SQS Connection Failed"));
+
+        assertDoesNotThrow(() -> consumer.consumeMessages());
     }
 }

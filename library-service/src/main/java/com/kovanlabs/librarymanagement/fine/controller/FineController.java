@@ -23,14 +23,6 @@ public class FineController {
         return ResponseEntity.ok(fine);
     }
 
-    @PostMapping("/pay")
-    public ResponseEntity<Fine> payFineByBookAndUser(
-            @RequestParam("bookId") Long bookId,
-            @RequestParam("userId") Long userId) {
-        Fine fine = fineService.payFineByBookAndUser(bookId, userId);
-        return ResponseEntity.ok(fine);
-    }
-
     @GetMapping("/user/{userId}")
     public ResponseEntity<List<Fine>> getFinesByUserId(@PathVariable("userId") Long userId) {
         return ResponseEntity.ok(fineService.getFinesByUserId(userId));

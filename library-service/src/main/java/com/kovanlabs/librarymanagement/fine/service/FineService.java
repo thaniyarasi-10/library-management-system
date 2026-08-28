@@ -120,21 +120,6 @@ public class FineService implements UserFineChecker {
         return fineRepository.save(fine);
     }
 
-    @Transactional
-    public Fine payFineByBookAndUser(Long bookId, Long userId) {
-        Book book = bookRepository.findById(bookId)
-                .orElseThrow(() -> new IllegalArgumentException("Book not found with id: " + bookId));
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found with id: " + userId));
-
-        Fine fine = fineRepository.findByBookUuidAndUserUuid(book.getUuid(), user.getUuid())
-                .orElseThrow(() -> new IllegalArgumentException("Fine record not found for bookId: " + bookId + " and userId: " + userId));
-        fine.setPendingFineAmount(BigDecimal.ZERO);
-        fine.setStatus(FineStatus.PAID);
-        log.info("Fine record marked as PAID for bookUuid {} and userUuid {}", book.getUuid(), user.getUuid());
-        return fineRepository.save(fine);
-    }
-
     @Override
     public boolean hasPendingFines(Long userId) {
         BigDecimal totalPending = calculateTotalPendingFineForUser(userId);

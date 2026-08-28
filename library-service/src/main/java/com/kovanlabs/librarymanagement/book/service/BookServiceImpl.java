@@ -2,12 +2,16 @@ package com.kovanlabs.librarymanagement.book.service;
 
 import com.kovanlabs.librarymanagement.book.dto.BookRequest;
 import com.kovanlabs.librarymanagement.book.dto.BookResponse;
+import com.kovanlabs.librarymanagement.book.mapping.BookMapper;
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.aws.s3.dto.S3UploadResponse;
 import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -25,39 +29,39 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 @Transactional(readOnly = true)
 public class BookServiceImpl implements BookService {
 
     private final BookRepository bookRepository;
     private final S3Service s3Service;
+    private final BookMapper bookMapper;
 
     @Override
     @Transactional
+    @CacheEvict(value = "books", allEntries = true)
     public BookResponse createBook(BookRequest request) {
-        Book book = Book.builder()
-                .title(request.title())
-                .author(request.author())
-                .isbn(request.isbn())
-                .build();
+        Book book = bookMapper.mapToEntity(request);
         Book savedBook = bookRepository.save(book);
-        return mapToResponse(savedBook);
+        return bookMapper.mapToResponse(savedBook);
     }
 
     @Override
+    @Cacheable(value = "books")
     public List<BookResponse> getAllBooks() {
-        return bookRepository.findAll().stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
+        log.info("CACHE MISS - Fetching books from DATABASE");
+        return bookMapper.mapToResponse(bookRepository.findAll());
     }
 
     @Override
     public PagedResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDir) {
+
         Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<Book> booksPage = bookRepository.findAll(pageable);
         List<BookResponse> content = booksPage.getContent().stream()
-                .map(this::mapToResponse)
+                .map(bookMapper::mapToResponse)
                 .collect(Collectors.toList());
 
         return new PagedResponse<>(
@@ -77,7 +81,7 @@ public class BookServiceImpl implements BookService {
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<Book> booksPage = bookRepository.searchBooks(query, pageable);
         List<BookResponse> content = booksPage.getContent().stream()
-                .map(this::mapToResponse)
+                .map(bookMapper::mapToResponse)
                 .collect(Collectors.toList());
 
         return new PagedResponse<>(
@@ -91,14 +95,17 @@ public class BookServiceImpl implements BookService {
     }
 
     @Override
+    @Cacheable(value = "books", key = "#p0")
     public BookResponse getBookById(Long id) {
+        log.info("CACHE MISS - Fetching book {} from DATABASE", id);
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
-        return mapToResponse(book);
+        return bookMapper.mapToResponse(book);
     }
 
     @Override
     @Transactional
+    @CacheEvict(value = "books", allEntries = true)
     public BookResponse updateBook(Long id, BookRequest request) {
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
@@ -108,28 +115,20 @@ public class BookServiceImpl implements BookService {
         book.setIsbn(request.isbn());
         
         Book updatedBook = bookRepository.save(book);
-        return mapToResponse(updatedBook);
+        return bookMapper.mapToResponse(updatedBook);
     }
 
     @Override
     @Transactional
+    @CacheEvict(value = "books", allEntries = true)
     public void deleteBook(Long id) {
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
         bookRepository.delete(book);
     }
 
-    private BookResponse mapToResponse(Book book) {
-        return new BookResponse(
-                book.getUuid(),
-                book.getId(),
-                book.getTitle(),
-                book.getAuthor(),
-                book.getIsbn()
-        );
-    }
-
     @Transactional
+    @CacheEvict(value = "books",allEntries = true)
     public String uploadBookCover(Long bookId, MultipartFile file)  {
 
         Book book = bookRepository.findById(bookId)

@@ -111,4 +111,50 @@ class UserControllerTest {
 
         verify(userService, times(1)).deleteUser(id1);
     }
+
+    @Test
+    @DisplayName("POST /user should create and return user")
+    void createUser_ShouldReturnCreatedUser() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com");
+        when(userService.createUser(any(UserRequest.class))).thenReturn(response);
+
+        String jsonPayload = """
+                {
+                    "email": "alice@example.com",
+                    "password": "Password123!",
+                    "name": "Alice"
+                }
+                """;
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("Alice"));
+    }
+
+    @Test
+    @DisplayName("GET /user/{id} should return user by id")
+    void getUserById_ShouldReturnUser() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com");
+        when(userService.getUserById(id1)).thenReturn(response);
+
+        mockMvc.perform(get("/user/" + id1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"));
+    }
+
+    @Test
+    @DisplayName("GET /user/search should return paged users")
+    void searchUsers_ShouldReturnPagedUsers() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com");
+        PagedResponse<UserResponse> pagedResponse = new PagedResponse<>(
+                List.of(response), 0, 10, 1L, 1, true
+        );
+        when(userService.searchUsers("Alice", 0, 10, "id", "asc")).thenReturn(pagedResponse);
+
+        mockMvc.perform(get("/user/search").param("query", "Alice"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].name").value("Alice"));
+    }
 }

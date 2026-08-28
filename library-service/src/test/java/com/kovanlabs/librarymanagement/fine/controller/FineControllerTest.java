@@ -75,4 +75,18 @@ class FineControllerTest {
         assertEquals(expectedTotal, response.getBody());
         verify(fineService, times(1)).calculateTotalPendingFineForUser(userId);
     }
+
+
+    @Test
+    @DisplayName("Should get fines and pending fines by user ID")
+    void testGetFinesByUserId() {
+        when(fineService.getFinesByUserId(userId)).thenReturn(List.of());
+        when(fineService.getPendingFinesByUserId(userId)).thenReturn(List.of());
+
+        ResponseEntity<List<Fine>> responseAll = fineController.getFinesByUserId(userId);
+        ResponseEntity<List<Fine>> responsePending = fineController.getPendingFinesByUserId(userId);
+
+        assertEquals(HttpStatus.OK, responseAll.getStatusCode());
+        assertEquals(HttpStatus.OK, responsePending.getStatusCode());
+    }
 }

@@ -78,4 +78,5 @@ public class BookController {
         return ResponseEntity.ok(bookService.getImageCoverById(bookId));
     }
 
+
 }

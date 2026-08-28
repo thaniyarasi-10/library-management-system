@@ -9,12 +9,15 @@ import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.book.mapping.BookMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mapstruct.factory.Mappers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -40,6 +43,9 @@ class BorrowServiceImplTest {
 
     @Mock
     private UserFineChecker userFineChecker;
+
+    @Spy
+    private BookMapper bookMapper = Mappers.getMapper(BookMapper.class);
 
     @InjectMocks
     private BorrowServiceImpl borrowService;
@@ -100,19 +106,6 @@ class BorrowServiceImplTest {
     }
 
     @Test
-    @DisplayName("borrowBook should throw ResponseStatusException when user has pending fines")
-    void borrowBook_WhenUserHasPendingFines_ShouldThrowException() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
-
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(userFineChecker.hasPendingFines(1L)).thenReturn(true);
-
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(request));
-        assertTrue(ex.getMessage().contains("User has pending fines"));
-        verify(borrowRepository, never()).save(any());
-    }
-
-    @Test
     @DisplayName("returnBook should succeed when user has no pending fines")
     void returnBook_WhenNoPendingFines_ShouldSucceed() {
         when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
@@ -129,6 +122,19 @@ class BorrowServiceImplTest {
     }
 
     @Test
+    @DisplayName("borrowBook should throw ResponseStatusException when user has pending fines")
+    void borrowBook_WhenUserHasPendingFines_ShouldThrowException() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(true);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(request));
+        assertTrue(ex.getMessage().contains("User has pending fines"));
+        verify(borrowRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("returnBook should throw ResponseStatusException when user has pending fines")
     void returnBook_WhenUserHasPendingFines_ShouldThrowException() {
         when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
@@ -137,5 +143,55 @@ class BorrowServiceImplTest {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> borrowService.returnBook(100L));
         assertTrue(ex.getMessage().contains("User has pending fines"));
         verify(borrowRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("borrowBook validation failures (null request, missing user, missing book)")
+    void borrowBook_ValidationFailures() {
+        // Null request
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(null));
+        // Null bookId
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(null, 1L)));
+        // Null userId
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, null)));
+
+        // User not found
+        when(userRepository.findById(99L)).thenReturn(Optional.empty());
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, 99L)));
+
+        // Book not found
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(bookRepository.findById(99L)).thenReturn(Optional.empty());
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(99L, 1L)));
+    }
+
+    @Test
+    @DisplayName("returnBook validation failures (null borrowId, record not found)")
+    void returnBook_ValidationFailures() {
+        // Null borrowId
+        assertThrows(ResponseStatusException.class, () -> borrowService.returnBook(null));
+
+        // Borrow record not found
+        when(borrowRepository.findById(999L)).thenReturn(Optional.empty());
+        assertThrows(ResponseStatusException.class, () -> borrowService.returnBook(999L));
+    }
+
+    @Test
+    @DisplayName("borrowBook and returnBook with null userFineChecker should succeed")
+    void borrowAndReturnBook_withNullUserFineChecker_ShouldSucceed() {
+        BorrowServiceImpl serviceWithoutFineChecker = new BorrowServiceImpl(borrowRepository, bookRepository, userRepository, null, bookMapper);
+
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BorrowResponseDto response = serviceWithoutFineChecker.borrowBook(request);
+        assertNotNull(response);
+
+        when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
+        BorrowResponseDto returnResponse = serviceWithoutFineChecker.returnBook(100L);
+        assertNotNull(returnResponse);
     }
 }
