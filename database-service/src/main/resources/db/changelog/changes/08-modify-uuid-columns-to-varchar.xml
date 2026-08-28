@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="08-modify-uuid-columns-to-varchar" author="thani">
+        <modifyDataType tableName="user" columnName="uuid" newDataType="varchar(36)"/>
+        <modifyDataType tableName="books" columnName="uuid" newDataType="varchar(36)"/>
+        <modifyDataType tableName="borrow" columnName="uuid" newDataType="varchar(36)"/>
+        <modifyDataType tableName="borrow" columnName="book_uuid" newDataType="varchar(36)"/>
+        <modifyDataType tableName="borrow" columnName="user_uuid" newDataType="varchar(36)"/>
+        <modifyDataType tableName="fine" columnName="uuid" newDataType="varchar(36)"/>
+        <modifyDataType tableName="fine" columnName="book_uuid" newDataType="varchar(36)"/>
+        <modifyDataType tableName="fine" columnName="user_uuid" newDataType="varchar(36)"/>
+    </changeSet>
+
+</databaseChangeLog>

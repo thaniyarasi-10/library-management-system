@@ -19,11 +19,12 @@
     </properties>
 
     <modules>
-        <module>book</module>
-        <module>users</module>
-        <module>application</module>
-        <module>borrow</module>
-        <module>notification</module>
+        <module>database-service</module>
+        <module>authentication-service</module>
+        <module>user-service</module>
+        <module>communication-service</module>
+        <module>aws-service</module>
+        <module>library-service</module>
     </modules>
 
     <dependencyManagement>
@@ -40,30 +41,40 @@
             <!-- Internal Module Dependencies -->
             <dependency>
                 <groupId>com.kovanlabs</groupId>
-                <artifactId>book</artifactId>
+                <artifactId>database-service</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
             <dependency>
                 <groupId>com.kovanlabs</groupId>
-                <artifactId>users</artifactId>
+                <artifactId>authentication-service</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
             <dependency>
                 <groupId>com.kovanlabs</groupId>
-                <artifactId>borrow</artifactId>
+                <artifactId>user-service</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
             <dependency>
                 <groupId>com.kovanlabs</groupId>
-                <artifactId>notification</artifactId>
+                <artifactId>communication-service</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
+            <dependency>
+                <groupId>com.kovanlabs</groupId>
+                <artifactId>aws-service</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.kovanlabs</groupId>
+                <artifactId>library-service</artifactId>
+                <version>${project.version}</version>
+            </dependency>
         </dependencies>
-
     </dependencyManagement>
 
     <build>

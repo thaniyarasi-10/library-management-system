@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="5" author="thaniyarasi">
+
+        <createTable tableName="fine">
+
+            <column name="uuid" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" unique="true"/>
+            </column>
+
+            <column name="book_uuid" type="varchar(36)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="user_uuid" type="varchar(36)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="pending_fine_amount" type="decimal(10,2)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="status" type="varchar(15)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="created_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="updated_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+
+        </createTable>
+
+    </changeSet>
+
+</databaseChangeLog>
