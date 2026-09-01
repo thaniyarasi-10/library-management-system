@@ -157,4 +157,18 @@ class UserControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].name").value("Alice"));
     }
+
+    @Test
+    @DisplayName("GET /user/me should return current user profile")
+    void getCurrentUser_ShouldReturnProfile() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com");
+        java.security.Principal mockPrincipal = mock(java.security.Principal.class);
+        when(mockPrincipal.getName()).thenReturn("alice@example.com");
+        when(userService.getUserByEmail("alice@example.com")).thenReturn(response);
+
+        mockMvc.perform(get("/user/me").principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"))
+                .andExpect(jsonPath("$.email").value("alice@example.com"));
+    }
 }

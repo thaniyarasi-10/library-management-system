@@ -45,12 +45,23 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
 
         String jwt = jwtService.generateToken(User);
 
-        response.setContentType("application/json");
-        response.setStatus(HttpServletResponse.SC_OK);
-
-        objectMapper.writeValue(response.getWriter(), Map.of(
-                "token", jwt
-        ));
+        response.setContentType("text/html;charset=UTF-8");
+        String html = "<!DOCTYPE html><html><head><title>Authentication Successful</title></head><body>" +
+                "<script>" +
+                "try {" +
+                "  if (window.opener && !window.opener.closed) {" +
+                "    window.opener.postMessage({ type: 'ATHENAEUM_OAUTH_TOKEN', token: '" + jwt + "' }, '*');" +
+                "    setTimeout(function() { window.close(); }, 300);" +
+                "  } else {" +
+                "    window.location.href = '/index.html?token=" + jwt + "';" +
+                "  }" +
+                "} catch(e) {" +
+                "  window.location.href = '/index.html?token=" + jwt + "';" +
+                "}" +
+                "</script>" +
+                "<p style='font-family:sans-serif; text-align:center; padding-top:40px; color:#666;'>Authentication completed. Redirecting to Athenaeum Library Hub...</p>" +
+                "</body></html>";
+        response.getWriter().write(html);
     }
 }
 

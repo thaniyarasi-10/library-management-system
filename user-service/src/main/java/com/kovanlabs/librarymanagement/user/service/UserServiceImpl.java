@@ -24,7 +24,6 @@ import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 
 import java.util.List;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -115,7 +114,15 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
 
-        user.setEmail(request.email());
+        if (request.name() != null && !request.name().isBlank()) {
+            user.setName(request.name());
+        }
+        if (request.email() != null && !request.email().isBlank()) {
+            user.setEmail(request.email());
+        }
+        if (request.password() != null && !request.password().isBlank()) {
+            user.setPassword(passwordEncoder.encode(request.password()));
+        }
 
         User updatedUser = userRepository.save(user);
         return userMapper.mapToResponse(updatedUser);
@@ -128,6 +135,13 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
         userRepository.delete(user);
+    }
+
+    @Override
+    public UserResponse getUserByEmail(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with email: " + email));
+        return userMapper.mapToResponse(user);
     }
 
     @Override

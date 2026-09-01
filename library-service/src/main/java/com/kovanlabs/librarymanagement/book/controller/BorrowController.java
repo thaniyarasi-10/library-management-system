@@ -17,6 +17,24 @@ public class BorrowController {
         this.borrowService = borrowService;
     }
 
+    @GetMapping
+    public java.util.List<BorrowResponseDto> getAllBorrows() {
+        return borrowService.getAllBorrows();
+    }
+
+    @GetMapping("/user/{userId}")
+    public java.util.List<BorrowResponseDto> getBorrowsByUserId(@PathVariable("userId") Long userId) {
+        return borrowService.getBorrowsByUserId(userId);
+    }
+
+    @GetMapping("/me")
+    public java.util.List<BorrowResponseDto> getMyBorrows(java.security.Principal principal) {
+        if (principal == null) {
+            return java.util.Collections.emptyList();
+        }
+        return borrowService.getBorrowsByUserEmail(principal.getName());
+    }
+
     @PostMapping
     public ResponseEntity<BorrowResponseDto> borrowBook(@RequestBody BorrowRequestDto request) {
         BorrowResponseDto response = borrowService.borrowBook(request);

@@ -24,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
+import com.kovanlabs.librarymanagement.membership.service.MembershipService;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -43,6 +44,9 @@ class BorrowServiceImplTest {
 
     @Mock
     private UserFineChecker userFineChecker;
+
+    @Mock
+    private MembershipService membershipService;
 
     @Spy
     private BookMapper bookMapper = Mappers.getMapper(BookMapper.class);
@@ -80,6 +84,8 @@ class BorrowServiceImplTest {
                 .dueDate(LocalDate.now().plusDays(9))
                 .status(BorrowStatus.BORROWED)
                 .build();
+
+        lenient().when(membershipService.hasActiveMembership(any())).thenReturn(true);
     }
 
     @Test
@@ -180,7 +186,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook and returnBook with null userFineChecker should succeed")
     void borrowAndReturnBook_withNullUserFineChecker_ShouldSucceed() {
-        BorrowServiceImpl serviceWithoutFineChecker = new BorrowServiceImpl(borrowRepository, bookRepository, userRepository, null, bookMapper);
+        BorrowServiceImpl serviceWithoutFineChecker = new BorrowServiceImpl(borrowRepository, bookRepository, userRepository, null, bookMapper, membershipService);
 
         BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));

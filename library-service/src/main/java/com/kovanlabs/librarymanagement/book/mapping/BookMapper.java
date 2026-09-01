@@ -24,6 +24,13 @@ public interface BookMapper {
     @Mapping(target = "borrowUuid", source = "uuid")
     @Mapping(target = "bookId", source = "book.uuid")
     @Mapping(target = "userId", source = "user.uuid")
+    @Mapping(target = "bookNumericId", source = "book.id")
+    @Mapping(target = "bookTitle", source = "book.title")
+    @Mapping(target = "bookAuthor", source = "book.author")
+    @Mapping(target = "bookCoverImageUrl", source = "book.coverImageUrl")
+    @Mapping(target = "userNumericId", source = "user.id")
+    @Mapping(target = "userName", source = "user.name")
+    @Mapping(target = "userEmail", source = "user.email")
     BorrowResponseDto mapToResponse(Borrow borrow);
 
     List<BorrowResponseDto> mapToResponseForBorrows(List<Borrow> borrows);

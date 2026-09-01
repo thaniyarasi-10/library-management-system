@@ -14,6 +14,7 @@ spring:
       hibernate:
         format_sql: true
   liquibase:
+    enabled: true
     change-log: classpath:db/changelog/db.changelog-master.xml
 
   security:
@@ -52,7 +53,7 @@ aws:
     bookdue-queue-url: https://sqs.us-east-1.amazonaws.com/975050173010/library-bookdue-notification
 
 jwt:
-  secret: 4g9s8K2nL7mQ5xP1vB6rT3yH8jF0wZcA4g9s8K2nL7mQ5xP1
+  secret: "4g9s8K2nL7mQ5xP1vB6rT3yH8jF0wZcA4g9s8K2nL7mQ5xP1"
   expiration: 3600000 #60m
 
 logging:
@@ -66,3 +67,5 @@ logging:
               BasicBinder: TRACE
       springframework:
         security: DEBUG
+      springframework.boot.autoconfigure.liquibase: DEBUG
+

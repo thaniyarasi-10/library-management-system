@@ -18,7 +18,7 @@ class UserMapperTest {
 
     @BeforeEach
     void setUp() {
-        userMapper = Mappers.getMapper(UserMapper.class);
+        userMapper = new UserMapperImpl();
     }
 
     @Test

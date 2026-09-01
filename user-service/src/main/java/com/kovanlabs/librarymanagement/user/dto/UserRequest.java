@@ -4,6 +4,8 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.io.Serializable;
+
 public record UserRequest(
     @NotBlank(message = "Email is required")
     @Email(message = "Invalid email format")
@@ -14,4 +16,5 @@ public record UserRequest(
     String password,
 
     String name
-) {}
+) implements Serializable {}
+

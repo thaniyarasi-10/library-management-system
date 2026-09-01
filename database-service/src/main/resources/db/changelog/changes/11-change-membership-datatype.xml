@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+<!-- 
+    <changeSet id="11" author="thani">
+        <modifyDataType tableName="membership" columnName="is_signed" newDataType="bit(1)"/>
+    </changeSet> -->
+
+    <changeSet id="11" author="thani">
+        <sql>ALTER TABLE membership MODIFY COLUMN is_signed BIT(1) NOT NULL;</sql>
+    </changeSet>
+
+</databaseChangeLog>

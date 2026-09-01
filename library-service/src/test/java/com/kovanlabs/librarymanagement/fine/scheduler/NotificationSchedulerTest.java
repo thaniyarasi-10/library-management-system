@@ -95,7 +95,7 @@ class NotificationSchedulerTest {
                 scheduler.sendOverdueNotifications();
 
                 assertEquals(BorrowStatus.OVERDUE, borrow.getStatus());
-                verify(borrowRepository, times(1)).save(borrow);
+                verify(borrowRepository, times(1)).saveAll(any());
                 verify(fineService, times(1)).processFineForBorrow(borrow);
                 verify(fineService, times(1)).calculateTotalPendingFineForUser(userUuid);
 

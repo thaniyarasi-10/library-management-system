@@ -9,6 +9,7 @@ import com.kovanlabs.librarymanagement.database.enums.FineStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.FineRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.fine.dto.FineResponseDto;
 import com.kovanlabs.librarymanagement.fine.dto.FineResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -96,6 +97,55 @@ public class FineService implements UserFineChecker {
                 .map(Fine::getPendingFineAmount)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public FineResponseDto mapToDtoWithDetails(Fine fine) {
+        if (fine == null) return null;
+        Book book = fine.getBookUuid() != null ? bookRepository.findByUuid(fine.getBookUuid()).orElse(null) : null;
+        User user = fine.getUserUuid() != null ? userRepository.findByUuid(fine.getUserUuid()).orElse(null) : null;
+        return FineResponseDto.builder()
+                .uuid(fine.getUuid())
+                .id(fine.getId())
+                .bookUuid(fine.getBookUuid())
+                .bookNumericId(book != null ? book.getId() : null)
+                .bookTitle(book != null ? book.getTitle() : "Library Book")
+                .bookAuthor(book != null ? book.getAuthor() : "Unknown Author")
+                .bookCoverImageUrl(book != null ? book.getCoverImageUrl() : null)
+                .userUuid(fine.getUserUuid())
+                .userNumericId(user != null ? user.getId() : null)
+                .userName(user != null ? user.getName() : "Library Member")
+                .userEmail(user != null ? user.getEmail() : "")
+                .amount(fine.getPendingFineAmount())
+                .pendingFineAmount(fine.getPendingFineAmount())
+                .status(fine.getStatus())
+                .createdAt(fine.getCreatedAt())
+                .updatedAt(fine.getUpdatedAt())
+                .build();
+    }
+
+    public List<FineResponseDto> getAllFinesDto() {
+        return fineRepository.findAllByOrderByIdDesc().stream()
+                .map(this::mapToDtoWithDetails)
+                .toList();
+    }
+
+    public List<FineResponseDto> getFinesDtoByUserId(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found with id: " + userId));
+        return fineRepository.findByUserUuidOrderByIdDesc(user.getUuid()).stream()
+                .map(this::mapToDtoWithDetails)
+                .toList();
+    }
+
+    public List<FineResponseDto> getFinesDtoByUserEmail(String email) {
+        if (email == null) {
+            return java.util.Collections.emptyList();
+        }
+        User user = userRepository.findByEmail(email).orElse(null);
+        if (user == null || user.getId() == null) {
+            return java.util.Collections.emptyList();
+        }
+        return getFinesDtoByUserId(user.getId());
     }
 
     public List<Fine> getFinesByUserId(Long userId) {
