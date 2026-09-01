@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Library Management System</title>
+  <!-- Google Fonts: Plus Jakarta Sans & Newsreader -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ==================================================================== -->
+  <!-- 1. STANDALONE AUTHENTICATION SCREEN                                  -->
+  <!-- ==================================================================== -->
+  <div id="authScreen" class="auth-screen">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            <path d="M12 6h4"></path>
+            <path d="M12 10h4"></path>
+          </svg>
+        </div>
+        <h1 class="brand-title">Padips</h1>
+        <p class="brand-subtitle">Library Management System</p>
+      </div>
+
+      <div class="auth-header">
+        <h2>Sign in to portal</h2>
+        <p>Enter your credentials to access the library dashboard</p>
+      </div>
+
+      <div id="authAlert" class="alert alert-danger hidden"></div>
+
+      <!-- Google OAuth Sign In Button -->
+      <button type="button" class="btn btn-google btn-block btn-lg mb-4" onclick="handleGoogleSignIn()">
+        <svg class="google-icon" width="18" height="18" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+        </svg>
+        <span>Sign in with Google</span>
+      </button>
+
+      <div class="auth-divider mb-4">
+        <span>OR</span>
+      </div>
+
+      <form id="loginForm" onsubmit="handleLoginSubmit(event)" novalidate>
+        <div class="form-group">
+          <label for="loginEmail" class="form-label">Email address</label>
+          <div class="input-wrapper">
+            <input type="email" id="loginEmail" class="form-input" placeholder="staff@athenaeum.org" required autocomplete="email">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="loginPassword" class="form-label">Password</label>
+          <div class="input-wrapper password-input-wrapper">
+            <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" required autocomplete="current-password">
+            <button type="button" class="btn-toggle-password" onclick="togglePasswordVisibility('loginPassword', this)" title="Show/Hide Password">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-eye">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" id="loginSubmitBtn" class="btn btn-primary btn-block btn-lg">
+          <span class="btn-text">Sign in</span>
+          <span class="btn-spinner hidden"></span>
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        <span>Library Portal</span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==================================================================== -->
+  <!-- 2. PRODUCTION APPLICATION SHELL                                      -->
+  <!-- ==================================================================== -->
+  <div id="appShell" class="app-shell hidden">
+
+    <!-- LEFT SIDEBAR NAVIGATION -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-emblem">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+            <path d="M12 6h4"></path>
+            <path d="M12 10h4"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">Padips</span>
+          <span class="brand-tag">LIBRARY SYSTEM</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-group-label">NAVIGATION</div>
+        
+        <button class="nav-link active" data-page="dashboard" onclick="navigateTo('dashboard')">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="9" rx="1"></rect>
+            <rect x="14" y="3" width="7" height="5" rx="1"></rect>
+            <rect x="14" y="12" width="7" height="9" rx="1"></rect>
+            <rect x="3" y="16" width="7" height="5" rx="1"></rect>
+          </svg>
+          <span>Dashboard</span>
+        </button>
+
+        <button class="nav-link" data-page="books" onclick="navigateTo('books')">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          <span>Books Catalog</span>
+        </button>
+
+        <button class="nav-link" data-page="members" onclick="navigateTo('members')">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          <span>Members</span>
+        </button>
+
+        <button class="nav-link" data-page="borrow" onclick="navigateTo('borrow')">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+          </svg>
+          <span id="navBorrowLabel">Borrowed Books</span>
+        </button>
+
+        <button class="nav-link" data-page="fines" onclick="navigateTo('fines')">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+            <line x1="2" y1="10" x2="22" y2="10"></line>
+          </svg>
+          <span>Fine Management</span>
+        </button>
+
+        <button class="nav-link" data-page="membership" onclick="navigateTo('membership')">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+            <polyline points="16 11 18 13 22 9"></polyline>
+          </svg>
+          <span>Membership</span>
+        </button>
+      </nav>
+
+      <!-- STAFF PROFILE FOOTER -->
+      <div class="sidebar-profile">
+        <div class="user-avatar" id="sidebarAvatar">LS</div>
+        <div class="user-details">
+          <span class="user-name" id="sidebarUserName">Library Staff</span>
+          <span class="user-role" id="sidebarUserRole">Librarian</span>
+        </div>
+        <button class="btn-signout-icon" onclick="handleSignOut()" title="Sign Out">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- MAIN WRAPPER -->
+    <div class="main-wrapper">
+      
+      <!-- TOP APP HEADER -->
+      <header class="top-header">
+        <div class="header-titles">
+          <h1 class="header-page-title" id="pageTitleDisplay">Dashboard</h1>
+          <p class="header-page-subtitle" id="pageSubtitleDisplay">Overview of library holdings and staff operations</p>
+        </div>
+
+        <div class="header-actions">
+          <!-- Global Contextual Search -->
+          <div class="global-search-container hidden" id="globalSearchContainer">
+            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="globalSearchInput" class="global-search-input" placeholder="Search catalog or members..." onkeyup="handleGlobalSearchKeyup(event)">
+          </div>
+
+          <!-- Theme Toggle -->
+          <button id="themeToggleBtn" class="theme-toggle-btn" title="Toggle Light / Dark Mode" onclick="toggleTheme()">
+            <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          </button>
+
+          <!-- User Menu Dropdown -->
+          <div class="user-menu-wrapper">
+            <button class="user-menu-btn" onclick="toggleUserDropdown(event)">
+              <div class="avatar-sm" id="headerAvatar">LS</div>
+              <span class="user-display-name" id="headerUserName">Staff Portal</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="m6 9 6 6 6-6"></path>
+              </svg>
+            </button>
+            <div id="userDropdown" class="user-dropdown-menu hidden">
+              <div class="dropdown-header">
+                <span class="dropdown-user-name" id="dropdownUserName">Librarian Account</span>
+                <span class="dropdown-user-email" id="dropdownUserEmail">staff@athenaeum.org</span>
+              </div>
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-item danger" onclick="handleSignOut()">Sign Out</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- PAGE CONTENT PANES -->
+      <main class="content-area">
+
+        <!-- ================================================================ -->
+        <!-- PAGE 1: DASHBOARD                                                -->
+        <!-- ================================================================ -->
+        <section id="page-dashboard" class="page-pane active">
+          
+          <!-- ADMIN DASHBOARD SECTION -->
+          <div id="adminDashboardSection">
+            <!-- Metrics Row (Total Books, Total Members) -->
+            <div class="metrics-grid">
+              <div class="metric-card" onclick="navigateTo('books')" style="cursor: pointer;" title="View Books Catalog">
+                <div class="metric-icon icon-books">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+                  </svg>
+                </div>
+                <div class="metric-data">
+                  <span class="metric-label">Total Books</span>
+                  <span class="metric-value" id="dashTotalBooks">--</span>
+                </div>
+              </div>
+
+              <div class="metric-card" onclick="navigateTo('members')" style="cursor: pointer;" title="View Registered Members">
+                <div class="metric-icon icon-members">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                  </svg>
+                </div>
+                <div class="metric-data">
+                  <span class="metric-label">Registered Members</span>
+                  <span class="metric-value" id="dashTotalMembers">--</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick Actions Bar for Admin -->
+            <div class="section-card mt-6" id="dashboardQuickActions">
+              <div class="section-header">
+                <h3>Staff Quick Actions</h3>
+                <p class="section-desc">Frequently performed librarian tasks</p>
+              </div>
+              <div class="quick-actions-row">
+                <button class="quick-action-btn" onclick="openModal('createBookModal')">
+                  <div class="qa-icon">+</div>
+                  <div class="qa-text">
+                    <span class="qa-title">Add New Book</span>
+                    <span class="qa-desc">Add title to inventory</span>
+                  </div>
+                </button>
+                <button class="quick-action-btn" onclick="openModal('createUserModal')">
+                  <div class="qa-icon">+</div>
+                  <div class="qa-text">
+                    <span class="qa-title">Register Member</span>
+                    <span class="qa-desc">Create new patron profile</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- USER / MEMBER DASHBOARD SECTION -->
+          <div id="userDashboardSection" class="hidden">
+            <!-- Member Welcome Card -->
+            <div class="user-welcome-banner mb-6" style="background: linear-gradient(135deg, rgba(224, 122, 73, 0.12) 0%, rgba(224, 122, 73, 0.02) 100%); border: 1px solid var(--border-medium); border-radius: var(--radius-lg); padding: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+              <div>
+                <span class="badge badge-primary mb-2" style="background: var(--accent-subtle); color: var(--accent-primary); font-weight: 600; font-size: 11px; padding: 4px 10px; border-radius: 999px;">LIBRARY MEMBER PORTAL</span>
+                <h2 style="font-size: 22px; font-weight: 700; margin-top: 6px; margin-bottom: 4px;" id="userWelcomeTitle">Welcome to Athenaeum</h2>
+                <p class="text-muted" style="font-size: 14px;">Browse books, borrow titles with your digital membership, and manage loan returns.</p>
+              </div>
+              <div class="flex-gap-2">
+                <button class="btn btn-primary" onclick="navigateTo('books')">Browse Books Catalog &rarr;</button>
+              </div>
+            </div>
+
+            <!-- Member Metrics Cards -->
+            <div class="metrics-grid">
+              <div class="metric-card" onclick="navigateTo('books')" style="cursor: pointer;" title="Browse books">
+                <div class="metric-icon icon-books">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+                  </svg>
+                </div>
+                <div class="metric-data">
+                  <span class="metric-label">Catalog Titles</span>
+                  <span class="metric-value" id="userDashTotalBooks">--</span>
+                </div>
+              </div>
+
+              <div class="metric-card" onclick="navigateTo('fines')" style="cursor: pointer;" title="View fine balance">
+                <div class="metric-icon" style="background: rgba(239, 68, 68, 0.15); color: #F87171;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+                    <line x1="2" y1="10" x2="22" y2="10"></line>
+                  </svg>
+                </div>
+                <div class="metric-data">
+                  <span class="metric-label">My Outstanding Fines</span>
+                  <span class="metric-value text-danger" id="userDashTotalFines">$0.00</span>
+                </div>
+              </div>
+
+              <div class="metric-card" onclick="navigateTo('membership')" style="cursor: pointer;" title="Check membership">
+                <div class="metric-icon" style="background: rgba(16, 185, 129, 0.15); color: #34D399;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                  </svg>
+                </div>
+                <div class="metric-data">
+                  <span class="metric-label">Membership Status</span>
+                  <span class="metric-value" id="userDashMembershipStatus">Checking...</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Member Quick Services -->
+            <div class="section-card mt-6">
+              <div class="section-header">
+                <h3>Member Services</h3>
+                <p class="section-desc">Quick actions for your account</p>
+              </div>
+              <div class="quick-actions-row">
+                <button class="quick-action-btn" onclick="navigateTo('books')">
+                  <div class="qa-icon">📚</div>
+                  <div class="qa-text">
+                    <span class="qa-title">Search &amp; Borrow</span>
+                    <span class="qa-desc">Find books in catalog</span>
+                  </div>
+                </button>
+                <button class="quick-action-btn" onclick="navigateTo('membership')">
+                  <div class="qa-icon">🪪</div>
+                  <div class="qa-text">
+                    <span class="qa-title">Digital Member Card</span>
+                    <span class="qa-desc">View card &amp; agreement</span>
+                  </div>
+                </button>
+                <button class="quick-action-btn" onclick="navigateTo('fines')">
+                  <div class="qa-icon">💳</div>
+                  <div class="qa-text">
+                    <span class="qa-title">Pay Fines &amp; Dues</span>
+                    <span class="qa-desc">Settle pending balances</span>
+                  </div>
+                </button>
+                <button class="quick-action-btn" onclick="navigateTo('borrow')">
+                  <div class="qa-icon">🔄</div>
+                  <div class="qa-text">
+                    <span class="qa-title">Return a Book</span>
+                    <span class="qa-desc">Check in borrowed title</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Books Showcase -->
+          <div class="section-card mt-6">
+            <div class="section-header flex-between">
+              <div>
+                <h3>Catalog Showcase</h3>
+                <p class="section-desc">Recently updated titles in library catalog</p>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="navigateTo('books')">View All Catalog &rarr;</button>
+            </div>
+
+            <div id="dashBookGrid" class="book-card-grid mt-4">
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ================================================================ -->
+        <!-- PAGE 2: BOOKS CATALOG                                            -->
+        <!-- ================================================================ -->
+        <section id="page-books" class="page-pane">
+          <div class="action-bar">
+            <div class="filter-controls">
+              <div class="search-input-group">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="bookSearchInput" placeholder="Search by title, author, or ISBN..." onkeyup="handleBookSearchKeyup(event)">
+              </div>
+              <button class="btn btn-secondary" onclick="executeBookSearch()">Search</button>
+              <button class="btn btn-ghost" onclick="resetBookSearch()">Clear</button>
+            </div>
+
+            <button class="btn btn-primary" id="addBookBtn" onclick="openModal('createBookModal')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <span>Add Book</span>
+            </button>
+          </div>
+
+          <!-- Books Table -->
+          <div class="table-container mt-4">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th width="70">Cover</th>
+                  <th>Title & Metadata</th>
+                  <th>Author</th>
+                  <th>ISBN</th>
+                  <th width="150" class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="booksTableBody">
+                <tr><td colspan="5" class="empty-cell">Loading books inventory...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination Footer -->
+          <div class="pagination-footer mt-4">
+            <span class="pagination-info" id="booksPageInfo">Showing page 1 of 1</span>
+            <div class="pagination-buttons">
+              <button class="btn btn-secondary btn-sm" id="bookPrevBtn" onclick="changeBookPage(-1)">&larr; Previous</button>
+              <button class="btn btn-secondary btn-sm" id="bookNextBtn" onclick="changeBookPage(1)">Next &rarr;</button>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ================================================================ -->
+        <!-- PAGE 3: MEMBERS                                                  -->
+        <!-- ================================================================ -->
+        <section id="page-members" class="page-pane">
+          <div class="action-bar">
+            <div class="filter-controls">
+              <div class="search-input-group">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="memberSearchInput" placeholder="Search member by name or email..." onkeyup="handleMemberSearchKeyup(event)">
+              </div>
+              <button class="btn btn-secondary" onclick="executeMemberSearch()">Search</button>
+              <button class="btn btn-ghost" onclick="resetMemberSearch()">Clear</button>
+            </div>
+
+            <button class="btn btn-primary" onclick="openModal('createUserModal')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <span>Register Member</span>
+            </button>
+          </div>
+
+          <!-- Members Table -->
+          <div class="table-container mt-4">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th width="60">ID</th>
+                  <th>Member Name</th>
+                  <th>Email Address</th>
+                  <th width="180" class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="membersTableBody">
+                <tr><td colspan="4" class="empty-cell">Loading registered members...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="pagination-footer mt-4">
+            <span class="pagination-info" id="membersPageInfo">Showing page 1 of 1</span>
+            <div class="pagination-buttons">
+              <button class="btn btn-secondary btn-sm" id="memberPrevBtn" onclick="changeMemberPage(-1)">&larr; Previous</button>
+              <button class="btn btn-secondary btn-sm" id="memberNextBtn" onclick="changeMemberPage(1)">Next &rarr;</button>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ================================================================ -->
+        <!-- PAGE 4: BORROWED BOOKS                                           -->
+        <!-- ================================================================ -->
+        <section id="page-borrow" class="page-pane">
+          <!-- ADMIN BORROWED BOOKS SECTION -->
+          <div id="adminBorrowSection">
+            <div class="section-card">
+              <div class="section-header flex-between">
+                <div>
+                  <h3>All Borrowed Books (Circulation Log)</h3>
+                  <p class="section-desc">Active and returned book loans across all registered library patrons</p>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="openModal('adminIssueBorrowModal')">
+                  + Issue Book Borrow
+                </button>
+              </div>
+
+              <!-- Admin Borrowed Books Table -->
+              <div class="table-container mt-6">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th width="70">Cover</th>
+                      <th>Book Title &amp; Author</th>
+                      <th>Borrower (Member)</th>
+                      <th>Borrow Date</th>
+                      <th>Due Date</th>
+                      <th>Status</th>
+                      <th class="text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminBorrowsTableBody">
+                    <tr><td colspan="7" class="empty-cell">Loading borrowed books log...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- USER / MEMBER BORROWED BOOKS SECTION -->
+          <div id="userBorrowSection" class="hidden">
+            <div class="section-card">
+              <div class="section-header flex-between">
+                <div>
+                  <h3>My Borrowed Books</h3>
+                  <p class="section-desc">Track your active reading loans, due dates, and return books</p>
+                </div>
+                <div class="flex-gap-2">
+                  <button class="btn btn-secondary btn-sm" onclick="navigateTo('books')">Browse Catalog</button>
+                  <button class="btn btn-primary btn-sm" onclick="openModal('userSelfBorrowModal')">+ Borrow a Book</button>
+                </div>
+              </div>
+
+              <!-- Membership Notice Banner -->
+              <div id="borrowMembershipNotice" class="alert alert-warning mb-4 mt-4 hidden" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--radius-md); padding: 14px 18px; color: var(--badge-warning-text); display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                <div style="font-size: 13px;">
+                  <strong>Active Membership Required:</strong> You need an active membership to check out new books.
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="navigateTo('membership')">Activate Membership &rarr;</button>
+              </div>
+
+              <!-- User Borrowed Books Table -->
+              <div class="table-container mt-6">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th width="70">Cover</th>
+                      <th>Book Title</th>
+                      <th>Author</th>
+                      <th>Borrow Date</th>
+                      <th>Due Date</th>
+                      <th>Status</th>
+                      <th class="text-right">Return Book</th>
+                    </tr>
+                  </thead>
+                  <tbody id="userBorrowsTableBody">
+                    <tr><td colspan="7" class="empty-cell">Loading your borrowed books...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ================================================================ -->
+        <!-- PAGE 5: FINES MANAGEMENT                                         -->
+        <!-- ================================================================ -->
+        <section id="page-fines" class="page-pane">
+          <div class="section-card">
+            <div class="section-header flex-between">
+              <div>
+                <h3 id="finesPageTitle">Fine Management &amp; Settlement</h3>
+                <p class="section-desc" id="finesPageSubtitle">Lookup member fines, outstanding balances, and process settlements</p>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="refreshCurrentMemberFines()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                Refresh Fines
+              </button>
+            </div>
+
+            <!-- Admin Member Filter Bar -->
+            <div class="fine-lookup-bar mt-4" id="fineMemberSelectContainer">
+              <div class="form-group mb-0 flex-1">
+                <label for="fineMemberSelect" class="form-label">Filter by Member</label>
+                <select id="fineMemberSelect" class="form-select" onchange="handleFineMemberChange(this.value)">
+                  <option value="">-- All Library Members (All Fines) --</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Fine Balance Overview -->
+            <div class="fine-summary-banner mt-6" id="fineSummaryBanner">
+              <div class="summary-item" id="fineMemberSummaryItem">
+                <span class="summary-label">Account / Scope:</span>
+                <span class="summary-value" id="fineMemberName">All Members</span>
+              </div>
+              <div class="summary-item text-right">
+                <span class="summary-label">Total Outstanding Balance:</span>
+                <span class="summary-amount text-danger" id="fineTotalBalance">$0.00</span>
+              </div>
+            </div>
+
+            <!-- Fines Table -->
+            <div class="table-container mt-6">
+              <table class="data-table">
+                <thead>
+                  <tr id="finesTableHeaderRow">
+                    <th>Fine ID</th>
+                    <th id="fineMemberColHeader">Member</th>
+                    <th>Book Title &amp; Author</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th class="text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="finesTableBody">
+                  <tr><td colspan="6" class="empty-cell">Loading fine records...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ================================================================ -->
+        <!-- PAGE 5.5: MEMBERSHIP MODULE                                      -->
+        <!-- ================================================================ -->
+        <section id="page-membership" class="page-pane">
+          <!-- STATE 1: NOT APPLIED -->
+          <div id="membership-state-none" class="section-card max-w-2xl hidden" style="margin: 0 auto;">
+            <div class="section-header text-center">
+              <div class="brand-badge mb-4" style="margin: 0 auto; display: inline-flex; width: 64px; height: 64px; border-radius: 50%; background: var(--primary-light); align-items: center; justify-content: center; color: var(--primary);">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+              </div>
+              <h3>Apply for Library Membership</h3>
+              <p class="section-desc">Unlock premium member privileges including book borrowing and renewal</p>
+            </div>
+            
+            <div class="membership-benefits mt-6 p-4 rounded-lg" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);">
+              <h4 class="text-sm font-semibold mb-3">Membership Benefits:</h4>
+              <ul class="benefit-list" style="list-style: none; padding: 0; margin: 0;">
+                <li class="mb-2" style="display: flex; align-items: center; gap: 10px;">
+                  <span style="color: var(--success); font-weight: bold;">✓</span> Borrow up to 5 books concurrently
+                </li>
+                <li class="mb-2" style="display: flex; align-items: center; gap: 10px;">
+                  <span style="color: var(--success); font-weight: bold;">✓</span> Renew borrow terms online
+                </li>
+                <li class="mb-2" style="display: flex; align-items: center; gap: 10px;">
+                  <span style="color: var(--success); font-weight: bold;">✓</span> Request holds on popular catalog items
+                </li>
+              </ul>
+            </div>
+            
+            <button class="btn btn-primary btn-block mt-6" onclick="applyForMembership()">
+              Apply for Membership
+            </button>
+          </div>
+
+          <!-- STATE 2: PENDING / SIGN AGREEMENT -->
+          <div id="membership-state-pending" class="section-card hidden">
+            <div class="section-header">
+              <h3>Review &amp; Sign Agreement</h3>
+              <p class="section-desc">Please review the agreement and upload your signature PNG to activate your membership</p>
+            </div>
+
+            <div class="grid-2col mt-6">
+              <!-- Agreement Text Panel -->
+              <div class="panel-agreement p-4 rounded-lg" style="background: var(--bg-surface-elevated); border: 1px solid var(--border-color); max-height: 400px; overflow-y: auto;">
+                <div id="agreementTextContainer">
+                  <p class="text-muted">Loading agreement terms...</p>
+                </div>
+              </div>
+
+              <!-- Signature Panel -->
+              <div class="panel-signature" style="display: flex; flex-direction: column; justify-content: space-between;">
+                <div class="form-group">
+                  <label class="form-label">Upload Signature PNG</label>
+                  <p class="section-desc mb-2">File must be a transparent PNG, maximum 50KB</p>
+                  
+                  <div class="file-upload-box text-center p-6 rounded-lg" id="signatureDropZone" style="border: 2px dashed var(--border-color); cursor: pointer; transition: all 0.2s;" onclick="document.getElementById('signatureFile').click()">
+                    <svg class="mx-auto text-muted mb-2" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 10px auto; display: block;">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="17 8 12 3 7 8"></polyline>
+                      <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <span id="fileNameDisplay" class="text-sm font-medium block">Click to select PNG signature file</span>
+                    <input type="file" id="signatureFile" class="hidden" accept="image/png" onchange="handleSignatureFileChange(event)" style="display: none;">
+                  </div>
+                </div>
+
+                <div class="signature-preview-container mt-4 hidden" id="sigPreviewContainer" style="text-align: center;">
+                  <span class="form-label block text-left">Signature Preview:</span>
+                  <div style="background: #ffffff; padding: 10px; border-radius: 4px; display: inline-block; margin-top: 5px; border: 1px solid var(--border-color);">
+                    <img id="sigPreviewImg" style="max-height: 80px; max-width: 240px; display: block;" />
+                  </div>
+                </div>
+
+                <button class="btn btn-primary btn-block mt-6" id="btnActivateMembership" onclick="submitSignature()" disabled>
+                  Sign &amp; Activate Membership
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- STATE 3: ACTIVE CARD -->
+          <div id="membership-state-active" class="hidden">
+            <div class="grid-2col">
+              <!-- Digital Membership Card -->
+              <div class="membership-card-badge" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-radius: 16px; padding: 24px; color: #ffffff; min-height: 220px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3); position: relative; overflow: hidden;">
+                <div style="position: absolute; right: -50px; top: -50px; width: 150px; height: 150px; border-radius: 50%; background: radial-gradient(circle, rgba(14,165,233,0.1) 0%, transparent 70%); pointer-events: none;"></div>
+                
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+                  <div>
+                    <h4 style="font-size: 18px; font-weight: bold; letter-spacing: 0.05em; color: #38bdf8; margin: 0;">ATHENAEUM</h4>
+                    <span style="font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em;">Library System</span>
+                  </div>
+                  <span class="badge badge-success" style="background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.2); padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600;">ACTIVE</span>
+                </div>
+
+                <div class="card-body" style="margin-top: 20px;">
+                  <span style="font-size: 10px; color: #64748b; display: block; text-transform: uppercase; letter-spacing: 0.05em;">Membership ID</span>
+                  <span id="activeCardId" style="font-size: 22px; font-family: monospace; font-weight: bold; letter-spacing: 2px; color: #f8fafc;">000000</span>
+                </div>
+
+                <div class="card-footer" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px;">
+                  <div>
+                    <span style="font-size: 9px; color: #64748b; display: block; text-transform: uppercase;">Holder Name</span>
+                    <span id="activeCardName" style="font-size: 14px; font-weight: 500; color: #e2e8f0;">-</span>
+                  </div>
+                  <div class="text-right" style="text-align: right;">
+                    <span style="font-size: 9px; color: #64748b; display: block; text-transform: uppercase;">Expires On</span>
+                    <span id="activeCardExpiry" style="font-size: 14px; font-weight: 500; color: #e2e8f0;">-</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Actions/Details Panel -->
+              <div class="section-card">
+                <div class="section-header">
+                  <h3>Membership Account</h3>
+                  <p class="section-desc">Verify status and download your signed agreement documents</p>
+                </div>
+                
+                <div class="account-details mt-4">
+                  <div class="flex-between py-2 border-b" style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-color);">
+                    <span class="text-muted">Membership Status</span>
+                    <span class="font-medium text-success" style="color: var(--success); font-weight: 600;">Verified Active</span>
+                  </div>
+                  <div class="flex-between py-2 border-b" style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-color);">
+                    <span class="text-muted">Activated Date</span>
+                    <span class="font-medium" id="activeCardActivatedDate">-</span>
+                  </div>
+                  <div class="flex-between py-2 border-b" style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-color);">
+                    <span class="text-muted">Document Status</span>
+                    <span class="font-medium text-success" style="color: var(--success); font-weight: 600;">PDF Signed &amp; Secured</span>
+                  </div>
+                </div>
+
+                <button class="btn btn-secondary btn-block mt-6" onclick="downloadSignedPdf()">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px; vertical-align: middle;">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  Download Signed PDF (Agreement)
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+
+  <!-- ==================================================================== -->
+  <!-- MODALS & DRAWERS                                                     -->
+  <!-- ==================================================================== -->
+
+  <!-- BOOK DETAILS DRAWER / SIDE-PANEL -->
+  <div id="bookDetailsDrawer" class="drawer-backdrop" onclick="closeDrawerOnBackdrop(event, 'bookDetailsDrawer')">
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <h3>Book Details</h3>
+        <button class="btn-close" onclick="closeDrawer('bookDetailsDrawer')">&times;</button>
+      </div>
+      <div class="drawer-body" id="bookDetailsBody">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- MEMBER DETAILS DRAWER -->
+  <div id="memberDetailsDrawer" class="drawer-backdrop" onclick="closeDrawerOnBackdrop(event, 'memberDetailsDrawer')">
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <h3>Member Profile</h3>
+        <button class="btn-close" onclick="closeDrawer('memberDetailsDrawer')">&times;</button>
+      </div>
+      <div class="drawer-body" id="memberDetailsBody">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD BOOK MODAL -->
+  <div id="createBookModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'createBookModal')">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Add Book to Inventory</h3>
+        <button class="btn-close" onclick="closeModal('createBookModal')">&times;</button>
+      </div>
+      <form onsubmit="handleCreateBookSubmit(event)">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="newBookTitle">Book Title</label>
+            <input type="text" id="newBookTitle" class="form-input" placeholder="e.g. The Pragmatic Programmer" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="newBookAuthor">Author Name</label>
+            <input type="text" id="newBookAuthor" class="form-input" placeholder="e.g. Andrew Hunt, David Thomas" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="newBookIsbn">ISBN Number</label>
+            <input type="text" id="newBookIsbn" class="form-input" placeholder="e.g. 978-0201616224" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('createBookModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Book</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- EDIT BOOK MODAL -->
+  <div id="editBookModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'editBookModal')">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Edit Book Details</h3>
+        <button class="btn-close" onclick="closeModal('editBookModal')">&times;</button>
+      </div>
+      <form onsubmit="handleEditBookSubmit(event)">
+        <input type="hidden" id="editBookId">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="editBookTitle">Book Title</label>
+            <input type="text" id="editBookTitle" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="editBookAuthor">Author Name</label>
+            <input type="text" id="editBookAuthor" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="editBookIsbn">ISBN Number</label>
+            <input type="text" id="editBookIsbn" class="form-input" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('editBookModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- UPLOAD COVER MODAL -->
+  <div id="uploadCoverModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'uploadCoverModal')">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Upload Book Cover Image</h3>
+        <button class="btn-close" onclick="closeModal('uploadCoverModal')">&times;</button>
+      </div>
+      <form onsubmit="handleUploadCoverSubmit(event)">
+        <input type="hidden" id="uploadCoverBookId">
+        <div class="modal-body">
+          <p class="text-subtle mb-4">Select an image file (JPG, PNG, WebP) for Book ID: <strong id="uploadCoverBookIdDisplay"></strong></p>
+          <div class="form-group">
+            <label class="form-label">Cover Image File</label>
+            <input type="file" id="coverFileInput" class="form-input" accept="image/*" required onchange="handleCoverFileSelected(event)">
+          </div>
+          <div id="coverPreviewContainer" class="cover-preview-box hidden mt-4">
+            <img id="coverPreviewImg" src="" alt="Selected Cover Preview">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('uploadCoverModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Upload & Apply Cover</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ADD MEMBER MODAL -->
+  <div id="createUserModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'createUserModal')">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Register New Member</h3>
+        <button class="btn-close" onclick="closeModal('createUserModal')">&times;</button>
+      </div>
+      <form onsubmit="handleCreateUserSubmit(event)">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="newUserName">Member Name</label>
+            <input type="text" id="newUserName" class="form-input" placeholder="e.g. Jane Smith" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="newUserEmail">Email Address</label>
+            <input type="email" id="newUserEmail" class="form-input" placeholder="e.g. jane.smith@example.com" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="newUserPassword">Password</label>
+            <input type="password" id="newUserPassword" class="form-input" placeholder="Minimum 8 characters" required minlength="8">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('createUserModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Register Member</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- EDIT MEMBER MODAL -->
+  <div id="editMemberModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'editMemberModal')">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Edit Member Profile</h3>
+        <button class="btn-close" onclick="closeModal('editMemberModal')">&times;</button>
+      </div>
+      <form onsubmit="handleEditMemberSubmit(event)">
+        <input type="hidden" id="editMemberId">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="editMemberName">Member Name</label>
+            <input type="text" id="editMemberName" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="editMemberEmail">Email Address</label>
+            <input type="email" id="editMemberEmail" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="editMemberPassword">Change Password (optional)</label>
+            <input type="password" id="editMemberPassword" class="form-input" placeholder="Leave blank to keep unchanged">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('editMemberModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ADMIN ISSUE BORROW MODAL -->
+  <div id="adminIssueBorrowModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'adminIssueBorrowModal')">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Issue Book Borrow (Circulation)</h3>
+        <button class="btn-close" onclick="closeModal('adminIssueBorrowModal')">&times;</button>
+      </div>
+      <form onsubmit="handleIssueLoanSubmit(event)">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="adminModalBorrowMemberSelect">Select Library Member</label>
+            <select id="adminModalBorrowMemberSelect" class="form-select" required>
+              <option value="">-- Choose Member --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="adminModalBorrowBookSelect">Select Book Title</label>
+            <select id="adminModalBorrowBookSelect" class="form-select" required>
+              <option value="">-- Choose Book --</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('adminIssueBorrowModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Confirm &amp; Issue Borrow</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- USER SELF BORROW MODAL -->
+  <div id="userSelfBorrowModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'userSelfBorrowModal')">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Borrow a Catalog Title</h3>
+        <button class="btn-close" onclick="closeModal('userSelfBorrowModal')">&times;</button>
+      </div>
+      <form onsubmit="handleUserSelfBorrowSubmit(event)">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="userModalBorrowBookSelect">Select Book from Catalog</label>
+            <select id="userModalBorrowBookSelect" class="form-select" required>
+              <option value="">-- Choose Book --</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('userSelfBorrowModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Check Out Book</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- CONFIRMATION DIALOG -->
+  <div id="confirmModal" class="modal-backdrop">
+    <div class="modal-card max-w-sm">
+      <div class="modal-header">
+        <h3 id="confirmTitle">Confirm Action</h3>
+        <button class="btn-close" onclick="closeConfirmModal(false)">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmMessage" class="text-subtle">Are you sure you want to perform this operation?</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeConfirmModal(false)">Cancel</button>
+        <button id="confirmActionBtn" class="btn btn-danger" onclick="closeConfirmModal(true)">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GOOGLE OAUTH TOKEN ENTRY MODAL -->
+  <div id="googleTokenModal" class="modal-backdrop" onclick="closeModalOnBackdrop(event, 'googleTokenModal')">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Complete Google Sign In</h3>
+        <button class="btn-close" onclick="closeModal('googleTokenModal')">&times;</button>
+      </div>
+      <form onsubmit="handleManualOAuthTokenSubmit(event)">
+        <div class="modal-body">
+          <p class="text-subtle mb-4">Google OAuth authentication completed. If the popup displays your token response, paste it below to enter the dashboard:</p>
+          <div class="form-group">
+            <label class="form-label" for="manualOAuthTokenInput">Authentication Token Payload</label>
+            <textarea id="manualOAuthTokenInput" class="form-input" rows="4" placeholder='{"token": "eyJhbGci..."}' required></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('googleTokenModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Sign In to Dashboard</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
