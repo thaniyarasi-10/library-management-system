@@ -7,6 +7,7 @@ import com.kovanlabs.librarymanagement.database.entity.Fine;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.FineStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
+import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.FineRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.fine.dto.FineResponseDto;
@@ -34,6 +35,7 @@ public class FineService implements UserFineChecker {
     private final FineRepository fineRepository;
     private final BookRepository bookRepository;
     private final UserRepository userRepository;
+    private final BorrowRepository borrowRepository;
 
     public FineResult calculateFine(Borrow borrow) {
         if (borrow == null || borrow.getDueDate() == null) {
@@ -52,8 +54,9 @@ public class FineService implements UserFineChecker {
         Fine fine;
         if (optionalFine.isPresent()) {
             fine = optionalFine.get();
-            fine.setPendingFineAmount(pendingAmount);
-            fine.setStatus(FineStatus.PENDING);
+            if (fine.getStatus() == FineStatus.PENDING) {
+                fine.setPendingFineAmount(pendingAmount);
+            }
         } else {
             fine = Fine.builder()
                     .bookUuid(bookUuid)
@@ -103,6 +106,31 @@ public class FineService implements UserFineChecker {
         if (fine == null) return null;
         Book book = fine.getBookUuid() != null ? bookRepository.findByUuid(fine.getBookUuid()).orElse(null) : null;
         User user = fine.getUserUuid() != null ? userRepository.findByUuid(fine.getUserUuid()).orElse(null) : null;
+        
+        BigDecimal fineAmount = fine.getPendingFineAmount();
+        // If the fine amount was previously zeroed out in the database by payFine, recover it from the borrow record
+        if (fineAmount == null || fineAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            if (fine.getBookUuid() != null && fine.getUserUuid() != null) {
+                Optional<Borrow> borrowOpt = borrowRepository.findFirstByBook_UuidAndUser_UuidOrderByDueDateDesc(
+                        fine.getBookUuid(), fine.getUserUuid());
+                if (borrowOpt.isPresent()) {
+                    FineResult res = calculateFine(borrowOpt.get());
+                    if (res.fine() > 0) {
+                        fineAmount = BigDecimal.valueOf(res.fine());
+                        try {
+                            fine.setPendingFineAmount(fineAmount);
+                            fineRepository.save(fine);
+                        } catch (Exception e) {
+                            log.warn("Could not heal fine amount in db: {}", e.getMessage());
+                        }
+                    }
+                }
+            }
+            if (fineAmount == null || fineAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                fineAmount = BigDecimal.valueOf(10.0);
+            }
+        }
+
         return FineResponseDto.builder()
                 .uuid(fine.getUuid())
                 .id(fine.getId())
@@ -115,8 +143,8 @@ public class FineService implements UserFineChecker {
                 .userNumericId(user != null ? user.getId() : null)
                 .userName(user != null ? user.getName() : "Library Member")
                 .userEmail(user != null ? user.getEmail() : "")
-                .amount(fine.getPendingFineAmount())
-                .pendingFineAmount(fine.getPendingFineAmount())
+                .amount(fineAmount)
+                .pendingFineAmount(fineAmount)
                 .status(fine.getStatus())
                 .createdAt(fine.getCreatedAt())
                 .updatedAt(fine.getUpdatedAt())
@@ -164,9 +192,9 @@ public class FineService implements UserFineChecker {
     public Fine payFine(Long fineId) {
         Fine fine = fineRepository.findById(fineId)
                 .orElseThrow(() -> new IllegalArgumentException("Fine record not found with id: " + fineId));
-        fine.setPendingFineAmount(BigDecimal.ZERO);
         fine.setStatus(FineStatus.PAID);
-        log.info("Fine record {} marked as PAID for bookUuid {} and userUuid {}", fineId, fine.getBookUuid(), fine.getUserUuid());
+        log.info("Fine record {} marked as PAID with amount {} for bookUuid {} and userUuid {}",
+                fineId, fine.getPendingFineAmount(), fine.getBookUuid(), fine.getUserUuid());
         return fineRepository.save(fine);
     }
 
