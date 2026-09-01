@@ -12,6 +12,7 @@ import com.kovanlabs.librarymanagement.membership.mapping.MembershipMapper;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
@@ -41,9 +42,14 @@ public class MembershipServiceImpl implements MembershipService {
     private final S3Service s3Service;
     private final MembershipMapper membershipMapper;
 
-    private static final String BUCKET_NAME = "lms-membership";
-    private static final String BUCKET_REGION = "ap-south-1";
-    private static final String TEMPLATE_KEY = "lms-membership/template/membership-agreement.html";
+    @Value("${aws.s3.membership.bucket-name}")
+    private String membershipBucketName;
+
+    @Value("${aws.s3.membership.region}")
+    private String membershipBucketRegion;
+
+    @Value("${aws.s3.membership.template-key}")
+    private String membershipTemplateKey;
 
     @Override
     @Transactional
@@ -74,7 +80,7 @@ public class MembershipServiceImpl implements MembershipService {
 
         String agreementHtml;
         try {
-            agreementHtml = s3Service.downloadFileAsString(BUCKET_NAME, BUCKET_REGION, TEMPLATE_KEY);
+            agreementHtml = s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
         } catch (Exception e) {
             log.warn("Failed to download template from S3: {}, using default fallback agreement template", e.getMessage());
             agreementHtml = getDefaultAgreementTemplate();
@@ -123,7 +129,7 @@ public class MembershipServiceImpl implements MembershipService {
         try {
             String templateHtml;
             try {
-                templateHtml = s3Service.downloadFileAsString(BUCKET_NAME, BUCKET_REGION, TEMPLATE_KEY);
+                templateHtml = s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
             } catch (Exception e) {
                 log.warn("Failed to download template from S3: {}, using default fallback agreement template", e.getMessage());
                 templateHtml = getDefaultAgreementTemplate();
@@ -142,7 +148,7 @@ public class MembershipServiceImpl implements MembershipService {
             byte[] pdfBytes = renderHtmlToPdf(filledHtml);
 
             String pdfKey = "signed-agreements/" + membership.getMembershipId() + "-signed-agreement.pdf";
-            s3Service.uploadFileBytes(BUCKET_NAME, BUCKET_REGION, pdfKey, pdfBytes, "application/pdf");
+            s3Service.uploadFileBytes(membershipBucketName, membershipBucketRegion, pdfKey, pdfBytes, "application/pdf");
 
             membership.setStatus(MembershipStatus.ACTIVE);
             membership.setSigned(true);
@@ -189,7 +195,7 @@ public class MembershipServiceImpl implements MembershipService {
         }
 
         try {
-            return s3Service.downloadFileAsString(BUCKET_NAME, BUCKET_REGION, TEMPLATE_KEY);
+            return s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
         } catch (Exception e) {
             log.warn("Failed to download template from S3: {}, returning default fallback template", e.getMessage());
             return getDefaultAgreementTemplate();
@@ -212,7 +218,7 @@ public class MembershipServiceImpl implements MembershipService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Signed PDF is not available yet");
         }
 
-        return s3Service.downloadFile(BUCKET_NAME, BUCKET_REGION, membership.getSignedPdfKey());
+        return s3Service.downloadFile(membershipBucketName, membershipBucketRegion, membership.getSignedPdfKey());
     }
 
     @Override
@@ -228,6 +234,7 @@ public class MembershipServiceImpl implements MembershipService {
         return isActive && isNotExpired;
     }
 
+    @CacheEvict(value = "active-memberships", key = "#userUuid")
     public void evictActiveMembershipCache(UUID userUuid) {
         log.info("Evicting active membership cache for user: {}", userUuid);
     }
@@ -243,13 +250,14 @@ public class MembershipServiceImpl implements MembershipService {
     }
 
     private byte[] renderHtmlToPdf(String htmlContent) throws Exception {
-        ByteArrayOutputStream os = new ByteArrayOutputStream();
-        PdfRendererBuilder builder = new PdfRendererBuilder();
-        builder.useFastMode();
-        builder.withHtmlContent(htmlContent, "/");
-        builder.toStream(os);
-        builder.run();
-        return os.toByteArray();
+        try (ByteArrayOutputStream os = new ByteArrayOutputStream()) {
+            PdfRendererBuilder builder = new PdfRendererBuilder();
+            builder.useFastMode();
+            builder.withHtmlContent(htmlContent, "/");
+            builder.toStream(os);
+            builder.run();
+            return os.toByteArray();
+        }
     }
 
     private String getDefaultAgreementTemplate() {

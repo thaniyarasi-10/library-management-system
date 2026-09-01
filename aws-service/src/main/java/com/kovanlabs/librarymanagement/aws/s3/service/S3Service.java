@@ -25,10 +25,10 @@ import java.util.UUID;
 public class S3Service {
     private S3Client s3Client;
 
-    @Value("${aws.s3.bucket-name}")
+    @Value("${aws.s3.book-covers.bucket-name:}")
     private String bucketName;
 
-    @Value("${aws.region}")
+    @Value("${aws.s3.book-covers.region}")
     private String region;
 
     @Value("${aws.credentials.access-key:}")
