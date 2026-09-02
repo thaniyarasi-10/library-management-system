@@ -122,7 +122,7 @@ public class MembershipServiceImpl implements MembershipService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access Denied: This application does not belong to you");
         }
 
-        if (membership.getStatus() == MembershipStatus.ACTIVE || membership.isSigned()) {
+        if (membership.getStatus() == MembershipStatus.ACTIVE) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Membership is already active");
         }
 
