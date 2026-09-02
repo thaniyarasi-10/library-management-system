@@ -4,6 +4,7 @@ import com.kovanlabs.librarymanagement.authentication.filter.JwtAuthenticationFi
 import com.kovanlabs.librarymanagement.authentication.oauth.OAuth2AuthenticationSuccessHandler;
 import com.kovanlabs.librarymanagement.authentication.service.CustomUserDetailsService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -18,6 +19,15 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
+
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 @Configuration
 @RequiredArgsConstructor
@@ -27,6 +37,10 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CustomUserDetailsService userDetailsService;
     private final OAuth2AuthenticationSuccessHandler successHandler;
+    private final ClientRegistrationRepository clientRegistrationRepository;
+
+    @Value("${app.cors.allowed-origins:http://localhost:8080,http://localhost:3000,http://127.0.0.1:8080,http://127.0.0.1:5500}")
+    private List<String> allowedOrigins;
 
     @Bean
     public PasswordEncoder passwordEncoder(){
@@ -34,40 +48,72 @@ public class SecurityConfig {
     }
 
     @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(allowedOrigins);
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+    
+    // Select account from google account
+    private OAuth2AuthorizationRequestResolver authorizationRequestResolver() {
+        DefaultOAuth2AuthorizationRequestResolver resolver = new DefaultOAuth2AuthorizationRequestResolver(
+                clientRegistrationRepository, "/oauth2/authorization");
+        resolver.setAuthorizationRequestCustomizer(customizer ->
+                customizer.additionalParameters(params -> params.put("prompt", "select_account"))
+        );
+        return resolver;
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
-        http.csrf(csrf -> csrf.disable())
+        http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/User")
+                        .requestMatchers("/", "/index.html", "/*.css", "/*.js", "/*.html", "/favicon.ico", "/static/**")
                         .permitAll()
 
-                        .requestMatchers(HttpMethod.GET, "/books/**")
+                        .requestMatchers(HttpMethod.POST, "/user")
                         .permitAll()
 
-                        .requestMatchers(HttpMethod.POST, "/books/**")
+                        .requestMatchers(HttpMethod.GET, "/books", "/books/**")
+                        .permitAll()
+
+                        .requestMatchers(HttpMethod.POST, "/books", "/books/**")
                         .hasRole("ADMIN")
 
-                        .requestMatchers(HttpMethod.PUT, "/books/**")
+                        .requestMatchers(HttpMethod.PUT, "/books", "/books/**")
                         .hasRole("ADMIN")
 
-                        .requestMatchers(HttpMethod.DELETE, "/books/**")
+                        .requestMatchers(HttpMethod.DELETE, "/books", "/books/**")
                         .hasRole("ADMIN")
 
-                        .requestMatchers("/borrow/**")
+                        .requestMatchers("/borrow", "/borrow/**")
                         .hasAnyRole("USER", "ADMIN")
 
-                        .requestMatchers("/fines/**")
+                        .requestMatchers("/memberships", "/memberships/**")
                         .hasAnyRole("USER", "ADMIN")
 
-                        .requestMatchers(HttpMethod.GET, "/User/**")
+                        .requestMatchers("/fines", "/fines/**")
+                        .hasAnyRole("USER", "ADMIN")
+
+                        .requestMatchers(HttpMethod.GET, "/user/me")
+                        .hasAnyRole("USER", "ADMIN")
+
+                        .requestMatchers(HttpMethod.GET, "/user", "/user/**")
                         .hasRole("ADMIN")
 
-                        .requestMatchers(HttpMethod.PUT, "/User/**")
+                        .requestMatchers(HttpMethod.PUT, "/user", "/user/**")
                         .hasRole("ADMIN")
 
-                        .requestMatchers(HttpMethod.DELETE, "/User/**")
+                        .requestMatchers(HttpMethod.DELETE, "/user", "/user/**")
                         .hasRole("ADMIN")
 
                         .requestMatchers(HttpMethod.POST,"/auth/login")
@@ -77,7 +123,12 @@ public class SecurityConfig {
 
                         .anyRequest().authenticated()
                 )
-                .oauth2Login(oauth -> oauth.successHandler(successHandler))
+                .oauth2Login(oauth -> oauth
+                        .successHandler(successHandler)
+                        .authorizationEndpoint(authorization -> authorization
+                                .authorizationRequestResolver(authorizationRequestResolver())
+                        )
+                )
                 .authenticationProvider(authenticationProvider(userDetailsService, passwordEncoder()))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

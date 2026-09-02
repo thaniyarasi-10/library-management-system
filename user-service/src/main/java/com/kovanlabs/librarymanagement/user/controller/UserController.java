@@ -54,6 +54,14 @@ public class UserController {
         return userService.searchUsers(query, page, size, sortBy, sortDir);
     }
 
+    @GetMapping("/me")
+    public UserResponse getCurrentUser(java.security.Principal principal) {
+        if (principal == null) {
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+        return userService.getUserByEmail(principal.getName());
+    }
+
     @GetMapping("/{id}")
     public UserResponse getUserById(@PathVariable("id") Long id) {
         return userService.getUserById(id);

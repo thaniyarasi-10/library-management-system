@@ -21,4 +21,6 @@ public interface FineRepository extends JpaRepository<Fine, UUID> {
     List<Fine> findByUserUuidAndStatus(UUID userUuid, FineStatus status);
 
     List<Fine> findByUserUuid(UUID userUuid);
+    List<Fine> findAllByOrderByIdDesc();
+    List<Fine> findByUserUuidOrderByIdDesc(UUID userUuid);
 }

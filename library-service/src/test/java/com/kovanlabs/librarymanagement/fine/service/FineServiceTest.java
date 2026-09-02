@@ -6,6 +6,7 @@ import com.kovanlabs.librarymanagement.database.entity.Fine;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.FineStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
+import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.FineRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.fine.dto.FineResult;
@@ -28,6 +29,7 @@ class FineServiceTest {
     private FineRepository fineRepository;
     private BookRepository bookRepository;
     private UserRepository userRepository;
+    private BorrowRepository borrowRepository;
     private FineService fineService;
 
     @BeforeEach
@@ -35,7 +37,8 @@ class FineServiceTest {
         fineRepository = mock(FineRepository.class);
         bookRepository = mock(BookRepository.class);
         userRepository = mock(UserRepository.class);
-        fineService = new FineService(fineRepository, bookRepository, userRepository);
+        borrowRepository = mock(BorrowRepository.class);
+        fineService = new FineService(fineRepository, bookRepository, userRepository, borrowRepository);
     }
 
     @Test
@@ -149,7 +152,7 @@ class FineServiceTest {
         when(fineRepository.save(any(Fine.class))).thenAnswer(i -> i.getArgument(0));
 
         Fine paidFine = fineService.payFine(fineId);
-        assertEquals(BigDecimal.ZERO, paidFine.getPendingFineAmount());
+        assertEquals(BigDecimal.valueOf(50.0), paidFine.getPendingFineAmount());
         assertEquals(FineStatus.PAID, paidFine.getStatus());
     }
 

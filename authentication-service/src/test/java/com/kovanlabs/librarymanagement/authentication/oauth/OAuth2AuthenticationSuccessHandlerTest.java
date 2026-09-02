@@ -92,12 +92,12 @@ class OAuth2AuthenticationSuccessHandlerTest {
 
         verify(userService, times(1)).findOrCreateGoogleUser(googleId, email, name);
         verify(jwtService, times(1)).generateToken(mockUser);
-        verify(response, times(1)).setContentType("application/json");
-        verify(response, times(1)).setStatus(HttpServletResponse.SC_OK);
+        verify(response, times(1)).setContentType("text/html;charset=UTF-8");
 
         printWriter.flush();
-        String jsonResponse = stringWriter.toString();
-        assertTrue(jsonResponse.contains("\"token\":\"mocked-jwt-token\""));
+        String htmlResponse = stringWriter.toString();
+        assertTrue(htmlResponse.contains("mocked-jwt-token"));
+        assertTrue(htmlResponse.contains("ATHENAEUM_OAUTH_TOKEN"));
     }
 }
 

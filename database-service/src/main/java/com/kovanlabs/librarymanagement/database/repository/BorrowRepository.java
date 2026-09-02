@@ -14,4 +14,9 @@ public interface BorrowRepository extends JpaRepository<Borrow, UUID> {
     Optional<Borrow> findByUuid(UUID uuid);
     Optional<Borrow> findById(Long id);
     List<Borrow> findByReturnedDateIsNullAndDueDateBefore(LocalDate date);
+    List<Borrow> findAllByOrderByIdDesc();
+    List<Borrow> findByUser_IdOrderByIdDesc(Long userId);
+    List<Borrow> findByUser_UuidOrderByIdDesc(UUID userUuid);
+    List<Borrow> findByBook_UuidAndUser_Uuid(UUID bookUuid, UUID userUuid);
+    Optional<Borrow> findFirstByBook_UuidAndUser_UuidOrderByDueDateDesc(UUID bookUuid, UUID userUuid);
 }

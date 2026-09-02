@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import com.kovanlabs.librarymanagement.membership.service.MembershipService;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +27,7 @@ public class BorrowServiceImpl implements BorrowService {
     private final UserRepository userRepository;
     private final UserFineChecker userFineChecker;
     private final BookMapper bookMapper;
+    private final MembershipService membershipService;
 
     @Override
     public BorrowResponseDto borrowBook(BorrowRequestDto borrowRequestDto) {
@@ -35,6 +37,10 @@ public class BorrowServiceImpl implements BorrowService {
 
         User user = userRepository.findById(borrowRequestDto.userId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with id: " + borrowRequestDto.userId()));
+
+        if (!membershipService.hasActiveMembership(user.getUuid())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only users with an ACTIVE membership can perform borrow operations");
+        }
 
         if (userFineChecker != null && userFineChecker.hasPendingFines(borrowRequestDto.userId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User has pending fines. Please pay outstanding fines before borrowing books.");
@@ -69,5 +75,34 @@ public class BorrowServiceImpl implements BorrowService {
         Borrow updatedBorrow = borrowRepository.save(borrow);
 
         return bookMapper.mapToResponse(updatedBorrow);
+    }
+
+    @Override
+    public java.util.List<BorrowResponseDto> getAllBorrows() {
+        return borrowRepository.findAllByOrderByIdDesc().stream()
+                .map(bookMapper::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    public java.util.List<BorrowResponseDto> getBorrowsByUserId(Long userId) {
+        if (userId == null) {
+            return java.util.Collections.emptyList();
+        }
+        return borrowRepository.findByUser_IdOrderByIdDesc(userId).stream()
+                .map(bookMapper::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    public java.util.List<BorrowResponseDto> getBorrowsByUserEmail(String email) {
+        if (email == null) {
+            return java.util.Collections.emptyList();
+        }
+        User user = userRepository.findByEmail(email).orElse(null);
+        if (user == null || user.getId() == null) {
+            return java.util.Collections.emptyList();
+        }
+        return getBorrowsByUserId(user.getId());
     }
 }

@@ -128,7 +128,7 @@ public class BookServiceImpl implements BookService {
     }
 
     @Transactional
-    @CacheEvict(value = "books",allEntries = true)
+    @CacheEvict(value = "books", allEntries = true)
     public String uploadBookCover(Long bookId, MultipartFile file)  {
 
         Book book = bookRepository.findById(bookId)

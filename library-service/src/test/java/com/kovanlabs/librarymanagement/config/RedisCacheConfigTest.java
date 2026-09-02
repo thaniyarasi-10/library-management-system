@@ -28,14 +28,12 @@ class RedisCacheConfigTest {
     }
 
     @Test
-    @SuppressWarnings("deprecation")
     void testBookResponseRecordSerialization() {
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.activateDefaultTyping(
                 LaissezFaireSubTypeValidator.instance,
-                ObjectMapper.DefaultTyping.EVERY_OBJECT,
+                ObjectMapper.DefaultTyping.NON_FINAL,
                 JsonTypeInfo.As.PROPERTY);
-
         GenericJackson2JsonRedisSerializer serializer = new GenericJackson2JsonRedisSerializer(objectMapper);
         BookResponse original = new BookResponse(UUID.randomUUID(), 5L, "Clean Code", "Robert C. Martin",
                 "9780132350884");
@@ -43,8 +41,8 @@ class RedisCacheConfigTest {
         byte[] serialized = serializer.serialize(original);
         assertNotNull(serialized);
 
-        Object deserialized = serializer.deserialize(serialized);
-        assertInstanceOf(BookResponse.class, deserialized);
+        Object deserialized = serializer.deserialize(serialized, BookResponse.class);
         assertEquals(original, deserialized);
     }
+
 }

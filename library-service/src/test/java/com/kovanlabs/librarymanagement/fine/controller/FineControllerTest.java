@@ -2,6 +2,7 @@ package com.kovanlabs.librarymanagement.fine.controller;
 
 import com.kovanlabs.librarymanagement.database.entity.Fine;
 import com.kovanlabs.librarymanagement.database.enums.FineStatus;
+import com.kovanlabs.librarymanagement.fine.dto.FineResponseDto;
 import com.kovanlabs.librarymanagement.fine.service.FineService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -50,15 +51,22 @@ class FineControllerTest {
                 .pendingFineAmount(BigDecimal.ZERO)
                 .status(FineStatus.PAID)
                 .build();
+        FineResponseDto dto = FineResponseDto.builder()
+                .id(fineId)
+                .pendingFineAmount(BigDecimal.ZERO)
+                .amount(BigDecimal.ZERO)
+                .status(FineStatus.PAID)
+                .build();
 
         when(fineService.payFine(fineId)).thenReturn(fine);
+        when(fineService.mapToDtoWithDetails(fine)).thenReturn(dto);
 
-        ResponseEntity<Fine> response = fineController.payFine(fineId);
+        ResponseEntity<FineResponseDto> response = fineController.payFine(fineId);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
-        assertEquals(FineStatus.PAID, response.getBody().getStatus());
-        assertEquals(BigDecimal.ZERO, response.getBody().getPendingFineAmount());
+        assertEquals(FineStatus.PAID, response.getBody().status());
+        assertEquals(BigDecimal.ZERO, response.getBody().pendingFineAmount());
         verify(fineService, times(1)).payFine(fineId);
     }
 
@@ -80,10 +88,10 @@ class FineControllerTest {
     @Test
     @DisplayName("Should get fines and pending fines by user ID")
     void testGetFinesByUserId() {
-        when(fineService.getFinesByUserId(userId)).thenReturn(List.of());
+        when(fineService.getFinesDtoByUserId(userId)).thenReturn(List.of());
         when(fineService.getPendingFinesByUserId(userId)).thenReturn(List.of());
 
-        ResponseEntity<List<Fine>> responseAll = fineController.getFinesByUserId(userId);
+        ResponseEntity<List<FineResponseDto>> responseAll = fineController.getFinesByUserId(userId);
         ResponseEntity<List<Fine>> responsePending = fineController.getPendingFinesByUserId(userId);
 
         assertEquals(HttpStatus.OK, responseAll.getStatusCode());

@@ -16,5 +16,7 @@
     <include file="db/changelog/changes/07-populate-user-uuid.xml"/>
     <include file="db/changelog/changes/08-modify-uuid-columns-to-varchar.xml"/>
     <include file="db/changelog/changes/09-rename-books-table.xml"/>
+    <include file="db/changelog/changes/10-membership-table.xml"/>
+    <include file="db/changelog/changes/11-change-membership-datatype.xml"/>
 
 </databaseChangeLog>
