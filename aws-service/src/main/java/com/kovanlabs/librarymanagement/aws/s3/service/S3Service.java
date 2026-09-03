@@ -99,6 +99,7 @@ public class S3Service {
 
     public String downloadFileAsString(String bucket, String regionName, String key) {
         try {
+
             S3Client client = getS3ClientForRegion(regionName);
             ResponseBytes<GetObjectResponse> objectBytes = client.getObjectAsBytes(
                     GetObjectRequest.builder()
