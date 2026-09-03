@@ -43,11 +43,17 @@ public class MembershipController {
         return ResponseEntity.ok(response);
     }
 
-    @GetMapping("/{membershipId}/agreement")
+    @PostMapping("/cancel")
+    public ResponseEntity<MembershipResponseDto> cancelMembership(Principal principal) {
+        MembershipResponseDto response = membershipService.cancelMembership(principal.getName());
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{membershipUuid}/agreement")
     public ResponseEntity<String> getAgreementHtml(
-            @PathVariable("membershipId") Long membershipId,
+            @PathVariable("membershipUuid") UUID membershipUuid,
             Principal principal) {
-        String html = membershipService.getAgreementHtml(membershipId, principal.getName());
+        String html = membershipService.getAgreementHtmlByUuid(membershipUuid, principal.getName());
         return ResponseEntity.ok(html);
     }
 

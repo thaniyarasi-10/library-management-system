@@ -47,13 +47,13 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
 
         String jwt = jwtService.generateToken(user);
 
-        // Derive target origin from Referer header if available (e.g. http://localhost:3000 for React dev server)
+        // Determine frontend origin from Referer header if available
         String referer = request.getHeader("Referer");
         String frontendOrigin = "http://localhost:3000";
-        if (referer != null && (referer.contains("localhost:3000") || referer.contains("127.0.0.1:3000"))) {
+        if (referer != null && (referer.contains("localhost:5173") || referer.contains("127.0.0.1:5173"))) {
+            frontendOrigin = "http://localhost:5173";
+        } else if (referer != null && (referer.contains("localhost:3000") || referer.contains("127.0.0.1:3000"))) {
             frontendOrigin = "http://localhost:3000";
-        } else {
-            frontendOrigin = "http://localhost:8080";
         }
 
         // Safely serialize message payload as JSON
@@ -66,7 +66,6 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
 
         // Escape JSON for safe embedding in HTML script block
         String jsonPayload = objectMapper.writeValueAsString(messagePayload).replace("</", "<\\/");
-        String jsonOrigin = objectMapper.writeValueAsString(frontendOrigin).replace("</", "<\\/");
         String jsonRedirectUrl = objectMapper.writeValueAsString(fallbackRedirectUrl).replace("</", "<\\/");
 
         response.setContentType("text/html;charset=UTF-8");
@@ -74,7 +73,6 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
                 "<script>" +
                 "try {" +
                 "  var payload = " + jsonPayload + ";" +
-                "  var targetOrigin = " + jsonOrigin + ";" +
                 "  var redirectUrl = " + jsonRedirectUrl + ";" +
                 "  if (window.opener && !window.opener.closed) {" +
                 "    window.opener.postMessage(payload, '*');" +

@@ -621,6 +621,24 @@ export default function App() {
     }
   };
 
+  const handleCancelMembership = () => {
+    setConfirmConfig({
+      title: 'Cancel Library Membership',
+      message: 'Are you sure you want to cancel your membership? You will no longer be able to borrow new books.',
+      actionBtnText: 'Cancel Membership',
+      onConfirm: async () => {
+        const res = await fetchApi('/memberships/cancel', { method: 'POST' });
+        if (res.ok) {
+          showToast('Membership cancelled successfully', 'success');
+          loadMembership();
+        } else {
+          showToast(res.data?.message || 'Failed to cancel membership', 'error');
+        }
+      }
+    });
+    setActiveModal('confirm');
+  };
+
   // Render Login Screen if not authenticated
   if (!authToken) {
     return (
@@ -1406,7 +1424,7 @@ export default function App() {
 
                       <div className="card-body" style={{ marginTop: '20px' }}>
                         <span style={{ fontSize: '10px', color: '#64748b', display: 'block', textTransform: 'uppercase' }}>Membership ID</span>
-                        <span style={{ fontSize: '22px', fontFamily: 'monospace', fontWeight: 'bold', letterSpacing: '2px', color: '#f8fafc' }}>{membership.id || 'MEM-0001'}</span>
+                        <span style={{ fontSize: '22px', fontFamily: 'monospace', fontWeight: 'bold', letterSpacing: '2px', color: '#f8fafc' }}>{membership.membershipId || membership.id || 'MEM-0001'}</span>
                       </div>
 
                       <div className="card-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '20px' }}>
@@ -1416,7 +1434,7 @@ export default function App() {
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <span style={{ fontSize: '9px', color: '#64748b', display: 'block', textTransform: 'uppercase' }}>Expires On</span>
-                          <span style={{ fontSize: '14px', fontWeight: 500, color: '#e2e8f0' }}>{membership.expirationDate || '2027-12-31'}</span>
+                          <span style={{ fontSize: '14px', fontWeight: 500, color: '#e2e8f0' }}>{membership.expiryDate || membership.expirationDate || '2027-12-31'}</span>
                         </div>
                       </div>
                     </div>
@@ -1430,12 +1448,24 @@ export default function App() {
                       <div className="account-details mt-4">
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border-color)' }}>
                           <span className="text-muted">Membership Status</span>
-                          <span style={{ color: 'var(--success)', fontWeight: 600 }}>Verified Active</span>
+                          <span style={{ color: 'var(--success)', fontWeight: 600 }}>Active</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border-color)' }}>
+                          <span className="text-muted">Activated Date</span>
+                          <span style={{ fontWeight: 500 }}>{membership.activatedAt ? new Date(membership.activatedAt).toLocaleDateString() : 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border-color)' }}>
+                          <span className="text-muted">Document Status</span>
+                          <span style={{ color: 'var(--success)', fontWeight: 600 }}>PDF Signed</span>
                         </div>
                       </div>
 
                       <button className="btn btn-secondary btn-block mt-6" onClick={handleDownloadPdf}>
                         Download Signed PDF (Agreement)
+                      </button>
+
+                      <button className="btn btn-danger btn-block mt-3" onClick={handleCancelMembership}>
+                        Cancel Membership
                       </button>
                     </div>
                   </div>
