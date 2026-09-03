@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Library Membership Agreement</title>
+
+<style>
+    @page {
+        size: A4;
+        margin: 25mm 20mm;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: Arial, Helvetica, sans-serif;
+        color: #222;
+        font-size: 14px;
+        line-height: 1.6;
+        margin: 10px;
+    }
+
+    .header {
+        text-align: center;
+        border-bottom: 2px solid #222;
+        padding-bottom: 15px;
+        margin-bottom: 25px;
+    }
+
+    .library-name {
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+
+    .document-title {
+        font-size: 18px;
+        font-weight: bold;
+        margin-top: 10px;
+    }
+
+    .section {
+        margin-bottom: 20px;
+    }
+
+    .section-title {
+        font-size: 15px;
+        font-weight: bold;
+        margin-bottom: 8px;
+    }
+
+    .member-details {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+    }
+
+    .member-details td {
+        border: 1px solid #ccc;
+        padding: 9px;
+    }
+
+    .member-details td:first-child {
+        width: 35%;
+        font-weight: bold;
+        background: #f5f5f5;
+    }
+
+    .terms {
+        padding-left: 20px;
+    }
+
+    .terms li {
+        margin-bottom: 8px;
+    }
+
+    .declaration {
+        margin-top: 20px;
+    }
+
+    .signature-section {
+        margin-top: 45px;
+        display: table;
+        width: 100%;
+    }
+
+    .signature-column {
+        display: table-cell;
+        width: 50%;
+        vertical-align: top;
+    }
+
+    .signature-label {
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+
+    .signature-placeholder {
+        width: 220px;
+        height: 80px;
+        border-bottom: 1px solid #222;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #888;
+        font-size: 12px;
+    }
+
+    .signature-image {
+        max-width: 220px;
+        max-height: 80px;
+        display: block;
+        margin-bottom: 5px;
+    }
+
+    .footer {
+        margin-top: 45px;
+        padding-top: 10px;
+        border-top: 1px solid #ccc;
+        text-align: center;
+        font-size: 11px;
+        color: #666;
+    }
+</style>
+
+
+</head>
+
+<body>
+
+<div class="header">
+    <div class="library-name">LIBRARY MANAGEMENT SYSTEM</div>
+    <div class="document-title">MEMBERSHIP AGREEMENT</div>
+</div>
+
+<div class="section">
+    <div class="section-title">1. Member Information</div>
+
+<table class="member-details">
+    <tr>
+        <td>Member Name</td>
+        <td>{{MEMBER_NAME}}</td>
+    </tr>
+
+    <tr>
+        <td>Email</td>
+        <td>{{MEMBER_EMAIL}}</td>
+    </tr>
+
+    <tr>
+        <td>Membership ID</td>
+        <td>{{MEMBERSHIP_ID}}</td>
+    </tr>
+
+    <tr>
+        <td>Membership Start Date</td>
+        <td>{{START_DATE}}</td>
+    </tr>
+
+    <tr>
+        <td>Membership Expiry Date</td>
+        <td>{{EXPIRY_DATE}}</td>
+    </tr>
+</table>
+
+</div>
+
+<div class="section">
+    <div class="section-title">2. Membership Terms and Conditions</div>
+
+<ol class="terms">
+    <li>
+        The membership is issued to the registered user and is non-transferable.
+    </li>
+
+    <li>
+        The member is responsible for all books borrowed using their membership account.
+    </li>
+
+    <li>
+        Borrowed books must be returned within the applicable due date.
+    </li>
+
+    <li>
+        The member may renew borrowed books subject to the library's renewal rules
+        and book availability.
+    </li>
+
+    <li>
+        The member can view their borrowing history and current due dates through
+        the Library Management System.
+    </li>
+
+    <li>
+        The member must keep their account credentials secure and must not allow
+        another person to use their account.
+    </li>
+
+    <li>
+        The library reserves the right to cancel or suspend membership in case of
+        violation of library rules or misuse of library services.
+    </li>
+
+    <li>
+        Membership access is valid only until the stated expiry date unless
+        cancelled earlier in accordance with library policies.
+    </li>
+</ol>
+
+</div>
+
+<div class="section">
+    <div class="section-title">3. Member Declaration</div>
+
+<div class="declaration">
+    I confirm that the information provided during membership registration is
+    accurate and complete. I have read and understood the terms and conditions
+    of the library membership and agree to comply with the rules and policies
+    of the Library Management System.
+</div>
+
+</div>
+
+<div class="signature-section">
+
+<div class="signature-column">
+    <div class="signature-label">Member Signature</div>
+
+    <!-- Backend replaces this placeholder with the uploaded PNG -->
+    <div id="member-signature">
+        <div class="signature-placeholder">
+            Signature
+        </div>
+    </div>
+
+    <div>
+        Date: {{SIGNED_DATE}}
+    </div>
+</div>
+
+<div class="signature-column">
+    <div class="signature-label">Library Representative</div>
+
+    <div class="signature-placeholder">
+        Authorized Signature
+    </div>
+
+    <div>
+        Date: {{APPROVAL_DATE}}
+    </div>
+</div>
+
+</div>
+
+<div class="footer">
+    Library Management System | Membership Agreement
+</div>
+
+</body>
+</html>
