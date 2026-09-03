@@ -12,7 +12,10 @@ import java.util.UUID;
 @Repository
 public interface MembershipRepository extends JpaRepository<Membership, UUID> {
     Optional<Membership> findByUuid(UUID uuid);
+
     Optional<Membership> findByMembershipId(Long membershipId);
+
     Optional<Membership> findByUserUuid(UUID userUuid);
+
     boolean existsByUserUuidAndStatusIn(UUID userUuid, Collection<MembershipStatus> statuses);
 }

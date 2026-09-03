@@ -59,11 +59,11 @@ public class MembershipServiceImpl implements MembershipService {
 
         boolean exists = membershipRepository.existsByUserUuidAndStatusIn(
                 user.getUuid(),
-                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE)
-        );
+                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE));
 
         if (exists) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User already has a pending or active membership");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "User already has a pending or active membership");
         }
 
         Long membershipId = generateUniqueMembershipId();
@@ -80,9 +80,11 @@ public class MembershipServiceImpl implements MembershipService {
 
         String agreementHtml;
         try {
-            agreementHtml = s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
+            agreementHtml = s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion,
+                    membershipTemplateKey);
         } catch (Exception e) {
-            log.warn("Failed to download template from S3: {}, using default fallback agreement template", e.getMessage());
+            log.warn("Failed to download template from S3: {}, using default fallback agreement template",
+                    e.getMessage());
             agreementHtml = getDefaultAgreementTemplate();
         }
 
@@ -116,10 +118,12 @@ public class MembershipServiceImpl implements MembershipService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
 
         Membership membership = membershipRepository.findByUuid(membershipUuid)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership application not found"));
+                .orElseThrow(
+                        () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership application not found"));
 
         if (!membership.getUserUuid().equals(user.getUuid())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access Denied: This application does not belong to you");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Access Denied: This application does not belong to you");
         }
 
         if (membership.getStatus() == MembershipStatus.ACTIVE) {
@@ -129,14 +133,17 @@ public class MembershipServiceImpl implements MembershipService {
         try {
             String templateHtml;
             try {
-                templateHtml = s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
+                templateHtml = s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion,
+                        membershipTemplateKey);
             } catch (Exception e) {
-                log.warn("Failed to download template from S3: {}, using default fallback agreement template", e.getMessage());
+                log.warn("Failed to download template from S3: {}, using default fallback agreement template",
+                        e.getMessage());
                 templateHtml = getDefaultAgreementTemplate();
             }
 
             String base64Signature = Base64.getEncoder().encodeToString(file.getBytes());
-            String signatureHtml = "<img class=\"signature-img\" src=\"data:image/png;base64," + base64Signature + "\" />";
+            String signatureHtml = "<img class=\"signature-img\" src=\"data:image/png;base64," + base64Signature
+                    + "\" />";
 
             String filledHtml = templateHtml
                     .replace("{{memberName}}", user.getName())
@@ -148,7 +155,8 @@ public class MembershipServiceImpl implements MembershipService {
             byte[] pdfBytes = renderHtmlToPdf(filledHtml);
 
             String pdfKey = "signed-agreements/" + membership.getMembershipId() + "-signed-agreement.pdf";
-            s3Service.uploadFileBytes(membershipBucketName, membershipBucketRegion, pdfKey, pdfBytes, "application/pdf");
+            s3Service.uploadFileBytes(membershipBucketName, membershipBucketRegion, pdfKey, pdfBytes,
+                    "application/pdf");
 
             membership.setStatus(MembershipStatus.ACTIVE);
             membership.setSigned(true);
@@ -167,7 +175,8 @@ public class MembershipServiceImpl implements MembershipService {
 
         } catch (Exception e) {
             log.error("Failed to process and sign agreement for user: {}", email, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to generate signed agreement PDF", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to generate signed agreement PDF", e);
         }
     }
 
@@ -177,12 +186,12 @@ public class MembershipServiceImpl implements MembershipService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
 
         Membership membership = membershipRepository.findByUserUuid(user.getUuid())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No membership application found"));
+                .orElseThrow(
+                        () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No membership application found"));
 
         return membershipMapper.mapToResponse(membership);
     }
 
-    @Override
     public String getAgreementHtml(Long membershipId, String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
@@ -230,7 +239,8 @@ public class MembershipServiceImpl implements MembershipService {
         }
         Membership membership = membershipOpt.get();
         boolean isActive = membership.getStatus() == MembershipStatus.ACTIVE;
-        boolean isNotExpired = membership.getExpiryDate() == null || !membership.getExpiryDate().isBefore(LocalDate.now());
+        boolean isNotExpired = membership.getExpiryDate() == null
+                || !membership.getExpiryDate().isBefore(LocalDate.now());
         return isActive && isNotExpired;
     }
 
@@ -333,7 +343,8 @@ public class MembershipServiceImpl implements MembershipService {
                 "    </div>\n" +
                 "    \n" +
                 "    <div class=\"section\">\n" +
-                "        <p>This agreement outlines the borrowing regulations and code of conduct for library members.</p>\n" +
+                "        <p>This agreement outlines the borrowing regulations and code of conduct for library members.</p>\n"
+                +
                 "        <table class=\"details-table\">\n" +
                 "            <tr>\n" +
                 "                <td class=\"label\">Member Name</td>\n" +
@@ -357,12 +368,15 @@ public class MembershipServiceImpl implements MembershipService {
                 "    <div class=\"section\">\n" +
                 "        <div class=\"section-title\">Terms of Service</div>\n" +
                 "        <p>1. Members are responsible for all library materials checked out on their account.</p>\n" +
-                "        <p>2. Late returns, lost items, and damaged items are subject to fines as per the library policy.</p>\n" +
-                "        <p>3. Borrowing privileges will be suspended if fines exceed threshold limits or memberships expire.</p>\n" +
+                "        <p>2. Late returns, lost items, and damaged items are subject to fines as per the library policy.</p>\n"
+                +
+                "        <p>3. Borrowing privileges will be suspended if fines exceed threshold limits or memberships expire.</p>\n"
+                +
                 "    </div>\n" +
                 "\n" +
                 "    <div class=\"signature-container\">\n" +
-                "        <p>By providing your signature below, you confirm that you accept all rules, regulations, and terms of service of the library.</p>\n" +
+                "        <p>By providing your signature below, you confirm that you accept all rules, regulations, and terms of service of the library.</p>\n"
+                +
                 "        <div class=\"signature-box\">\n" +
                 "            {{signaturePlaceholder}}\n" +
                 "        </div>\n" +
