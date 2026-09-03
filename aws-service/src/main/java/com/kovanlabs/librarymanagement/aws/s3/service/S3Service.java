@@ -16,6 +16,8 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import java.io.IOException;
 import java.util.UUID;
@@ -24,6 +26,7 @@ import java.util.UUID;
 @Slf4j
 public class S3Service {
     private S3Client s3Client;
+    private final Map<String, S3Client> clientsByRegion = new ConcurrentHashMap<>();
 
     @Value("${aws.s3.book-covers.bucket-name:}")
     private String bucketName;
@@ -42,19 +45,28 @@ public class S3Service {
     }
 
     private S3Client getS3ClientForRegion(String regionName) {
+
         if (regionName == null || regionName.isBlank() || regionName.equalsIgnoreCase(region)) {
             return s3Client;
         }
-        S3ClientBuilder builder = S3Client.builder()
-                .region(Region.of(regionName));
+
+        return clientsByRegion.computeIfAbsent(
+                regionName,
+                this::createS3Client
+        );
+    }
+    private S3Client createS3Client(String regionName) {
+
+        S3ClientBuilder builder = S3Client.builder().region(Region.of(regionName));
 
         if (accessKey != null && !accessKey.isBlank() && secretKey != null && !secretKey.isBlank()) {
-            builder.credentialsProvider(StaticCredentialsProvider.create(
-                    AwsBasicCredentials.create(accessKey, secretKey)
-            ));
+            builder.credentialsProvider(
+                    StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+            );
         } else {
             builder.credentialsProvider(DefaultCredentialsProvider.create());
         }
+
         return builder.build();
     }
 

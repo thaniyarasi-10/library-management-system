@@ -51,6 +51,12 @@ public class MembershipServiceImpl implements MembershipService {
     @Value("${aws.s3.membership.template-key}")
     private String membershipTemplateKey;
 
+    @Cacheable(value = "membership-agreement-template", key = "'template'")
+    public String getAgreementTemplate() {
+        log.info("Fetching agreement template from S3 bucket: {}, key: {}", membershipBucketName, membershipTemplateKey);
+        return s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
+    }
+
     @Override
     @Transactional
     public MembershipApplicationResponse applyForMembership(String email) {
@@ -59,11 +65,11 @@ public class MembershipServiceImpl implements MembershipService {
 
         boolean exists = membershipRepository.existsByUserUuidAndStatusIn(
                 user.getUuid(),
-                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE)
-        );
+                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE));
 
         if (exists) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User already has a pending or active membership");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "User already has a pending or active membership");
         }
 
         Membership membership = Membership.builder()
@@ -76,9 +82,8 @@ public class MembershipServiceImpl implements MembershipService {
         Membership saved = membershipRepository.save(membership);
         log.info("Membership application created for user: {} with UUID: {}", email, saved.getUuid());
 
-        // Fetch HTML agreement directly from S3 (no silent fallbacks)
-        String agreementHtml = s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
-        log.info("Successfully fetched agreement template from S3 bucket: {}, key: {}", membershipBucketName, membershipTemplateKey);
+        // Fetch agreement template using Redis/Spring Cache
+        String agreementHtml = getAgreementTemplate();
 
         // Fill basic member details into the S3 template
         agreementHtml = agreementHtml
@@ -114,10 +119,12 @@ public class MembershipServiceImpl implements MembershipService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
 
         Membership membership = membershipRepository.findByUuid(membershipUuid)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership application not found"));
+                .orElseThrow(
+                        () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership application not found"));
 
         if (!membership.getUserUuid().equals(user.getUuid())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access Denied: This application does not belong to you");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Access Denied: This application does not belong to you");
         }
 
         if (membership.getStatus() == MembershipStatus.ACTIVE) {
@@ -128,13 +135,14 @@ public class MembershipServiceImpl implements MembershipService {
             Long newMembershipId = generateUniqueMembershipId();
             membership.setMembershipId(newMembershipId);
 
-            // Fetch template directly from S3
-            String templateHtml = s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
+            // Fetch template using Redis cache
+            String templateHtml = getAgreementTemplate();
 
             String base64Signature = Base64.getEncoder().encodeToString(file.getBytes());
             membership.setSignatureBase64(base64Signature);
 
-            String signatureHtml = "<img class=\"signature-img\" src=\"data:image/png;base64," + base64Signature + "\" />";
+            String signatureHtml = "<img class=\"signature-img\" src=\"data:image/png;base64," + base64Signature
+                    + "\" />";
 
             String filledHtml = templateHtml
                     .replace("{{MEMBER_NAME}}", user.getName())
@@ -147,13 +155,16 @@ public class MembershipServiceImpl implements MembershipService {
                     .replace("{{applicationDate}}", membership.getCreatedAt().toLocalDate().toString())
                     .replace("{{EXPIRY_DATE}}", LocalDate.now().plusYears(1).toString())
                     .replace("{{signaturePlaceholder}}", signatureHtml)
-                    .replace("<div class=\"signature-placeholder\">\n            Signature\n        </div>", signatureHtml)
-                    .replace("<div class=\"signature-placeholder\">\r\n            Signature\r\n        </div>", signatureHtml);
+                    .replace("<div class=\"signature-placeholder\">\n            Signature\n        </div>",
+                            signatureHtml)
+                    .replace("<div class=\"signature-placeholder\">\r\n            Signature\r\n        </div>",
+                            signatureHtml);
 
             byte[] pdfBytes = renderHtmlToPdf(filledHtml);
 
             String pdfKey = "signed-agreements/" + newMembershipId + "-signed-agreement.pdf";
-            s3Service.uploadFileBytes(membershipBucketName, membershipBucketRegion, pdfKey, pdfBytes, "application/pdf");
+            s3Service.uploadFileBytes(membershipBucketName, membershipBucketRegion, pdfKey, pdfBytes,
+                    "application/pdf");
 
             membership.setStatus(MembershipStatus.ACTIVE);
             membership.setSigned(true);
@@ -173,7 +184,8 @@ public class MembershipServiceImpl implements MembershipService {
             throw e;
         } catch (Exception e) {
             log.error("Failed to process and sign agreement for user: {}", email, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to generate signed agreement PDF", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to generate signed agreement PDF", e);
         }
     }
 
@@ -184,9 +196,10 @@ public class MembershipServiceImpl implements MembershipService {
 
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
-                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE, MembershipStatus.EXPIRED)
-        ).orElseGet(() -> membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(user.getUuid())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No membership application found")));
+                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE, MembershipStatus.EXPIRED))
+                .orElseGet(() -> membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(user.getUuid())
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                "No membership application found")));
 
         return membershipMapper.mapToResponse(membership);
     }
@@ -199,8 +212,9 @@ public class MembershipServiceImpl implements MembershipService {
 
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
-                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE)
-        ).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No active or pending membership application found to cancel"));
+                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "No active or pending membership application found to cancel"));
 
         if (membership.getStatus() == MembershipStatus.CANCELLED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Membership is already cancelled");
@@ -228,14 +242,12 @@ public class MembershipServiceImpl implements MembershipService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access Denied");
         }
 
-        String html = s3Service.downloadFileAsString(
-                membershipBucketName,
-                membershipBucketRegion,
-                membershipTemplateKey
-        );
-
-        String membershipIdText = membership.getMembershipId() != null ? membership.getMembershipId().toString() : "PENDING";
-        String startDateText = membership.getCreatedAt() != null ? membership.getCreatedAt().toLocalDate().toString() : LocalDate.now().toString();
+        String html = getAgreementTemplate();
+        log.info("Fetched template from S3");
+        String membershipIdText = membership.getMembershipId() != null ? membership.getMembershipId().toString()
+                : "PENDING";
+        String startDateText = membership.getCreatedAt() != null ? membership.getCreatedAt().toLocalDate().toString()
+                : LocalDate.now().toString();
 
         return html
                 .replace("{{MEMBER_NAME}}", user.getName())
@@ -277,7 +289,8 @@ public class MembershipServiceImpl implements MembershipService {
         }
         Membership membership = membershipOpt.get();
         boolean isActive = membership.getStatus() == MembershipStatus.ACTIVE;
-        boolean isNotExpired = membership.getExpiryDate() == null || !membership.getExpiryDate().isBefore(LocalDate.now());
+        boolean isNotExpired = membership.getExpiryDate() == null
+                || !membership.getExpiryDate().isBefore(LocalDate.now());
         return isActive && isNotExpired;
     }
 
