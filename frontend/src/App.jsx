@@ -561,8 +561,9 @@ export default function App() {
     const res = await fetchApi('/memberships/me');
     if (res.ok && res.data) {
       setMembership(res.data);
-      if (res.data.id) {
-        const resTerms = await fetchApi(`/memberships/${res.data.id}/agreement`);
+      const memUuid = res.data.membershipUuid || res.data.id;
+      if (memUuid) {
+        const resTerms = await fetchApi(`/memberships/${memUuid}/agreement`);
         if (resTerms.ok && resTerms.data) {
           setAgreementText(typeof resTerms.data === 'string' ? resTerms.data : resTerms.data.terms || 'Athenaeum Library Membership Agreement...');
         }
@@ -605,19 +606,23 @@ export default function App() {
   };
 
   const handleDownloadPdf = async () => {
-    if (!membership || !membership.id) return;
-    const res = await fetchApi(`/memberships/${membership.id}/agreement/pdf`);
+    const memId = membership?.membershipId || membership?.id;
+    if (!membership || !memId) {
+      showToast('Membership ID not found', 'error');
+      return;
+    }
+    const res = await fetchApi(`/memberships/${memId}/agreement/pdf`);
     if (res.ok && res.data instanceof Blob) {
       const blobUrl = URL.createObjectURL(res.data);
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.download = `athenaeum_membership_agreement.pdf`;
+      link.download = `${memId}-signed-agreement.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(blobUrl);
     } else {
-      showToast('Failed to download PDF agreement', 'error');
+      showToast(res.data?.message || 'Failed to download PDF agreement', 'error');
     }
   };
 
@@ -1332,7 +1337,7 @@ export default function App() {
           {/* PAGE 6: MEMBERSHIP */}
           {currentPage === 'membership' && (
             <div className="page-pane active">
-              {!membership || membership.status === 'NONE' ? (
+              {!membership || membership.status === 'NONE' || membership.status === 'CANCELLED' ? (
                 <div className="section-card max-w-2xl" style={{ margin: '0 auto' }}>
                   <div className="section-header text-center">
                     <div className="brand-badge mb-4" style={{ margin: '0 auto', display: 'inline-flex', width: '64px', height: '64px', borderRadius: '50%', background: 'var(--primary-light)', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>

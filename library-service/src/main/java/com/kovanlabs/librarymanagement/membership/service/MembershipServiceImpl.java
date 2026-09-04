@@ -141,8 +141,9 @@ public class MembershipServiceImpl implements MembershipService {
             String base64Signature = Base64.getEncoder().encodeToString(file.getBytes());
             membership.setSignatureBase64(base64Signature);
 
-            String signatureHtml = "<img class=\"signature-img\" src=\"data:image/png;base64," + base64Signature
-                    + "\" />";
+            String signatureHtml = "<img class=\"signature-img\" style=\"max-width: 180px; max-height: 70px; object-fit: contain; display: block; margin-bottom: 5px;\" src=\"data:image/png;base64," + base64Signature + "\" />";
+
+            String currentDate = LocalDate.now().toString();
 
             String filledHtml = templateHtml
                     .replace("{{MEMBER_NAME}}", user.getName())
@@ -154,6 +155,8 @@ public class MembershipServiceImpl implements MembershipService {
                     .replace("{{START_DATE}}", membership.getCreatedAt().toLocalDate().toString())
                     .replace("{{applicationDate}}", membership.getCreatedAt().toLocalDate().toString())
                     .replace("{{EXPIRY_DATE}}", LocalDate.now().plusYears(1).toString())
+                    .replace("{{SIGNED_DATE}}", currentDate)
+                    .replace("{{APPROVAL_DATE}}", currentDate)
                     .replace("{{signaturePlaceholder}}", signatureHtml)
                     .replace("<div class=\"signature-placeholder\">\n            Signature\n        </div>",
                             signatureHtml)
@@ -197,9 +200,8 @@ public class MembershipServiceImpl implements MembershipService {
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
                 Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE, MembershipStatus.EXPIRED))
-                .orElseGet(() -> membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(user.getUuid())
-                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                                "No membership application found")));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "No active, pending, or expired membership application found"));
 
         return membershipMapper.mapToResponse(membership);
     }
@@ -258,7 +260,9 @@ public class MembershipServiceImpl implements MembershipService {
                 .replace("{{membershipId}}", membershipIdText)
                 .replace("{{START_DATE}}", startDateText)
                 .replace("{{applicationDate}}", startDateText)
-                .replace("{{EXPIRY_DATE}}", "N/A (Pending Activation)");
+                .replace("{{EXPIRY_DATE}}", "N/A (Pending Activation)")
+                .replace("{{SIGNED_DATE}}", "Pending")
+                .replace("{{APPROVAL_DATE}}", "Pending");
     }
 
     @Override
