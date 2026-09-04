@@ -68,14 +68,17 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         String jsonPayload = objectMapper.writeValueAsString(messagePayload).replace("</", "<\\/");
         String jsonRedirectUrl = objectMapper.writeValueAsString(fallbackRedirectUrl).replace("</", "<\\/");
 
+        String jsonTargetOrigin = objectMapper.writeValueAsString(frontendOrigin).replace("</", "<\\/");
+
         response.setContentType("text/html;charset=UTF-8");
         String html = "<!DOCTYPE html><html><head><title>Authentication Successful</title></head><body>" +
                 "<script>" +
                 "try {" +
                 "  var payload = " + jsonPayload + ";" +
                 "  var redirectUrl = " + jsonRedirectUrl + ";" +
+                "  var targetOrigin = " + jsonTargetOrigin + ";" +
                 "  if (window.opener && !window.opener.closed) {" +
-                "    window.opener.postMessage(payload, '*');" +
+                "    window.opener.postMessage(payload, targetOrigin);" +
                 "    setTimeout(function() { window.close(); }, 300);" +
                 "  } else {" +
                 "    window.location.href = redirectUrl;" +
