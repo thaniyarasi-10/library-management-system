@@ -10,7 +10,8 @@ public interface MembershipService {
     MembershipApplicationResponse applyForMembership(String email);
     MembershipResponseDto signAgreement(UUID membershipUuid, MultipartFile file, String email);
     MembershipResponseDto getMyMembership(String email);
-    String getAgreementHtml(Long membershipId, String email);
+    MembershipResponseDto cancelMembership(String email);
+    String getAgreementHtmlByUuid(UUID membershipUuid, String email);
     byte[] downloadAgreementPdf(Long membershipId, String email);
     boolean hasActiveMembership(UUID userUuid);
 }

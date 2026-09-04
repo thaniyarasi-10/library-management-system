@@ -25,7 +25,7 @@ public class Membership {
     @Column(name = "uuid", updatable = false, nullable = false, columnDefinition = "CHAR(36)")
     private UUID uuid;
 
-    @Column(name = "membership_id", nullable = false, unique = true)
+    @Column(name = "membership_id", nullable = true, unique = true)
     private Long membershipId;
 
     @Column(name = "user_uuid", nullable = false)
@@ -51,6 +51,12 @@ public class Membership {
 
     @Column(name = "signed_pdf_key")
     private String signedPdfKey;
+
+    @Column(name = "signature_base64", columnDefinition = "LONGTEXT")
+    private String signatureBase64;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

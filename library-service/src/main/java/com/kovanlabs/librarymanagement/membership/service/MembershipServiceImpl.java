@@ -51,6 +51,12 @@ public class MembershipServiceImpl implements MembershipService {
     @Value("${aws.s3.membership.template-key}")
     private String membershipTemplateKey;
 
+    @Cacheable(value = "membership-agreement-template", key = "'template'")
+    public String getAgreementTemplate() {
+        log.info("Fetching agreement template from S3 bucket: {}, key: {}", membershipBucketName, membershipTemplateKey);
+        return s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
+    }
+
     @Override
     @Transactional
     public MembershipApplicationResponse applyForMembership(String email) {
@@ -59,46 +65,43 @@ public class MembershipServiceImpl implements MembershipService {
 
         boolean exists = membershipRepository.existsByUserUuidAndStatusIn(
                 user.getUuid(),
-                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE)
-        );
+                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE));
 
         if (exists) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User already has a pending or active membership");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "User already has a pending or active membership");
         }
 
-        Long membershipId = generateUniqueMembershipId();
-
         Membership membership = Membership.builder()
-                .membershipId(membershipId)
+                .membershipId(null)
                 .userUuid(user.getUuid())
                 .status(MembershipStatus.PENDING)
                 .signed(false)
                 .build();
 
         Membership saved = membershipRepository.save(membership);
-        log.info("Membership application created for user: {} with ID: {}", email, saved.getMembershipId());
+        log.info("Membership application created for user: {} with UUID: {}", email, saved.getUuid());
 
-        String agreementHtml;
-        try {
-            agreementHtml = s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
-        } catch (Exception e) {
-            log.warn("Failed to download template from S3: {}, using default fallback agreement template", e.getMessage());
-            agreementHtml = getDefaultAgreementTemplate();
-        }
+        // Fetch agreement template using Redis/Spring Cache
+        String agreementHtml = getAgreementTemplate();
 
-        // Fill basic details
+        // Fill basic member details into the S3 template
         agreementHtml = agreementHtml
+                .replace("{{MEMBER_NAME}}", user.getName())
                 .replace("{{memberName}}", user.getName())
+                .replace("{{MEMBER_EMAIL}}", user.getEmail())
                 .replace("{{memberEmail}}", user.getEmail())
-                .replace("{{membershipId}}", membershipId.toString())
-                .replace("{{applicationDate}}", LocalDate.now().toString());
+                .replace("{{MEMBERSHIP_ID}}", "PENDING")
+                .replace("{{membershipId}}", "PENDING")
+                .replace("{{START_DATE}}", LocalDate.now().toString())
+                .replace("{{applicationDate}}", LocalDate.now().toString())
+                .replace("{{EXPIRY_DATE}}", "N/A (Pending Activation)");
 
         return new MembershipApplicationResponse(saved.getUuid(), saved.getMembershipId(), agreementHtml);
     }
 
     @Override
     @Transactional
-    @CacheEvict(value = "active-memberships", key = "#p2")
     public MembershipResponseDto signAgreement(UUID membershipUuid, MultipartFile file, String email) {
         if (file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Signature file is empty");
@@ -116,10 +119,12 @@ public class MembershipServiceImpl implements MembershipService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
 
         Membership membership = membershipRepository.findByUuid(membershipUuid)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership application not found"));
+                .orElseThrow(
+                        () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership application not found"));
 
         if (!membership.getUserUuid().equals(user.getUuid())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access Denied: This application does not belong to you");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Access Denied: This application does not belong to you");
         }
 
         if (membership.getStatus() == MembershipStatus.ACTIVE) {
@@ -127,28 +132,42 @@ public class MembershipServiceImpl implements MembershipService {
         }
 
         try {
-            String templateHtml;
-            try {
-                templateHtml = s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
-            } catch (Exception e) {
-                log.warn("Failed to download template from S3: {}, using default fallback agreement template", e.getMessage());
-                templateHtml = getDefaultAgreementTemplate();
-            }
+            Long newMembershipId = generateUniqueMembershipId();
+            membership.setMembershipId(newMembershipId);
+
+            // Fetch template using Redis cache
+            String templateHtml = getAgreementTemplate();
 
             String base64Signature = Base64.getEncoder().encodeToString(file.getBytes());
-            String signatureHtml = "<img class=\"signature-img\" src=\"data:image/png;base64," + base64Signature + "\" />";
+            membership.setSignatureBase64(base64Signature);
+
+            String signatureHtml = "<img class=\"signature-img\" style=\"max-width: 180px; max-height: 70px; object-fit: contain; display: block; margin-bottom: 5px;\" src=\"data:image/png;base64," + base64Signature + "\" />";
+
+            String currentDate = LocalDate.now().toString();
 
             String filledHtml = templateHtml
+                    .replace("{{MEMBER_NAME}}", user.getName())
                     .replace("{{memberName}}", user.getName())
+                    .replace("{{MEMBER_EMAIL}}", user.getEmail())
                     .replace("{{memberEmail}}", user.getEmail())
-                    .replace("{{membershipId}}", membership.getMembershipId().toString())
+                    .replace("{{MEMBERSHIP_ID}}", newMembershipId.toString())
+                    .replace("{{membershipId}}", newMembershipId.toString())
+                    .replace("{{START_DATE}}", membership.getCreatedAt().toLocalDate().toString())
                     .replace("{{applicationDate}}", membership.getCreatedAt().toLocalDate().toString())
-                    .replace("{{signaturePlaceholder}}", signatureHtml);
+                    .replace("{{EXPIRY_DATE}}", LocalDate.now().plusYears(1).toString())
+                    .replace("{{SIGNED_DATE}}", currentDate)
+                    .replace("{{APPROVAL_DATE}}", currentDate)
+                    .replace("{{signaturePlaceholder}}", signatureHtml)
+                    .replace("<div class=\"signature-placeholder\">\n            Signature\n        </div>",
+                            signatureHtml)
+                    .replace("<div class=\"signature-placeholder\">\r\n            Signature\r\n        </div>",
+                            signatureHtml);
 
             byte[] pdfBytes = renderHtmlToPdf(filledHtml);
 
-            String pdfKey = "signed-agreements/" + membership.getMembershipId() + "-signed-agreement.pdf";
-            s3Service.uploadFileBytes(membershipBucketName, membershipBucketRegion, pdfKey, pdfBytes, "application/pdf");
+            String pdfKey = "signed-agreements/" + newMembershipId + "-signed-agreement.pdf";
+            s3Service.uploadFileBytes(membershipBucketName, membershipBucketRegion, pdfKey, pdfBytes,
+                    "application/pdf");
 
             membership.setStatus(MembershipStatus.ACTIVE);
             membership.setSigned(true);
@@ -160,14 +179,16 @@ public class MembershipServiceImpl implements MembershipService {
             Membership updated = membershipRepository.save(membership);
             log.info("Membership activated successfully for user: {} with ID: {}", email, updated.getMembershipId());
 
-            // Evict cache by user UUID as well, since the cacheable method uses userUuid
             evictActiveMembershipCache(user.getUuid());
 
             return membershipMapper.mapToResponse(updated);
 
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Failed to process and sign agreement for user: {}", email, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to generate signed agreement PDF", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to generate signed agreement PDF", e);
         }
     }
 
@@ -176,30 +197,72 @@ public class MembershipServiceImpl implements MembershipService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
 
-        Membership membership = membershipRepository.findByUserUuid(user.getUuid())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No membership application found"));
+        Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
+                user.getUuid(),
+                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE, MembershipStatus.EXPIRED))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "No active, pending, or expired membership application found"));
 
         return membershipMapper.mapToResponse(membership);
     }
 
     @Override
-    public String getAgreementHtml(Long membershipId, String email) {
+    @Transactional
+    public MembershipResponseDto cancelMembership(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
 
-        Membership membership = membershipRepository.findByMembershipId(membershipId)
+        Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
+                user.getUuid(),
+                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "No active or pending membership application found to cancel"));
+
+        if (membership.getStatus() == MembershipStatus.CANCELLED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Membership is already cancelled");
+        }
+
+        membership.setStatus(MembershipStatus.CANCELLED);
+        membership.setCancelledAt(LocalDateTime.now());
+        Membership updated = membershipRepository.save(membership);
+
+        evictActiveMembershipCache(user.getUuid());
+        log.info("Membership cancelled successfully for user: {}", email);
+
+        return membershipMapper.mapToResponse(updated);
+    }
+
+    @Override
+    public String getAgreementHtmlByUuid(UUID membershipUuid, String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+
+        Membership membership = membershipRepository.findByUuid(membershipUuid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership not found"));
 
         if (!membership.getUserUuid().equals(user.getUuid())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access Denied");
         }
 
-        try {
-            return s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
-        } catch (Exception e) {
-            log.warn("Failed to download template from S3: {}, returning default fallback template", e.getMessage());
-            return getDefaultAgreementTemplate();
-        }
+        String html = getAgreementTemplate();
+        log.info("Fetched template from S3");
+        String membershipIdText = membership.getMembershipId() != null ? membership.getMembershipId().toString()
+                : "PENDING";
+        String startDateText = membership.getCreatedAt() != null ? membership.getCreatedAt().toLocalDate().toString()
+                : LocalDate.now().toString();
+
+        return html
+                .replace("{{MEMBER_NAME}}", user.getName())
+                .replace("{{memberName}}", user.getName())
+                .replace("{{MEMBER_EMAIL}}", user.getEmail())
+                .replace("{{memberEmail}}", user.getEmail())
+                .replace("{{MEMBERSHIP_ID}}", membershipIdText)
+                .replace("{{membershipId}}", membershipIdText)
+                .replace("{{START_DATE}}", startDateText)
+                .replace("{{applicationDate}}", startDateText)
+                .replace("{{EXPIRY_DATE}}", "N/A (Pending Activation)")
+                .replace("{{SIGNED_DATE}}", "Pending")
+                .replace("{{APPROVAL_DATE}}", "Pending");
     }
 
     @Override
@@ -230,7 +293,8 @@ public class MembershipServiceImpl implements MembershipService {
         }
         Membership membership = membershipOpt.get();
         boolean isActive = membership.getStatus() == MembershipStatus.ACTIVE;
-        boolean isNotExpired = membership.getExpiryDate() == null || !membership.getExpiryDate().isBefore(LocalDate.now());
+        boolean isNotExpired = membership.getExpiryDate() == null
+                || !membership.getExpiryDate().isBefore(LocalDate.now());
         return isActive && isNotExpired;
     }
 
@@ -258,116 +322,5 @@ public class MembershipServiceImpl implements MembershipService {
             builder.run();
             return os.toByteArray();
         }
-    }
-
-    private String getDefaultAgreementTemplate() {
-        return "<!DOCTYPE html>\n" +
-                "<html>\n" +
-                "<head>\n" +
-                "    <meta charset=\"UTF-8\"/>\n" +
-                "    <title>Library Membership Agreement</title>\n" +
-                "    <style>\n" +
-                "        body {\n" +
-                "            font-family: Arial, sans-serif;\n" +
-                "            margin: 40px;\n" +
-                "            color: #333333;\n" +
-                "            line-height: 1.6;\n" +
-                "        }\n" +
-                "        .header {\n" +
-                "            text-align: center;\n" +
-                "            margin-bottom: 30px;\n" +
-                "            border-bottom: 2px solid #2C3E50;\n" +
-                "            padding-bottom: 10px;\n" +
-                "        }\n" +
-                "        .title {\n" +
-                "            font-size: 24px;\n" +
-                "            color: #2C3E50;\n" +
-                "            font-weight: bold;\n" +
-                "            text-transform: uppercase;\n" +
-                "        }\n" +
-                "        .section {\n" +
-                "            margin-bottom: 20px;\n" +
-                "        }\n" +
-                "        .section-title {\n" +
-                "            font-size: 18px;\n" +
-                "            color: #2C3E50;\n" +
-                "            font-weight: bold;\n" +
-                "            margin-bottom: 10px;\n" +
-                "        }\n" +
-                "        .details-table {\n" +
-                "            width: 100%;\n" +
-                "            border-collapse: collapse;\n" +
-                "            margin: 20px 0;\n" +
-                "        }\n" +
-                "        .details-table td {\n" +
-                "            padding: 10px;\n" +
-                "            border: 1px solid #BDC3C7;\n" +
-                "        }\n" +
-                "        .details-table td.label {\n" +
-                "            font-weight: bold;\n" +
-                "            background-color: #ECF0F1;\n" +
-                "            width: 30%;\n" +
-                "        }\n" +
-                "        .signature-container {\n" +
-                "            margin-top: 40px;\n" +
-                "        }\n" +
-                "        .signature-box {\n" +
-                "            border: 1px dashed #7F8C8D;\n" +
-                "            height: 100px;\n" +
-                "            width: 250px;\n" +
-                "            margin-top: 10px;\n" +
-                "            text-align: center;\n" +
-                "            line-height: 100px;\n" +
-                "            color: #7F8C8D;\n" +
-                "        }\n" +
-                "        .signature-img {\n" +
-                "            max-height: 90px;\n" +
-                "            max-width: 240px;\n" +
-                "            vertical-align: middle;\n" +
-                "        }\n" +
-                "    </style>\n" +
-                "</head>\n" +
-                "<body>\n" +
-                "    <div class=\"header\">\n" +
-                "        <div class=\"title\">Library Membership Agreement</div>\n" +
-                "    </div>\n" +
-                "    \n" +
-                "    <div class=\"section\">\n" +
-                "        <p>This agreement outlines the borrowing regulations and code of conduct for library members.</p>\n" +
-                "        <table class=\"details-table\">\n" +
-                "            <tr>\n" +
-                "                <td class=\"label\">Member Name</td>\n" +
-                "                <td>{{memberName}}</td>\n" +
-                "            </tr>\n" +
-                "            <tr>\n" +
-                "                <td class=\"label\">Member Email</td>\n" +
-                "                <td>{{memberEmail}}</td>\n" +
-                "            </tr>\n" +
-                "            <tr>\n" +
-                "                <td class=\"label\">Membership ID</td>\n" +
-                "                <td>{{membershipId}}</td>\n" +
-                "            </tr>\n" +
-                "            <tr>\n" +
-                "                <td class=\"label\">Application Date</td>\n" +
-                "                <td>{{applicationDate}}</td>\n" +
-                "            </tr>\n" +
-                "        </table>\n" +
-                "    </div>\n" +
-                "\n" +
-                "    <div class=\"section\">\n" +
-                "        <div class=\"section-title\">Terms of Service</div>\n" +
-                "        <p>1. Members are responsible for all library materials checked out on their account.</p>\n" +
-                "        <p>2. Late returns, lost items, and damaged items are subject to fines as per the library policy.</p>\n" +
-                "        <p>3. Borrowing privileges will be suspended if fines exceed threshold limits or memberships expire.</p>\n" +
-                "    </div>\n" +
-                "\n" +
-                "    <div class=\"signature-container\">\n" +
-                "        <p>By providing your signature below, you confirm that you accept all rules, regulations, and terms of service of the library.</p>\n" +
-                "        <div class=\"signature-box\">\n" +
-                "            {{signaturePlaceholder}}\n" +
-                "        </div>\n" +
-                "    </div>\n" +
-                "</body>\n" +
-                "</html>";
     }
 }
