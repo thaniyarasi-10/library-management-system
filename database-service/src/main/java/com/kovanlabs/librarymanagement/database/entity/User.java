@@ -42,6 +42,10 @@ public class User {
     @Column(nullable = true)
     private String password;
 
+    @Column(name = "reward_points", nullable = false)
+    @Builder.Default
+    private Integer rewardPoints = 0;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default

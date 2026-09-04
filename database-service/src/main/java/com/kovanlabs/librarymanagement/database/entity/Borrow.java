@@ -47,4 +47,8 @@ public class Borrow {
     @Enumerated(EnumType.STRING)
     private BorrowStatus status;
 
+    @Column(name = "reward_processed", nullable = false)
+    @Builder.Default
+    private boolean rewardProcessed = false;
+
 }
