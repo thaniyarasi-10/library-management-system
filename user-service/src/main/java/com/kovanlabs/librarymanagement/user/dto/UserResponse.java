@@ -7,5 +7,6 @@ public record UserResponse(
     UUID uuid,
     Long id,
     String name,
-    String email
+    String email,
+    Integer rewardPoints
 ) implements Serializable {}

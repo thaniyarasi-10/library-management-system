@@ -50,7 +50,7 @@ public class FineService implements UserFineChecker {
 
     @Transactional
     public Fine createOrUpdateFine(UUID bookUuid, UUID userUuid, BigDecimal pendingAmount) {
-        Optional<Fine> optionalFine = fineRepository.findByBookUuidAndUserUuid(bookUuid, userUuid);
+        Optional<Fine> optionalFine = fineRepository.findTopByBookUuidAndUserUuidOrderByIdDesc(bookUuid, userUuid);
         Fine fine;
         if (optionalFine.isPresent()) {
             fine = optionalFine.get();

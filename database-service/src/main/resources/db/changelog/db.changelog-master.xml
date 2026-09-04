@@ -18,5 +18,8 @@
     <include file="db/changelog/changes/09-rename-books-table.xml"/>
     <include file="db/changelog/changes/10-membership-table.xml"/>
     <include file="db/changelog/changes/11-change-membership-datatype.xml"/>
+    <include file="db/changelog/changes/12-add-signature-base64-and-nullable-membership-id.xml"/>
+    <include file="db/changelog/changes/13-create-rewards-table.xml"/>
+    <include file="db/changelog/changes/14-modify-reward-datatype.xml"/>
 
 </databaseChangeLog>
