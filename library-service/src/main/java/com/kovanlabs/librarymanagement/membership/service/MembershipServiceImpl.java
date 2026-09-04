@@ -287,15 +287,15 @@ public class MembershipServiceImpl implements MembershipService {
     @Override
     public boolean hasActiveMembership(UUID userUuid) {
         log.info("Checking active membership for user: {} in DATABASE", userUuid);
-        Optional<Membership> membershipOpt = membershipRepository.findByUserUuid(userUuid);
+        Optional<Membership> membershipOpt = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
+                userUuid, java.util.List.of(MembershipStatus.ACTIVE));
         if (membershipOpt.isEmpty()) {
             return false;
         }
         Membership membership = membershipOpt.get();
-        boolean isActive = membership.getStatus() == MembershipStatus.ACTIVE;
         boolean isNotExpired = membership.getExpiryDate() == null
                 || !membership.getExpiryDate().isBefore(LocalDate.now());
-        return isActive && isNotExpired;
+        return isNotExpired;
     }
 
     @CacheEvict(value = "active-memberships", key = "#userUuid")

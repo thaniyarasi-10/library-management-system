@@ -22,4 +22,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
            "LOWER(u.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%'))")
     Page<User> searchUsers(@Param("query") String query, Pageable pageable);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("UPDATE User u SET u.rewardPoints = u.rewardPoints + :points WHERE u.uuid = :userUuid")
+    int incrementRewardPoints(@Param("userUuid") UUID userUuid, @Param("points") int points);
 }

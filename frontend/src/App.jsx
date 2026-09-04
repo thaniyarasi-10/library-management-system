@@ -39,6 +39,8 @@ export default function App() {
   const [membersPage, setMembersPage] = useState(0);
   const [membersTotalPages, setMembersTotalPages] = useState(1);
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [memberSortBy, setMemberSortBy] = useState('id');
+  const [memberSortDir, setMemberSortDir] = useState('asc');
 
   // Borrows
   const [adminBorrows, setAdminBorrows] = useState([]);
@@ -191,7 +193,7 @@ export default function App() {
     } else if (currentPage === 'books') {
       loadBooks(booksPage, bookSearchQuery);
     } else if (currentPage === 'members') {
-      if (userRole === 'ADMIN') loadMembers(membersPage, memberSearchQuery);
+      if (userRole === 'ADMIN') loadMembers(membersPage, memberSearchQuery, memberSortBy, memberSortDir);
     } else if (currentPage === 'borrow') {
       loadBorrows();
     } else if (currentPage === 'fines') {
@@ -199,7 +201,7 @@ export default function App() {
     } else if (currentPage === 'membership') {
       loadMembership();
     }
-  }, [currentPage, authToken, userRole, booksPage, membersPage]);
+  }, [currentPage, authToken, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
 
   // Listen for postMessage from Google OAuth popup
   useEffect(() => {
@@ -386,9 +388,9 @@ export default function App() {
   };
 
   // Members Loader
-  const loadMembers = async (page = 0, query = '') => {
-    let url = `/user?page=${page}&size=10`;
-    if (query) url = `/user/search?query=${encodeURIComponent(query)}&page=${page}&size=10`;
+  const loadMembers = async (page = 0, query = '', sortBy = memberSortBy, sortDir = memberSortDir) => {
+    let url = `/user?page=${page}&size=10&sortBy=${sortBy}&sortDir=${sortDir}`;
+    if (query) url = `/user/search?query=${encodeURIComponent(query)}&page=${page}&size=10&sortBy=${sortBy}&sortDir=${sortDir}`;
     const res = await fetchApi(url);
     if (res.ok && res.data) {
       setMembers(res.data.content || res.data || []);
@@ -485,7 +487,7 @@ export default function App() {
   };
 
   const handleUserSelfBorrow = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!currentUser || !currentUser.id) return;
 
     // Check membership
@@ -505,6 +507,36 @@ export default function App() {
       showToast('Book checked out successfully!', 'success');
       setActiveModal(null);
       loadBorrows();
+      loadDashboard();
+      setCurrentPage('borrow');
+    } else {
+      showToast(res.data?.message || 'Failed to borrow book', 'error');
+    }
+  };
+
+  const handleDirectBorrow = async (bookId, bookTitle) => {
+    if (!currentUser || !currentUser.id) {
+      showToast('Please sign in to borrow books', 'error');
+      return;
+    }
+
+    // Check membership
+    const resMem = await fetchApi('/memberships/me');
+    if (!resMem.ok || !resMem.data || resMem.data.status !== 'ACTIVE') {
+      showToast('Active membership required to check out books', 'error');
+      setCurrentPage('membership');
+      return;
+    }
+
+    const res = await fetchApi('/borrow', {
+      method: 'POST',
+      body: JSON.stringify({ userId: currentUser.id, bookId: bookId })
+    });
+    if (res.ok) {
+      showToast(`Successfully checked out "${bookTitle || 'book'}"!`, 'success');
+      loadBorrows();
+      loadDashboard();
+      setCurrentPage('borrow');
     } else {
       showToast(res.data?.message || 'Failed to borrow book', 'error');
     }
@@ -514,7 +546,10 @@ export default function App() {
     const res = await fetchApi(`/borrow/${borrowId}`, { method: 'PATCH' });
     if (res.ok) {
       showToast('Book returned successfully', 'success');
-      loadBorrows();
+      await loadBorrows();
+      loadFines();
+      loadUserFinesTotal();
+      loadDashboard();
     } else {
       showToast(res.data?.message || 'Failed to return book', 'error');
     }
@@ -551,6 +586,8 @@ export default function App() {
     if (res.ok) {
       showToast('Fine payment processed successfully', 'success');
       loadFines();
+      loadUserFinesTotal();
+      loadDashboard();
     } else {
       showToast(res.data?.message || 'Failed to settle fine', 'error');
     }
@@ -561,11 +598,11 @@ export default function App() {
     const res = await fetchApi('/memberships/me');
     if (res.ok && res.data) {
       setMembership(res.data);
-      const memUuid = res.data.membershipUuid || res.data.id;
+      const memUuid = res.data.uuid || res.data.membershipUuid || res.data.id;
       if (memUuid) {
         const resTerms = await fetchApi(`/memberships/${memUuid}/agreement`);
         if (resTerms.ok && resTerms.data) {
-          setAgreementText(typeof resTerms.data === 'string' ? resTerms.data : resTerms.data.terms || 'Athenaeum Library Membership Agreement...');
+          setAgreementText(typeof resTerms.data === 'string' ? resTerms.data : resTerms.data.terms || resTerms.data.agreementHtml || 'Athenaeum Library Membership Agreement...');
         }
       }
     } else {
@@ -577,21 +614,25 @@ export default function App() {
     const res = await fetchApi('/memberships', { method: 'POST' });
     if (res.ok && res.data) {
       setMembership(res.data);
+      if (res.data.agreementHtml) {
+        setAgreementText(res.data.agreementHtml);
+      }
       showToast('Membership application created. Please review and sign terms.', 'info');
-      loadMembership();
+      await loadMembership();
     } else {
       showToast(res.data?.message || 'Failed to apply for membership', 'error');
     }
   };
 
   const handleSignatureSubmit = async () => {
-    if (!sigFile || !membership || !membership.membershipUuid) {
+    const memUuid = membership?.uuid || membership?.membershipUuid;
+    if (!sigFile || !membership || !memUuid) {
       showToast('Please select a signature PNG image', 'error');
       return;
     }
     const formData = new FormData();
     formData.append('file', sigFile);
-    const res = await fetchApi(`/memberships/${membership.membershipUuid}/sign`, {
+    const res = await fetchApi(`/memberships/${memUuid}/sign`, {
       method: 'POST',
       body: formData
     });
@@ -600,6 +641,7 @@ export default function App() {
       showToast('Membership signed & activated successfully!', 'success');
       setSigFile(null);
       setSigPreviewUrl('');
+      await loadMembership();
     } else {
       showToast(res.data?.message || 'Failed to activate membership', 'error');
     }
@@ -826,6 +868,13 @@ export default function App() {
           </div>
 
           <div className="header-actions">
+            {userRole !== 'ADMIN' && (
+              <div className="reward-points-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', padding: '6px 12px', borderRadius: '20px', fontWeight: '600', fontSize: '13px' }} title="Your Reward Points">
+                <Award size={16} />
+                <span>{currentUser?.rewardPoints || 0} pts</span>
+              </div>
+            )}
+
             <button className="theme-toggle-btn" title="Toggle Light / Dark Mode" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
               {theme === 'dark' ? <Sun size={18} className="icon-sun" /> : <Moon size={18} className="icon-moon" />}
             </button>
@@ -904,7 +953,7 @@ export default function App() {
                 </div>
               ) : (
                 <div>
-                  <div className="user-welcome-banner mb-6" style={{ background: 'linear-gradient(135deg, rgba(224, 122, 73, 0.12) 0%, rgba(224, 122, 73, 0.02) 100%)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-lg)', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                  <div className="user-welcome-banner mb-6" style={{ background: 'linear-gradient(135deg, rgba(224, 122, 73, 0.12) 0%, rgba(224, 122, 73, 0.02) 100%)', border: '10px solid #121214', borderRadius: 'var(--radius-lg)', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                     <div>
                       <span className="badge badge-primary mb-2" style={{ background: 'var(--accent-subtle)', color: 'var(--accent-primary)', fontWeight: 600, fontSize: '11px', padding: '4px 10px', borderRadius: '999px' }}>LIBRARY MEMBER PORTAL</span>
                       <h2 style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', marginBottom: '4px' }}>Welcome to Athenaeum</h2>
@@ -1044,7 +1093,7 @@ export default function App() {
                                 <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBook(b.id, b.title)}>Del</button>
                               </div>
                             ) : (
-                              <button className="btn btn-primary btn-sm" onClick={() => { setUserBorrowBookId(b.id); setActiveModal('userBorrow'); }}>Borrow</button>
+                              <button className="btn btn-primary btn-sm" onClick={() => handleDirectBorrow(b.id, b.title)}>Borrow</button>
                             )}
                           </td>
                         </tr>
@@ -1078,8 +1127,32 @@ export default function App() {
                       onChange={(e) => setMemberSearchQuery(e.target.value)}
                     />
                   </div>
-                  <button className="btn btn-secondary" onClick={() => { setMembersPage(0); loadMembers(0, memberSearchQuery); }}>Search</button>
-                  <button className="btn btn-ghost" onClick={() => { setMemberSearchQuery(''); loadMembers(0, ''); }}>Clear</button>
+                  <button className="btn btn-secondary" onClick={() => { setMembersPage(0); loadMembers(0, memberSearchQuery, memberSortBy, memberSortDir); }}>Search</button>
+                  <button className="btn btn-ghost" onClick={() => { setMemberSearchQuery(''); loadMembers(0, '', 'id', 'asc'); }}>Clear</button>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
+                    <span className="text-xs text-muted font-medium">Sort by:</span>
+                    <select
+                      className="form-select"
+                      style={{ padding: '6px 12px', fontSize: '13px' }}
+                      value={memberSortBy}
+                      onChange={(e) => { setMemberSortBy(e.target.value); loadMembers(0, memberSearchQuery, e.target.value, memberSortDir); }}
+                    >
+                      <option value="id">ID</option>
+                      <option value="name">Name</option>
+                      <option value="email">Email</option>
+                      <option value="rewardPoints">Reward Points</option>
+                    </select>
+                    <select
+                      className="form-select"
+                      style={{ padding: '6px 12px', fontSize: '13px' }}
+                      value={memberSortDir}
+                      onChange={(e) => { setMemberSortDir(e.target.value); loadMembers(0, memberSearchQuery, memberSortBy, e.target.value); }}
+                    >
+                      <option value="asc">Ascending ⬆</option>
+                      <option value="desc">Descending ⬇</option>
+                    </select>
+                  </div>
                 </div>
 
                 <button className="btn btn-primary" onClick={() => { setUserForm({ id: '', name: '', email: '', password: '' }); setActiveModal('createUser'); }}>
@@ -1095,18 +1168,24 @@ export default function App() {
                       <th width="60">ID</th>
                       <th>Member Name</th>
                       <th>Email Address</th>
+                      <th width="140">Reward Points</th>
                       <th width="180" className="text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {members.length === 0 ? (
-                      <tr><td colSpan="4" className="empty-cell">No members found.</td></tr>
+                      <tr><td colSpan="5" className="empty-cell">No members found.</td></tr>
                     ) : (
                       members.map((m) => (
                         <tr key={m.id}>
                           <td>#{m.id}</td>
                           <td><strong>{m.name || m.username}</strong></td>
                           <td>{m.email}</td>
+                          <td>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '12px' }}>
+                              🏆 {m.rewardPoints || 0} pts
+                            </span>
+                          </td>
                           <td className="text-right">
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                               <button className="btn btn-secondary btn-sm" onClick={() => { setUserForm({ id: m.id, name: m.name || m.username, email: m.email, password: '' }); setActiveModal('editUser'); }}>Edit</button>
@@ -1154,31 +1233,38 @@ export default function App() {
                         {adminBorrows.length === 0 ? (
                           <tr><td colSpan="7" className="empty-cell">No active borrows log found.</td></tr>
                         ) : (
-                          adminBorrows.map((b) => (
-                            <tr key={b.id}>
-                              <td>
-                                {b.book?.coverImageUrl ? (
-                                  <img src={getCoverUrl(b.book.coverImageUrl)} alt="Cover" className="table-thumb-img" />
-                                ) : (
-                                  <div className="table-thumb">{getMonogram(b.book?.title || 'B')}</div>
-                                )}
-                              </td>
-                              <td><strong>{b.book?.title}</strong><br /><span className="text-muted">{b.book?.author}</span></td>
-                              <td>{b.user?.name || b.user?.email || `User #${b.userId}`}</td>
-                              <td>{b.borrowDate}</td>
-                              <td>{b.dueDate}</td>
-                              <td>
-                                <span className={`badge ${b.returnDate ? 'badge-success' : 'badge-warning'}`}>
-                                  {b.returnDate ? 'RETURNED' : 'ACTIVE'}
-                                </span>
-                              </td>
-                              <td className="text-right">
-                                {!b.returnDate && (
-                                  <button className="btn btn-secondary btn-sm" onClick={() => handleReturnBook(b.id)}>Return</button>
-                                )}
-                              </td>
-                            </tr>
-                          ))
+                          adminBorrows.map((b) => {
+                            const title = b.bookTitle || b.book?.title || 'Untitled Book';
+                            const author = b.bookAuthor || b.book?.author || 'Unknown Author';
+                            const cover = b.bookCoverImageUrl || b.book?.coverImageUrl;
+                            const borrowerName = b.userName || b.userEmail || b.user?.name || b.user?.email || `User #${b.userId || b.userNumericId}`;
+                            const isReturned = b.status === 'RETURNED' || !!b.returnedDate || !!b.returnDate;
+                            return (
+                              <tr key={b.id}>
+                                <td>
+                                  {cover ? (
+                                    <img src={getCoverUrl(cover)} alt="Cover" className="table-thumb-img" />
+                                  ) : (
+                                    <div className="table-thumb">{getMonogram(title)}</div>
+                                  )}
+                                </td>
+                                <td><strong>{title}</strong><br /><span className="text-muted">{author}</span></td>
+                                <td>{borrowerName}</td>
+                                <td>{b.borrowDate}</td>
+                                <td>{b.dueDate}</td>
+                                <td>
+                                  <span className={`badge ${isReturned ? 'badge-success' : 'badge-warning'}`}>
+                                    {isReturned ? 'RETURNED' : 'ACTIVE'}
+                                  </span>
+                                </td>
+                                <td className="text-right">
+                                  {!isReturned && (
+                                    <button className="btn btn-secondary btn-sm" onClick={() => handleReturnBook(b.id)}>Return</button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
@@ -1214,31 +1300,37 @@ export default function App() {
                         {userBorrows.length === 0 ? (
                           <tr><td colSpan="7" className="empty-cell">You have no borrowed books currently.</td></tr>
                         ) : (
-                          userBorrows.map((b) => (
-                            <tr key={b.id}>
-                              <td>
-                                {b.book?.coverImageUrl ? (
-                                  <img src={getCoverUrl(b.book.coverImageUrl)} alt="Cover" className="table-thumb-img" />
-                                ) : (
-                                  <div className="table-thumb">{getMonogram(b.book?.title || 'B')}</div>
-                                )}
-                              </td>
-                              <td><strong>{b.book?.title}</strong></td>
-                              <td>{b.book?.author}</td>
-                              <td>{b.borrowDate}</td>
-                              <td>{b.dueDate}</td>
-                              <td>
-                                <span className={`badge ${b.returnDate ? 'badge-success' : 'badge-warning'}`}>
-                                  {b.returnDate ? 'RETURNED' : 'ACTIVE'}
-                                </span>
-                              </td>
-                              <td className="text-right">
-                                {!b.returnDate && (
-                                  <button className="btn btn-secondary btn-sm" onClick={() => handleReturnBook(b.id)}>Check In</button>
-                                )}
-                              </td>
-                            </tr>
-                          ))
+                          userBorrows.map((b) => {
+                            const title = b.bookTitle || b.book?.title || 'Untitled Book';
+                            const author = b.bookAuthor || b.book?.author || 'Unknown Author';
+                            const cover = b.bookCoverImageUrl || b.book?.coverImageUrl;
+                            const isReturned = b.status === 'RETURNED' || !!b.returnedDate || !!b.returnDate;
+                            return (
+                              <tr key={b.id}>
+                                <td>
+                                  {cover ? (
+                                    <img src={getCoverUrl(cover)} alt="Cover" className="table-thumb-img" />
+                                  ) : (
+                                    <div className="table-thumb">{getMonogram(title)}</div>
+                                  )}
+                                </td>
+                                <td><strong>{title}</strong></td>
+                                <td>{author}</td>
+                                <td>{b.borrowDate}</td>
+                                <td>{b.dueDate}</td>
+                                <td>
+                                  <span className={`badge ${isReturned ? 'badge-success' : 'badge-warning'}`}>
+                                    {isReturned ? 'RETURNED' : 'ACTIVE'}
+                                  </span>
+                                </td>
+                                <td className="text-right">
+                                  {!isReturned && (
+                                    <button className="btn btn-secondary btn-sm" onClick={() => handleReturnBook(b.id)}>Check In</button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
@@ -1284,7 +1376,7 @@ export default function App() {
                 <div className="fine-summary-banner mt-6">
                   <div className="summary-item">
                     <span className="summary-label">Account / Scope:</span>
-                    <span className="summary-value">{userRole === 'ADMIN' ? (selectedFineMemberId ? `Member #${selectedFineMemberId}` : 'All Members') : userName}</span>
+                    <span className="summary-value">{userRole === 'ADMIN' ? (selectedFineMemberId ? `Member #${selectedFineMemberId}` : 'All Members') : (currentUser?.name || currentUser?.email || 'Member')}</span>
                   </div>
                   <div className="summary-item text-right">
                     <span className="summary-label">Total Outstanding Balance:</span>
@@ -1308,24 +1400,29 @@ export default function App() {
                       {fines.length === 0 ? (
                         <tr><td colSpan={userRole === 'ADMIN' ? 6 : 5} className="empty-cell">No fine records found.</td></tr>
                       ) : (
-                        fines.map(f => (
-                          <tr key={f.id}>
-                            <td>#{f.id}</td>
-                            {userRole === 'ADMIN' && <td>{f.user?.name || f.user?.email || `User #${f.userId}`}</td>}
-                            <td><strong>{f.borrow?.book?.title || 'Library Title'}</strong></td>
-                            <td><strong>${(f.amount || 0).toFixed(2)}</strong></td>
-                            <td>
-                              <span className={`badge ${f.status === 'PAID' ? 'badge-success' : 'badge-danger'}`}>
-                                {f.status}
-                              </span>
-                            </td>
-                            <td className="text-right">
-                              {f.status === 'UNPAID' && (
-                                <button className="btn btn-primary btn-sm" onClick={() => handlePayFine(f.id)}>Settle & Pay</button>
-                              )}
-                            </td>
-                          </tr>
-                        ))
+                        fines.map(f => {
+                          const fineUser = f.userName || f.userEmail || f.user?.name || f.user?.email || `User #${f.userId || f.userNumericId}`;
+                          const fineTitle = f.bookTitle || f.borrow?.book?.title || 'Library Title';
+                          const fineAuthor = f.bookAuthor || f.borrow?.book?.author || '';
+                          return (
+                            <tr key={f.id}>
+                              <td>#{f.id}</td>
+                              {userRole === 'ADMIN' && <td>{fineUser}</td>}
+                              <td><strong>{fineTitle}</strong>{fineAuthor ? <><br /><span className="text-muted">{fineAuthor}</span></> : null}</td>
+                              <td><strong>${(f.amount || f.pendingFineAmount || 0).toFixed(2)}</strong></td>
+                              <td>
+                                <span className={`badge ${f.status === 'PAID' ? 'badge-success' : 'badge-danger'}`}>
+                                  {f.status}
+                                </span>
+                              </td>
+                              <td className="text-right">
+                                {f.status === 'UNPAID' || f.status === 'PENDING' ? (
+                                  <button className="btn btn-primary btn-sm" onClick={() => handlePayFine(f.id)}>Settle & Pay</button>
+                                ) : null}
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -1371,11 +1468,11 @@ export default function App() {
                   </div>
 
                   <div className="grid-2col mt-6">
-                    <div className="panel-agreement p-4 rounded-lg" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)', maxHeight: '400px', overflowY: 'auto' }}>
-                      <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '12px' }}>
-                        {agreementText}
-                      </div>
-                    </div>
+                    <div
+                      className="panel-agreement p-4 rounded-lg"
+                      style={{ background: '#ffffff', color: '#0f172a', border: '1px solid var(--border-color)', maxHeight: '450px', overflowY: 'auto' }}
+                      dangerouslySetInnerHTML={{ __html: agreementText || '<div style="padding: 20px; color: #475569;">Loading membership agreement template...</div>' }}
+                    />
 
                     <div className="panel-signature" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                       <div className="form-group">
