@@ -36,18 +36,22 @@ public class BorrowServiceImpl implements BorrowService {
         }
 
         User user = userRepository.findById(borrowRequestDto.userId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with id: " + borrowRequestDto.userId()));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "User not found with id: " + borrowRequestDto.userId()));
 
         if (!membershipService.hasActiveMembership(user.getUuid())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only users with an ACTIVE membership can perform borrow operations");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only users with an ACTIVE membership can perform borrow operations");
         }
 
         if (userFineChecker != null && userFineChecker.hasPendingFines(borrowRequestDto.userId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User has pending fines. Please pay outstanding fines before borrowing books.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "User has pending fines. Please pay outstanding fines before borrowing books.");
         }
 
         Book book = bookRepository.findById(borrowRequestDto.bookId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with id: " + borrowRequestDto.bookId()));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Book not found with id: " + borrowRequestDto.bookId()));
 
         Borrow borrow = bookMapper.mapToEntity(borrowRequestDto, book, user);
 
@@ -65,8 +69,10 @@ public class BorrowServiceImpl implements BorrowService {
         Borrow borrow = borrowRepository.findById(borrowId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Borrow record not found"));
 
-        if (userFineChecker != null && borrow.getUser() != null && userFineChecker.hasPendingFines(borrow.getUser().getId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User has pending fines. Please pay outstanding fines before returning books.");
+        if (userFineChecker != null && borrow.getUser() != null
+                && userFineChecker.hasPendingFines(borrow.getUser().getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "User has pending fines. Please pay outstanding fines before returning books.");
         }
 
         borrow.setReturnedDate(LocalDate.now());
