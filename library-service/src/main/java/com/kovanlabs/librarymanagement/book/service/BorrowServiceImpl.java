@@ -10,16 +10,17 @@ import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import com.kovanlabs.librarymanagement.membership.service.MembershipService;
+import lombok.extern.slf4j.Slf4j;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
 
 @Service
-@RequiredArgsConstructor
+@Slf4j
 public class BorrowServiceImpl implements BorrowService {
 
     private final BorrowRepository borrowRepository;
@@ -28,6 +29,25 @@ public class BorrowServiceImpl implements BorrowService {
     private final UserFineChecker userFineChecker;
     private final BookMapper bookMapper;
     private final MembershipService membershipService;
+    private final SalesforceSyncService salesforceSyncService;
+
+    public BorrowServiceImpl(
+            BorrowRepository borrowRepository,
+            BookRepository bookRepository,
+            UserRepository userRepository,
+            UserFineChecker userFineChecker,
+            BookMapper bookMapper,
+            MembershipService membershipService,
+            SalesforceSyncService salesforceSyncService) {
+
+        this.borrowRepository = borrowRepository;
+        this.bookRepository = bookRepository;
+        this.userRepository = userRepository;
+        this.userFineChecker = userFineChecker;
+        this.bookMapper = bookMapper;
+        this.membershipService = membershipService;
+        this.salesforceSyncService = salesforceSyncService;
+    }
 
     @Override
     public BorrowResponseDto borrowBook(BorrowRequestDto borrowRequestDto) {
@@ -57,6 +77,14 @@ public class BorrowServiceImpl implements BorrowService {
 
         Borrow savedBorrow = borrowRepository.save(borrow);
 
+        if (salesforceSyncService != null) {
+            try {
+                salesforceSyncService.syncBorrow(savedBorrow);
+            } catch (Exception e) {
+                log.error("Salesforce dual-write failed for borrow creation: {}", e.getMessage());
+            }
+        }
+
         return bookMapper.mapToResponse(savedBorrow);
     }
 
@@ -80,11 +108,31 @@ public class BorrowServiceImpl implements BorrowService {
 
         Borrow updatedBorrow = borrowRepository.save(borrow);
 
+        if (salesforceSyncService != null) {
+            try {
+                salesforceSyncService.syncBorrow(updatedBorrow);
+            } catch (Exception e) {
+                log.error("Salesforce dual-write failed for borrow return: {}", e.getMessage());
+            }
+        }
+
         return bookMapper.mapToResponse(updatedBorrow);
     }
 
     @Override
     public java.util.List<BorrowResponseDto> getAllBorrows() {
+        if (salesforceSyncService != null) {
+            try {
+                java.util.List<BorrowResponseDto> sfBorrows = salesforceSyncService.fetchBorrowsFromSalesforce();
+                if (sfBorrows != null && !sfBorrows.isEmpty()) {
+                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} borrow records from Salesforce SOQL", sfBorrows.size());
+                    return sfBorrows;
+                }
+            } catch (Exception e) {
+                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for borrows, falling back to MySQL: {}", e.getMessage());
+            }
+        }
+        log.info("[DATA SOURCE: MYSQL] Fetching borrow records from MySQL database");
         return borrowRepository.findAllByOrderByIdDesc().stream()
                 .map(bookMapper::mapToResponse)
                 .toList();

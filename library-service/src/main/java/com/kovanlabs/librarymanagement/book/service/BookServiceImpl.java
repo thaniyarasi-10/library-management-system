@@ -8,6 +8,7 @@ import com.kovanlabs.librarymanagement.aws.s3.dto.S3UploadResponse;
 import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -28,14 +29,15 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional(readOnly = true)
+@RequiredArgsConstructor
 public class BookServiceImpl implements BookService {
 
     private final BookRepository bookRepository;
     private final S3Service s3Service;
     private final BookMapper bookMapper;
+    private final SalesforceSyncService salesforceSyncService;
 
     @Override
     @Transactional
@@ -43,19 +45,62 @@ public class BookServiceImpl implements BookService {
     public BookResponse createBook(BookRequest request) {
         Book book = bookMapper.mapToEntity(request);
         Book savedBook = bookRepository.save(book);
+
+        if (salesforceSyncService != null) {
+            try {
+                salesforceSyncService.syncBook(savedBook);
+            } catch (Exception e) {
+                log.error("Salesforce dual-write failed for book creation: {}", e.getMessage());
+            }
+        }
+
         return bookMapper.mapToResponse(savedBook);
     }
 
     @Override
     @Cacheable(value = "books")
     public List<BookResponse> getAllBooks() {
-        log.info("CACHE MISS - Fetching books from DATABASE");
+        if (salesforceSyncService != null) {
+            try {
+                List<BookResponse> sfBooks = salesforceSyncService.fetchBooksFromSalesforce();
+                if (sfBooks != null && !sfBooks.isEmpty()) {
+                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL", sfBooks.size());
+                    return sfBooks;
+                }
+            } catch (Exception e) {
+                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for books, falling back to MySQL: {}", e.getMessage());
+            }
+        }
+        log.info("[DATA SOURCE: MYSQL] Fetching books from MySQL database");
         return bookMapper.mapToResponse(bookRepository.findAll());
     }
 
     @Override
     public PagedResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDir) {
+        if (salesforceSyncService != null) {
+            try {
+                List<BookResponse> sfBooks = salesforceSyncService.fetchBooksFromSalesforce();
+                if (sfBooks != null && !sfBooks.isEmpty()) {
+                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL (paging in memory)", sfBooks.size());
+                    int fromIndex = Math.min(page * size, sfBooks.size());
+                    int toIndex = Math.min(fromIndex + size, sfBooks.size());
+                    List<BookResponse> pageContent = sfBooks.subList(fromIndex, toIndex);
+                    int totalPages = (int) Math.ceil((double) sfBooks.size() / size);
+                    return new PagedResponse<>(
+                            pageContent,
+                            page,
+                            size,
+                            (long) sfBooks.size(),
+                            totalPages,
+                            page >= totalPages - 1
+                    );
+                }
+            } catch (Exception e) {
+                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for books, falling back to MySQL: {}", e.getMessage());
+            }
+        }
 
+        log.info("[DATA SOURCE: MYSQL] Fetching paged books (page={}, size={}) from MySQL database", page, size);
         Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
@@ -115,6 +160,15 @@ public class BookServiceImpl implements BookService {
         book.setIsbn(request.isbn());
         
         Book updatedBook = bookRepository.save(book);
+
+        if (salesforceSyncService != null) {
+            try {
+                salesforceSyncService.syncBook(updatedBook);
+            } catch (Exception e) {
+                log.error("Salesforce dual-write failed for book update: {}", e.getMessage());
+            }
+        }
+
         return bookMapper.mapToResponse(updatedBook);
     }
 

@@ -7,6 +7,7 @@ import com.kovanlabs.librarymanagement.user.mapping.UserMapper;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -34,11 +35,19 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final UserMapper userMapper;
+    private final SalesforceUserSyncDelegate salesforceSyncDelegate;
 
-    public UserServiceImpl(UserRepository userRepository, @Lazy PasswordEncoder passwordEncoder, UserMapper userMapper) {
+    @Autowired
+    public UserServiceImpl(
+            UserRepository userRepository,
+            @Lazy PasswordEncoder passwordEncoder,
+            UserMapper userMapper,
+            @Autowired(required = false) SalesforceUserSyncDelegate salesforceSyncDelegate) {
+
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.userMapper = userMapper;
+        this.salesforceSyncDelegate = salesforceSyncDelegate;
     }
 
     @Override
@@ -50,16 +59,61 @@ public class UserServiceImpl implements UserService {
             user.setPassword(passwordEncoder.encode(request.password()));
         }
         User savedUser = userRepository.save(user);
+
+        if (salesforceSyncDelegate != null) {
+            try {
+                salesforceSyncDelegate.syncUser(savedUser);
+            } catch (Exception e) {
+                log.error("Salesforce dual-write failed for user creation: {}", e.getMessage());
+            }
+        }
+
         return userMapper.mapToResponse(savedUser);
     }
 
     @Override
     public List<UserResponse> getAllUsers() {
+        if (salesforceSyncDelegate != null) {
+            try {
+                List<UserResponse> sfUsers = salesforceSyncDelegate.fetchUsersFromSalesforce();
+                if (sfUsers != null && !sfUsers.isEmpty()) {
+                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} users from Salesforce SOQL", sfUsers.size());
+                    return sfUsers;
+                }
+            } catch (Exception e) {
+                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for users, falling back to MySQL: {}", e.getMessage());
+            }
+        }
+        log.info("[DATA SOURCE: MYSQL] Fetching users from MySQL database");
         return userMapper.mapToResponse(userRepository.findAll());
     }
 
     @Override
     public PagedResponse<UserResponse> getAllUsers(int page, int size, String sortBy, String sortDir) {
+        if (salesforceSyncDelegate != null) {
+            try {
+                List<UserResponse> sfUsers = salesforceSyncDelegate.fetchUsersFromSalesforce();
+                if (sfUsers != null && !sfUsers.isEmpty()) {
+                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} users from Salesforce SOQL (paging in memory)", sfUsers.size());
+                    int fromIndex = Math.min(page * size, sfUsers.size());
+                    int toIndex = Math.min(fromIndex + size, sfUsers.size());
+                    List<UserResponse> pageContent = sfUsers.subList(fromIndex, toIndex);
+                    int totalPages = (int) Math.ceil((double) sfUsers.size() / size);
+                    return new PagedResponse<>(
+                            pageContent,
+                            page,
+                            size,
+                            (long) sfUsers.size(),
+                            totalPages,
+                            page >= totalPages - 1
+                    );
+                }
+            } catch (Exception e) {
+                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for users, falling back to MySQL: {}", e.getMessage());
+            }
+        }
+
+        log.info("[DATA SOURCE: MYSQL] Fetching paged users (page={}, size={}) from MySQL database", page, size);
         Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
@@ -125,6 +179,15 @@ public class UserServiceImpl implements UserService {
         }
 
         User updatedUser = userRepository.save(user);
+
+        if (salesforceSyncDelegate != null) {
+            try {
+                salesforceSyncDelegate.syncUser(updatedUser);
+            } catch (Exception e) {
+                log.error("Salesforce dual-write failed for user update: {}", e.getMessage());
+            }
+        }
+
         return userMapper.mapToResponse(updatedUser);
     }
 

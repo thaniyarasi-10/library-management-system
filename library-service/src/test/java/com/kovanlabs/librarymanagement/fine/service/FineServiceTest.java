@@ -61,7 +61,7 @@ class FineServiceTest {
         UUID userUuid = UUID.randomUUID();
         BigDecimal amount = BigDecimal.valueOf(25.0);
 
-        when(fineRepository.findByBookUuidAndUserUuid(bookUuid, userUuid)).thenReturn(Optional.empty());
+        when(fineRepository.findTopByBookUuidAndUserUuidOrderByIdDesc(bookUuid, userUuid)).thenReturn(Optional.empty());
         when(fineRepository.save(any(Fine.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Fine fine = fineService.createOrUpdateFine(bookUuid, userUuid, amount);
@@ -92,7 +92,7 @@ class FineServiceTest {
                 .status(FineStatus.PENDING)
                 .build();
 
-        when(fineRepository.findByBookUuidAndUserUuid(bookUuid, userUuid)).thenReturn(Optional.of(existingFine));
+        when(fineRepository.findTopByBookUuidAndUserUuidOrderByIdDesc(bookUuid, userUuid)).thenReturn(Optional.of(existingFine));
         when(fineRepository.save(any(Fine.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Fine fine = fineService.createOrUpdateFine(bookUuid, userUuid, newAmount);
@@ -115,7 +115,7 @@ class FineServiceTest {
                 .dueDate(LocalDate.now().minusDays(2))
                 .build();
 
-        when(fineRepository.findByBookUuidAndUserUuid(book.getUuid(), user.getUuid())).thenReturn(Optional.empty());
+        when(fineRepository.findTopByBookUuidAndUserUuidOrderByIdDesc(book.getUuid(), user.getUuid())).thenReturn(Optional.empty());
         when(fineRepository.save(any(Fine.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Fine fine = fineService.processFineForBorrow(borrow);

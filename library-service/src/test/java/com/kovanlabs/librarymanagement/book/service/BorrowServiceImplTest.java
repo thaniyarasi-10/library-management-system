@@ -186,18 +186,34 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook and returnBook with null userFineChecker should succeed")
     void borrowAndReturnBook_withNullUserFineChecker_ShouldSucceed() {
-        BorrowServiceImpl serviceWithoutFineChecker = new BorrowServiceImpl(borrowRepository, bookRepository, userRepository, null, bookMapper, membershipService);
+
+        BorrowServiceImpl serviceWithoutFineChecker =
+                new BorrowServiceImpl(
+                        borrowRepository,
+                        bookRepository,
+                        userRepository,
+                        null,
+                        bookMapper,
+                        membershipService,
+                        null
+                );
 
         BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
-        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(borrowRepository.save(any(Borrow.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
 
         BorrowResponseDto response = serviceWithoutFineChecker.borrowBook(request);
+
         assertNotNull(response);
 
         when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
-        BorrowResponseDto returnResponse = serviceWithoutFineChecker.returnBook(100L);
+
+        BorrowResponseDto returnResponse =
+                serviceWithoutFineChecker.returnBook(100L);
+
         assertNotNull(returnResponse);
     }
 }
