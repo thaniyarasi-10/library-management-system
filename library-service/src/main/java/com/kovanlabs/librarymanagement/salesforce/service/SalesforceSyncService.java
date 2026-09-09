@@ -41,7 +41,6 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
             String lastName = (user.getName() != null && !user.getName().isBlank()) ? user.getName() : user.getEmail();
             fields.put("LastName", lastName);
             fields.put("Email", user.getEmail());
-            fields.put("External_User_UUID__c", user.getUuid().toString());
 
             clientService.upsertByExternalId("Contact", "External_User_UUID__c", user.getUuid().toString(), fields);
         } catch (Exception e) {
@@ -59,8 +58,6 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
             fields.put("Author__c", book.getAuthor());
             fields.put("ISBN__c", book.getIsbn());
             fields.put("Cover_Image_Url__c", book.getCoverImageUrl());
-            fields.put("External_Book_UUID__c", book.getUuid().toString());
-
             clientService.upsertByExternalId("Book__c", "External_Book_UUID__c", book.getUuid().toString(), fields);
         } catch (Exception e) {
             log.error("Salesforce sync error for Book [UUID: {}]: {}", book.getUuid(), e.getMessage());

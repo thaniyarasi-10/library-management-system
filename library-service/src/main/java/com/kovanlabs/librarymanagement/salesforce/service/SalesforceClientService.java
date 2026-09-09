@@ -6,13 +6,14 @@ import com.kovanlabs.librarymanagement.salesforce.config.SalesforceConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
@@ -22,8 +23,13 @@ import java.util.Map;
 public class SalesforceClientService {
 
     private final SalesforceConfig salesforceConfig;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate = createRestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private static RestTemplate createRestTemplate() {
+        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory();
+        return new RestTemplate(factory);
+    }
 
     private String accessToken;
     private String instanceUrl;
@@ -93,7 +99,7 @@ public class SalesforceClientService {
                 return null;
             }
 
-            java.net.URI uri = org.springframework.web.util.UriComponentsBuilder
+            URI uri = UriComponentsBuilder
                     .fromUriString(host + "/services/data/" + salesforceConfig.getApiVersion() + "/query")
                     .queryParam("q", soql)
                     .build()
