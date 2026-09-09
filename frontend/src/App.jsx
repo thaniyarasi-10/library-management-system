@@ -321,10 +321,21 @@ export default function App() {
       method: 'POST',
       body: JSON.stringify({ title: bookForm.title, author: bookForm.author, isbn: bookForm.isbn })
     });
-    if (res.ok) {
+    if (res.ok && res.data) {
+      const createdBook = res.data;
+      if (coverFile && createdBook.id) {
+        const formData = new FormData();
+        formData.append('file', coverFile);
+        await fetchApi(`/books/${createdBook.id}/cover`, {
+          method: 'POST',
+          body: formData
+        });
+      }
       showToast('Book created successfully', 'success');
       setActiveModal(null);
       setBookForm({ id: '', title: '', author: '', isbn: '' });
+      setCoverFile(null);
+      setCoverPreview('');
       loadBooks(booksPage, bookSearchQuery);
     } else {
       showToast(res.data?.message || 'Failed to create book', 'error');
@@ -1088,7 +1099,6 @@ export default function App() {
                           <td className="text-right">
                             {userRole === 'ADMIN' ? (
                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                <button className="btn btn-secondary btn-sm" title="Upload Cover" onClick={() => { setSelectedBookForCover({ id: b.id, title: b.title }); setActiveModal('uploadCover'); }}>Cover</button>
                                 <button className="btn btn-secondary btn-sm" onClick={() => { setBookForm(b); setActiveModal('editBook'); }}>Edit</button>
                                 <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBook(b.id, b.title)}>Del</button>
                               </div>
@@ -1585,7 +1595,7 @@ export default function App() {
           <div className="modal-card">
             <div className="modal-header">
               <h3>Add Book to Inventory</h3>
-              <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
+              <button className="btn-close" onClick={() => { setActiveModal(null); setCoverFile(null); setCoverPreview(''); }}>&times;</button>
             </div>
             <form onSubmit={handleCreateBookSubmit}>
               <div className="modal-body">
@@ -1601,9 +1611,28 @@ export default function App() {
                   <label className="form-label">ISBN Number</label>
                   <input type="text" className="form-input" required value={bookForm.isbn} onChange={e => setBookForm({ ...bookForm, isbn: e.target.value })} />
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Cover Image (Optional)</label>
+                  <input
+                    type="file"
+                    className="form-input"
+                    accept="image/*"
+                    onChange={e => {
+                      if (e.target.files && e.target.files[0]) {
+                        setCoverFile(e.target.files[0]);
+                        setCoverPreview(URL.createObjectURL(e.target.files[0]));
+                      }
+                    }}
+                  />
+                  {coverPreview && (
+                    <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                      <img src={coverPreview} alt="Cover Preview" style={{ maxHeight: '100px', borderRadius: '6px', border: '1px solid var(--border-color)' }} />
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)}>Cancel</button>
+                <button type="button" className="btn btn-ghost" onClick={() => { setActiveModal(null); setCoverFile(null); setCoverPreview(''); }}>Cancel</button>
                 <button type="submit" className="btn btn-primary">Save Book</button>
               </div>
             </form>
