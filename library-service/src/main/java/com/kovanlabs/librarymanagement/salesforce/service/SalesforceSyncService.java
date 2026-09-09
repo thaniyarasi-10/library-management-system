@@ -55,8 +55,10 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
         try {
             Map<String, Object> fields = new HashMap<>();
             fields.put("Name", book.getTitle() != null ? book.getTitle() : "Untitled");
+            fields.put("Title__c", book.getTitle());
             fields.put("Author__c", book.getAuthor());
             fields.put("ISBN__c", book.getIsbn());
+            fields.put("Cover_Image_Url__c", book.getCoverImageUrl());
             fields.put("External_Book_UUID__c", book.getUuid().toString());
 
             clientService.upsertByExternalId("Book__c", "External_Book_UUID__c", book.getUuid().toString(), fields);
@@ -115,7 +117,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
     }
 
     public List<BookResponse> fetchBooksFromSalesforce() {
-        String soql = "SELECT Name, Author__c, ISBN__c, External_Book_UUID__c FROM Book__c WHERE External_Book_UUID__c != null";
+        String soql = "SELECT Name, Title__c, Author__c, ISBN__c, Cover_Image_Url__c, External_Book_UUID__c FROM Book__c WHERE External_Book_UUID__c != null";
         JsonNode json = clientService.query(soql);
         if (json == null || !json.has("records")) {
             return null;
@@ -123,13 +125,20 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
 
         List<BookResponse> list = new ArrayList<>();
         for (JsonNode node : json.path("records")) {
-            String title = node.path("Name").asText(null);
+            String title = null;
+            if (node.hasNonNull("Title__c") && !node.path("Title__c").asText().isBlank()) {
+                title = node.path("Title__c").asText();
+            } else {
+                title = node.path("Name").asText(null);
+            }
+
             String author = node.path("Author__c").asText(null);
             String isbn = node.path("ISBN__c").asText(null);
+            String coverImageUrl = node.path("Cover_Image_Url__c").asText(null);
             String uuidStr = node.path("External_Book_UUID__c").asText(null);
             UUID uuid = uuidStr != null ? parseUUID(uuidStr) : null;
 
-            list.add(new BookResponse(uuid, null, title, author, isbn, null));
+            list.add(new BookResponse(uuid, null, title, author, isbn, coverImageUrl));
         }
         return list;
     }
@@ -137,7 +146,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
     public List<BorrowResponseDto> fetchBorrowsFromSalesforce() {
         String soql = "SELECT External_Borrow_UUID__c, Borrow_Date__c, Due_Date__c, Return_Date__c, Borrow_Status__c, "
                 + "Contact__r.LastName, Contact__r.Email, Contact__r.External_User_UUID__c, "
-                + "Book__r.Name, Book__r.Author__c, Book__r.External_Book_UUID__c "
+                + "Book__r.Name, Book__r.Title__c, Book__r.Author__c, Book__r.Cover_Image_Url__c, Book__r.External_Book_UUID__c "
                 + "FROM Borrow__c WHERE External_Borrow_UUID__c != null";
         JsonNode json = clientService.query(soql);
         if (json == null || !json.has("records")) {
@@ -159,8 +168,15 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
             UUID userUuid = parseUUID(contact.path("External_User_UUID__c").asText(null));
 
             JsonNode bookNode = node.path("Book__r");
-            String bookTitle = bookNode.path("Name").asText(null);
+            String bookTitle = null;
+            if (bookNode.hasNonNull("Title__c") && !bookNode.path("Title__c").asText().isBlank()) {
+                bookTitle = bookNode.path("Title__c").asText();
+            }else {
+                bookTitle = bookNode.path("Name").asText(null);
+            }
+
             String bookAuthor = bookNode.path("Author__c").asText(null);
+            String bookCoverUrl = bookNode.path("Cover_Image_Url__c").asText(null);
             UUID bookUuid = parseUUID(bookNode.path("External_Book_UUID__c").asText(null));
 
             BorrowResponseDto dto = BorrowResponseDto.builder()
@@ -171,6 +187,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
                     .bookId(bookUuid)
                     .bookTitle(bookTitle)
                     .bookAuthor(bookAuthor)
+                    .bookCoverImageUrl(bookCoverUrl)
                     .borrowDate(borrowDate)
                     .dueDate(dueDate)
                     .returnedDate(returnedDate)

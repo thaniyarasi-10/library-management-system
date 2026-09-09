@@ -11,8 +11,5 @@ public record BookResponse(
         String isbn,
         String coverImageUrl
 ) implements Serializable {
-    public BookResponse(UUID uuid, Long id, String title, String author, String isbn) {
-        this(uuid, id, title, author, isbn, null);
-    }
 }
 

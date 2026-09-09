@@ -36,7 +36,7 @@ class RedisCacheConfigTest {
                 JsonTypeInfo.As.PROPERTY);
         GenericJackson2JsonRedisSerializer serializer = new GenericJackson2JsonRedisSerializer(objectMapper);
         BookResponse original = new BookResponse(UUID.randomUUID(), 5L, "Clean Code", "Robert C. Martin",
-                "9780132350884");
+                "9780132350884", "http://example.com/cover.jpg");
 
         byte[] serialized = serializer.serialize(original);
         assertNotNull(serialized);

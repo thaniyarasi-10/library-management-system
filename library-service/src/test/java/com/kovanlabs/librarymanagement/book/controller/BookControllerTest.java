@@ -53,7 +53,7 @@ class BookControllerTest {
     @Test
     @DisplayName("GET /books/{id} when book exists should return 200 OK and BookResponse")
     void getBookById_WhenBookExists_ShouldReturn200OkAndBook() throws Exception {
-        BookResponse response = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884");
+        BookResponse response = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884", null);
 
         when(bookService.getBookById(id1)).thenReturn(response);
 
@@ -70,8 +70,8 @@ class BookControllerTest {
     @Test
     @DisplayName("GET /books with default params should return 200 OK and PagedResponse")
     void getAllBooks_WithDefaultParams_ShouldReturnPagedBooks() throws Exception {
-        BookResponse b1 = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884");
-        BookResponse b2 = new BookResponse(uuid2, id2, "Effective Java", "Joshua Bloch", "9780134685991");
+        BookResponse b1 = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884", null);
+        BookResponse b2 = new BookResponse(uuid2, id2, "Effective Java", "Joshua Bloch", "9780134685991", null);
         PagedResponse<BookResponse> pagedResponse = new PagedResponse<>(
                 List.of(b1, b2), 0, 10, 2L, 1, true
         );
@@ -107,7 +107,7 @@ class BookControllerTest {
     @Test
     @DisplayName("POST /books should create book")
     void createBook_ShouldReturnCreated() throws Exception {
-        BookResponse response = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884");
+        BookResponse response = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884", null);
         when(bookService.createBook(any(BookRequest.class))).thenReturn(response);
 
         String body = "{\"title\":\"Clean Code\",\"author\":\"Robert C. Martin\",\"isbn\":\"9780132350884\"}";
@@ -122,7 +122,7 @@ class BookControllerTest {
     @Test
     @DisplayName("GET /books/search should return search results")
     void searchBooks_ShouldReturnPagedBooks() throws Exception {
-        BookResponse response = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884");
+        BookResponse response = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884", null);
         PagedResponse<BookResponse> pagedResponse = new PagedResponse<>(List.of(response), 0, 10, 1L, 1, true);
 
         when(bookService.searchBooks("Clean", 0, 10, "id", "asc")).thenReturn(pagedResponse);
@@ -135,7 +135,7 @@ class BookControllerTest {
     @Test
     @DisplayName("PUT /books/{id} should update book")
     void updateBook_ShouldReturnUpdatedBook() throws Exception {
-        BookResponse response = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884");
+        BookResponse response = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884", null);
         when(bookService.updateBook(eq(id1), any(BookRequest.class))).thenReturn(response);
 
         String body = "{\"title\":\"Clean Code\",\"author\":\"Robert C. Martin\",\"isbn\":\"9780132350884\"}";
