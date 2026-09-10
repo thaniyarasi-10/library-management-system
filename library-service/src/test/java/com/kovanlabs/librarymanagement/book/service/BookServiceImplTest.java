@@ -8,6 +8,7 @@ import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.book.mapping.BookMapper;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +38,9 @@ class BookServiceImplTest {
 
     @Mock
     private S3Service s3Service;
+
+    @Mock
+    private SalesforceSyncService salesforceSyncService;
 
     @Spy
     private BookMapper bookMapper = Mappers.getMapper(BookMapper.class);
@@ -79,11 +83,37 @@ class BookServiceImplTest {
 
         assertNotNull(response);
         assertEquals("Clean Code", response.title());
+        verify(salesforceSyncService).syncBook(book1);
     }
 
+    @Test
+    void createBook_whenSalesforceFails_shouldStillReturnResponse() {
+        BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "9780132350884");
+        when(bookRepository.save(any(Book.class))).thenReturn(book1);
+        doThrow(new RuntimeException("SF Error")).when(salesforceSyncService).syncBook(any());
+
+        BookResponse response = bookService.createBook(request);
+
+        assertNotNull(response);
+        assertEquals("Clean Code", response.title());
+    }
 
     @Test
-    void getAllBooks_paginated_shouldReturnPagedResponse() {
+    void getAllBooks_paginated_withSalesforce_shouldReturnPagedResponse() {
+        BookResponse sfBook = new BookResponse(uuid1, 1L, "Clean Code", "Robert C. Martin", "9780132350884", "http://s3.com/cover.jpg");
+        when(salesforceSyncService.fetchBooksFromSalesforce(10, 0)).thenReturn(List.of(sfBook));
+        when(salesforceSyncService.getTotalBooksFromSalesforce()).thenReturn(1L);
+
+        PagedResponse<BookResponse> response = bookService.getAllBooks(0, 10, "title", "asc");
+
+        assertNotNull(response);
+        assertEquals(1, response.content().size());
+        assertEquals(1, response.totalElements());
+    }
+
+    @Test
+    void getAllBooks_paginated_salesforceFailureFallbackToMySQL() {
+        when(salesforceSyncService.fetchBooksFromSalesforce(10, 0)).thenThrow(new RuntimeException("SF Down"));
         Page<Book> bookPage = new PageImpl<>(List.of(book1), PageRequest.of(0, 10, Sort.by("title").ascending()), 1);
         when(bookRepository.findAll(any(Pageable.class))).thenReturn(bookPage);
 
@@ -132,6 +162,7 @@ class BookServiceImplTest {
 
         assertEquals("Clean Architecture", response.title());
         assertEquals("9780134494166", response.isbn());
+        verify(salesforceSyncService).syncBook(any());
     }
 
     @Test
