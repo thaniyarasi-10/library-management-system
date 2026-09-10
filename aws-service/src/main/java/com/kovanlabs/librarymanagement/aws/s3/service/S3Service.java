@@ -116,6 +116,9 @@ public class S3Service {
 
 
     public String downloadFileAsString(String bucket, String regionName, String key) {
+        if (bucket == null || key == null) {
+            throw new IllegalArgumentException("Bucket and key must not be null");
+        }
         try {
 
             S3Client client = getS3ClientForRegion(regionName);
