@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.database.entity;
 
+import com.kovanlabs.librarymanagement.database.converter.EncryptionConverter;
 import com.kovanlabs.librarymanagement.database.enums.MembershipStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -52,6 +53,7 @@ public class Membership {
     @Column(name = "signed_pdf_key")
     private String signedPdfKey;
 
+    @Convert(converter = EncryptionConverter.class)
     @Column(name = "signature_base64", columnDefinition = "LONGTEXT")
     private String signatureBase64;
 
