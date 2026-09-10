@@ -62,10 +62,10 @@
                     </changeLogFile>
 
                     <url>
-                        jdbc:mysql://localhost:3306/library?allowPublicKeyRetrieval=true&amp;useSSL=false&amp;serverTimezone=UTC
+                        ${env.DB_URL}
                     </url>
 
-                    <username>root</username>
+                    <username>${env.DB_USERNAME}</username>
 
                     <password>${env.DB_PASSWORD}</password>
                 </configuration>
