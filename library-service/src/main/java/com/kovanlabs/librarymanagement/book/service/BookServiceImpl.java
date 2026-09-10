@@ -58,39 +58,21 @@ public class BookServiceImpl implements BookService {
     }
 
     @Override
-    @Cacheable(value = "books")
-    public List<BookResponse> getAllBooks() {
-        if (salesforceSyncService != null) {
-            try {
-                List<BookResponse> sfBooks = salesforceSyncService.fetchBooksFromSalesforce();
-                if (sfBooks != null && !sfBooks.isEmpty()) {
-                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL", sfBooks.size());
-                    return sfBooks;
-                }
-            } catch (Exception e) {
-                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for books, falling back to MySQL: {}", e.getMessage());
-            }
-        }
-        log.info("[DATA SOURCE: MYSQL] Fetching books from MySQL database");
-        return bookMapper.mapToResponse(bookRepository.findAll());
-    }
-
-    @Override
     public PagedResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDir) {
         if (salesforceSyncService != null) {
             try {
-                List<BookResponse> sfBooks = salesforceSyncService.fetchBooksFromSalesforce();
-                if (sfBooks != null && !sfBooks.isEmpty()) {
-                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL (paging in memory)", sfBooks.size());
-                    int fromIndex = Math.min(page * size, sfBooks.size());
-                    int toIndex = Math.min(fromIndex + size, sfBooks.size());
-                    List<BookResponse> pageContent = sfBooks.subList(fromIndex, toIndex);
-                    int totalPages = (int) Math.ceil((double) sfBooks.size() / size);
+                int offset = page * size;
+                List<BookResponse> sfBooks = salesforceSyncService.fetchBooksFromSalesforce(size, offset);
+                long totalBooks = salesforceSyncService.getTotalBooksFromSalesforce();
+
+                if (sfBooks != null) {
+                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL", sfBooks.size());
+                    int totalPages = (int) Math.ceil((double) totalBooks / size);
                     return new PagedResponse<>(
-                            pageContent,
+                            sfBooks,
                             page,
                             size,
-                            (long) sfBooks.size(),
+                            totalBooks,
                             totalPages,
                             page >= totalPages - 1
                     );

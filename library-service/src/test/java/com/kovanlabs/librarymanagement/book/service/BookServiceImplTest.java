@@ -81,14 +81,6 @@ class BookServiceImplTest {
         assertEquals("Clean Code", response.title());
     }
 
-    @Test
-    void getAllBooks_shouldReturnList() {
-        when(bookRepository.findAll()).thenReturn(List.of(book1, book2));
-
-        List<BookResponse> responses = bookService.getAllBooks();
-
-        assertEquals(2, responses.size());
-    }
 
     @Test
     void getAllBooks_paginated_shouldReturnPagedResponse() {

@@ -113,8 +113,17 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
         return list;
     }
 
-    public List<BookResponse> fetchBooksFromSalesforce() {
-        String soql = "SELECT Name, Title__c, Author__c, ISBN__c, Cover_Image_Url__c, External_Book_UUID__c FROM Book__c WHERE External_Book_UUID__c != null";
+    public long getTotalBooksFromSalesforce() {
+        String soql = "SELECT COUNT() FROM Book__c WHERE External_Book_UUID__c != null";
+        JsonNode json = clientService.query(soql);
+        if (json == null || !json.has("totalSize")) {
+            return 0;
+        }
+        return json.path("totalSize").asLong();
+    }
+
+    public List<BookResponse> fetchBooksFromSalesforce(int size, int offset) {
+        String soql = String.format("SELECT Name, Title__c, Author__c, ISBN__c, Cover_Image_Url__c, External_Book_UUID__c FROM Book__c WHERE External_Book_UUID__c != null LIMIT %d OFFSET %d", size, offset);
         JsonNode json = clientService.query(soql);
         if (json == null || !json.has("records")) {
             return null;
