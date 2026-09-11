@@ -73,6 +73,12 @@
             <artifactId>mapstruct</artifactId>
         </dependency>
 
+        <!-- Apache HttpClient5 for HTTP PATCH support in RestTemplate -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+        </dependency>
+
         <!-- Test Dependencies -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

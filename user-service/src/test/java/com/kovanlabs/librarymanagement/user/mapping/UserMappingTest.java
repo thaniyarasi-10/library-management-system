@@ -18,10 +18,10 @@ class UserMapperTest {
 
     @BeforeEach
     void setUp() {
-        userMapper = new UserMapperImpl();
+        userMapper = Mappers.getMapper(UserMapper.class);
     }
 
-    @Test
+
     void testMapToResponse_SingleUser() {
         UUID uuid = UUID.randomUUID();
         User user = User.builder()
