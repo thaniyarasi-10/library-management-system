@@ -16,7 +16,7 @@ import java.util.Base64;
 
 @Component
 @Converter
-public class EncryptionConverter implements AttributeConverter<String, String> {
+public class EncryptionConverter {
 
     private static final Logger log = LoggerFactory.getLogger(EncryptionConverter.class);
 
@@ -39,16 +39,6 @@ public class EncryptionConverter implements AttributeConverter<String, String> {
         byte[] rawBytes = secretKey.getBytes(StandardCharsets.UTF_8);
         System.arraycopy(rawBytes, 0, keyBytes, 0, Math.min(rawBytes.length, keyBytes.length));
         this.keySpec = new SecretKeySpec(keyBytes, "AES");
-    }
-
-    @Override
-    public String convertToDatabaseColumn(String attribute) {
-        return encrypt(attribute);
-    }
-
-    @Override
-    public String convertToEntityAttribute(String dbData) {
-        return decrypt(dbData);
     }
 
     public String encrypt(String attribute) {
