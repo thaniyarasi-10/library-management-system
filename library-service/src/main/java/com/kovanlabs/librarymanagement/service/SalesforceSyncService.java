@@ -98,7 +98,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
         String soql = "SELECT LastName, Email, External_User_UUID__c FROM Contact WHERE External_User_UUID__c != null";
         JsonNode json = clientService.query(soql);
         if (json == null || !json.has("records")) {
-            return null;
+            return Collections.emptyList();
         }
 
         List<UserResponse> list = new ArrayList<>();
@@ -126,7 +126,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
         String soql = String.format("SELECT Name, Title__c, Author__c, ISBN__c, Cover_Image_Url__c, External_Book_UUID__c FROM Book__c WHERE External_Book_UUID__c != null LIMIT %d OFFSET %d", size, offset);
         JsonNode json = clientService.query(soql);
         if (json == null || !json.has("records")) {
-            return null;
+            return Collections.emptyList();
         }
 
         List<BookResponse> list = new ArrayList<>();
@@ -156,7 +156,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
                 + "FROM Borrow__c WHERE External_Borrow_UUID__c != null";
         JsonNode json = clientService.query(soql);
         if (json == null || !json.has("records")) {
-            return null;
+            return Collections.emptyList();
         }
 
         List<BorrowResponseDto> list = new ArrayList<>();
