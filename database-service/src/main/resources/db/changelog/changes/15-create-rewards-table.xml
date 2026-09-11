@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="15-1" author="thani">
+        <createTable tableName="reward">
+            <column name="uuid" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="user_uuid" type="varchar(36)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="points" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addForeignKeyConstraint baseTableName="reward"
+                                 baseColumnNames="user_uuid"
+                                 constraintName="fk_reward_user"
+                                 referencedTableName="user"
+                                 referencedColumnNames="uuid"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <changeSet id="15-2" author="thani">
+        <dropColumn tableName="user" columnName="reward_points"/>
+    </changeSet>
+
+</databaseChangeLog>

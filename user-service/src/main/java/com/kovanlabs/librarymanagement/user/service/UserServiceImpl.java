@@ -5,6 +5,7 @@ import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import com.kovanlabs.librarymanagement.user.mapping.UserMapper;
 import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +34,7 @@ import java.util.stream.Collectors;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
+    private final RewardRepository rewardRepository;
     private final PasswordEncoder passwordEncoder;
     private final UserMapper userMapper;
     private final SalesforceUserSyncDelegate salesforceSyncDelegate;
@@ -45,9 +47,50 @@ public class UserServiceImpl implements UserService {
             @Autowired(required = false) SalesforceUserSyncDelegate salesforceSyncDelegate) {
 
         this.userRepository = userRepository;
+        this.rewardRepository = rewardRepository;
         this.passwordEncoder = passwordEncoder;
         this.userMapper = userMapper;
         this.salesforceSyncDelegate = salesforceSyncDelegate;
+    }
+
+    private UserResponse mapToUserResponseWithRewards(User user) {
+        if (user == null) return null;
+        Integer points = 0;
+        if (user.getUuid() != null) {
+            points = rewardRepository.findByUserUuid(user.getUuid())
+                    .map(com.kovanlabs.librarymanagement.database.entity.Reward::getPoints)
+                    .orElse(0);
+        }
+        return new UserResponse(
+                user.getUuid(),
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                points
+        );
+    }
+
+    private List<UserResponse> mapToUserResponseListWithRewards(List<User> users) {
+        if (users == null || users.isEmpty()) return List.of();
+        List<java.util.UUID> uuids = users.stream()
+                .map(User::getUuid)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        java.util.Map<java.util.UUID, Integer> rewardMap = rewardRepository.findByUserUuidIn(uuids).stream()
+                .collect(Collectors.toMap(
+                        com.kovanlabs.librarymanagement.database.entity.Reward::getUserUuid,
+                        com.kovanlabs.librarymanagement.database.entity.Reward::getPoints,
+                        (p1, p2) -> p1
+                ));
+
+        return users.stream().map(user -> new UserResponse(
+                user.getUuid(),
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                user.getUuid() != null ? rewardMap.getOrDefault(user.getUuid(), 0) : 0
+        )).collect(Collectors.toList());
     }
 
     @Override
@@ -68,7 +111,7 @@ public class UserServiceImpl implements UserService {
             }
         }
 
-        return userMapper.mapToResponse(savedUser);
+        return mapToUserResponseWithRewards(savedUser);
     }
 
     @Override
@@ -118,9 +161,7 @@ public class UserServiceImpl implements UserService {
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<User> usersPage = userRepository.findAll(pageable);
-        List<UserResponse> content = usersPage.getContent().stream()
-                .map(userMapper::mapToResponse)
-                .collect(Collectors.toList());
+        List<UserResponse> content = mapToUserResponseListWithRewards(usersPage.getContent());
 
         return new PagedResponse<>(
                 content,
@@ -138,9 +179,7 @@ public class UserServiceImpl implements UserService {
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<User> usersPage = userRepository.searchUsers(query, pageable);
-        List<UserResponse> content = usersPage.getContent().stream()
-                .map(userMapper::mapToResponse)
-                .collect(Collectors.toList());
+        List<UserResponse> content = mapToUserResponseListWithRewards(usersPage.getContent());
 
         return new PagedResponse<>(
                 content,
@@ -158,7 +197,7 @@ public class UserServiceImpl implements UserService {
         log.info("CACHE MISS - Fetching user {} from DATABASE", id);
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
-        return userMapper.mapToResponse(user);
+        return mapToUserResponseWithRewards(user);
     }
 
     @Override
@@ -188,7 +227,7 @@ public class UserServiceImpl implements UserService {
             }
         }
 
-        return userMapper.mapToResponse(updatedUser);
+        return mapToUserResponseWithRewards(updatedUser);
     }
 
     @Override
@@ -204,7 +243,7 @@ public class UserServiceImpl implements UserService {
     public UserResponse getUserByEmail(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with email: " + email));
-        return userMapper.mapToResponse(user);
+        return mapToUserResponseWithRewards(user);
     }
 
     @Override

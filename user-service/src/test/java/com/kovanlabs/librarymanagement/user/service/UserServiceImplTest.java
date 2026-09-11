@@ -37,6 +37,9 @@ class UserServiceImplTest {
     private UserRepository userRepository;
 
     @Mock
+    private com.kovanlabs.librarymanagement.database.repository.RewardRepository rewardRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Spy
