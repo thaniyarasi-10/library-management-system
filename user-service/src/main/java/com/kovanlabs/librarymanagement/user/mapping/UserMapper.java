@@ -11,6 +11,7 @@ import java.util.List;
 @Mapper(componentModel = "spring")
 public interface UserMapper {
 
+    @Mapping(target = "rewardPoints", ignore = true)
     UserResponse mapToResponse(User user);
 
     List<UserResponse> mapToResponse(List<User> users);
@@ -21,7 +22,6 @@ public interface UserMapper {
     @Mapping(target = "role", ignore = true)
     @Mapping(target = "provider", ignore = true)
     @Mapping(target = "providerId", ignore = true)
-    @Mapping(target = "rewardPoints", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
 

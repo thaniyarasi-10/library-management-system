@@ -53,8 +53,8 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /user with default query params should return 200 OK and PagedResponse")
     void getAllUsers_WithDefaultParams_ShouldReturnPagedUsers() throws Exception {
-        UserResponse u1 = new UserResponse(uuid1, id1, "Alice", "alice@example.com");
-        UserResponse u2 = new UserResponse(uuid2, id2, "Bob", "bob@example.com");
+        UserResponse u1 = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
+        UserResponse u2 = new UserResponse(uuid2, id2, "Bob", "bob@example.com", 0);
         PagedResponse<UserResponse> pagedResponse = new PagedResponse<>(
                 List.of(u1, u2), 0, 10, 2L, 1, true
         );
@@ -79,7 +79,7 @@ class UserControllerTest {
     @Test
     @DisplayName("PUT /user/{id} with valid payload should return 200 OK and updated UserResponse")
     void updateUser_WithValidPayload_ShouldReturnUpdatedUser() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice Updated", "updated@example.com");
+        UserResponse response = new UserResponse(uuid1, id1, "Alice Updated", "updated@example.com", 0);
 
         when(userService.updateUser(eq(id1), any(UserRequest.class))).thenReturn(response);
 
@@ -115,7 +115,7 @@ class UserControllerTest {
     @Test
     @DisplayName("POST /user should create and return user")
     void createUser_ShouldReturnCreatedUser() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com");
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
         when(userService.createUser(any(UserRequest.class))).thenReturn(response);
 
         String jsonPayload = """
@@ -136,7 +136,7 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /user/{id} should return user by id")
     void getUserById_ShouldReturnUser() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com");
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
         when(userService.getUserById(id1)).thenReturn(response);
 
         mockMvc.perform(get("/user/" + id1))
@@ -147,7 +147,7 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /user/search should return paged users")
     void searchUsers_ShouldReturnPagedUsers() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com");
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
         PagedResponse<UserResponse> pagedResponse = new PagedResponse<>(
                 List.of(response), 0, 10, 1L, 1, true
         );
@@ -161,7 +161,7 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /user/me should return current user profile")
     void getCurrentUser_ShouldReturnProfile() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com");
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
         java.security.Principal mockPrincipal = mock(java.security.Principal.class);
         when(mockPrincipal.getName()).thenReturn("alice@example.com");
         when(userService.getUserByEmail("alice@example.com")).thenReturn(response);

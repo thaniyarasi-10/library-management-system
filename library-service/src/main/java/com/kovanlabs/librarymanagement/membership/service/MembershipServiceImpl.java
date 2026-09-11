@@ -53,7 +53,8 @@ public class MembershipServiceImpl implements MembershipService {
 
     @Cacheable(value = "membership-agreement-template", key = "'template'")
     public String getAgreementTemplate() {
-        log.info("Fetching agreement template from S3 bucket: {}, key: {}", membershipBucketName, membershipTemplateKey);
+        log.info("Fetching agreement template from S3 bucket: {}, key: {}", membershipBucketName,
+                membershipTemplateKey);
         return s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
     }
 
@@ -141,9 +142,8 @@ public class MembershipServiceImpl implements MembershipService {
             String base64Signature = Base64.getEncoder().encodeToString(file.getBytes());
             membership.setSignatureBase64(base64Signature);
 
-            String signatureHtml = "<img class=\"signature-img\" style=\"max-width: 180px; max-height: 70px; object-fit: contain; display: block; margin-bottom: 5px;\" src=\"data:image/png;base64," + base64Signature + "\" />";
-
-            String currentDate = LocalDate.now().toString();
+            String signatureHtml = "<img class=\"signature-img\" src=\"data:image/png;base64," + base64Signature
+                    + "\" />";
 
             String filledHtml = templateHtml
                     .replace("{{MEMBER_NAME}}", user.getName())
@@ -155,8 +155,6 @@ public class MembershipServiceImpl implements MembershipService {
                     .replace("{{START_DATE}}", membership.getCreatedAt().toLocalDate().toString())
                     .replace("{{applicationDate}}", membership.getCreatedAt().toLocalDate().toString())
                     .replace("{{EXPIRY_DATE}}", LocalDate.now().plusYears(1).toString())
-                    .replace("{{SIGNED_DATE}}", currentDate)
-                    .replace("{{APPROVAL_DATE}}", currentDate)
                     .replace("{{signaturePlaceholder}}", signatureHtml)
                     .replace("<div class=\"signature-placeholder\">\n            Signature\n        </div>",
                             signatureHtml)
@@ -200,8 +198,9 @@ public class MembershipServiceImpl implements MembershipService {
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
                 Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE, MembershipStatus.EXPIRED))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "No active, pending, or expired membership application found"));
+                .orElseGet(() -> membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(user.getUuid())
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                "No membership application found")));
 
         return membershipMapper.mapToResponse(membership);
     }
@@ -260,9 +259,7 @@ public class MembershipServiceImpl implements MembershipService {
                 .replace("{{membershipId}}", membershipIdText)
                 .replace("{{START_DATE}}", startDateText)
                 .replace("{{applicationDate}}", startDateText)
-                .replace("{{EXPIRY_DATE}}", "N/A (Pending Activation)")
-                .replace("{{SIGNED_DATE}}", "Pending")
-                .replace("{{APPROVAL_DATE}}", "Pending");
+                .replace("{{EXPIRY_DATE}}", "N/A (Pending Activation)");
     }
 
     @Override
@@ -287,15 +284,15 @@ public class MembershipServiceImpl implements MembershipService {
     @Override
     public boolean hasActiveMembership(UUID userUuid) {
         log.info("Checking active membership for user: {} in DATABASE", userUuid);
-        Optional<Membership> membershipOpt = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
-                userUuid, java.util.List.of(MembershipStatus.ACTIVE));
+        Optional<Membership> membershipOpt = membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid);
         if (membershipOpt.isEmpty()) {
             return false;
         }
         Membership membership = membershipOpt.get();
+        boolean isActive = membership.getStatus() == MembershipStatus.ACTIVE;
         boolean isNotExpired = membership.getExpiryDate() == null
                 || !membership.getExpiryDate().isBefore(LocalDate.now());
-        return isNotExpired;
+        return isActive && isNotExpired;
     }
 
     @CacheEvict(value = "active-memberships", key = "#userUuid")

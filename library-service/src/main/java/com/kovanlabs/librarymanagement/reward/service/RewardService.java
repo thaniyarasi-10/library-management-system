@@ -1,8 +1,9 @@
 package com.kovanlabs.librarymanagement.reward.service;
 
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
+import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
-import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,7 +20,7 @@ import java.util.stream.Collectors;
 public class RewardService {
 
     private final BorrowRepository borrowRepository;
-    private final UserRepository userRepository;
+    private final RewardRepository rewardRepository;
 
     @Transactional
     public int processOnTimeReturnRewards() {
@@ -36,9 +37,17 @@ public class RewardService {
                 .filter(b -> b.getUser() != null && b.getUser().getUuid() != null)
                 .collect(Collectors.groupingBy(b -> b.getUser().getUuid(), Collectors.counting()));
 
-        // Increment user reward points using bulk database update
+        // Increment user reward points using rewardRepository
         pointsPerUser.forEach((userUuid, pointsCount) -> {
-            userRepository.incrementRewardPoints(userUuid, pointsCount.intValue());
+            int updated = rewardRepository.incrementPoints(userUuid, pointsCount.intValue());
+            if (updated == 0) {
+                // If reward row does not exist for this user, insert a new record
+                Reward newReward = Reward.builder()
+                        .userUuid(userUuid)
+                        .points(pointsCount.intValue())
+                        .build();
+                rewardRepository.save(newReward);
+            }
         });
 
         // Mark all processed borrows as rewardProcessed = true in a single bulk update
@@ -48,7 +57,7 @@ public class RewardService {
 
         int updatedBorrows = borrowRepository.markBorrowsAsRewardProcessed(borrowUuids);
 
-        log.info("Completed processing of on-time return rewards. Incremented points for {} users and updated {} borrows.",
+        log.info("Completed processing of on-time return rewards. Updated rewards for {} users and marked {} borrows.",
                 pointsPerUser.size(), updatedBorrows);
 
         return updatedBorrows;
