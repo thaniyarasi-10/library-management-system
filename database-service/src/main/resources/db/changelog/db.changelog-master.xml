@@ -21,5 +21,7 @@
     <include file="db/changelog/changes/12-add-signature-base64-and-nullable-membership-id.xml"/>
     <include file="db/changelog/changes/13-create-rewards-table.xml"/>
     <include file="db/changelog/changes/14-modify-reward-datatype.xml"/>
+    <include file="db/changelog/changes/15-create-rewards-table.xml"/>
+    <include file="db/changelog/changes/16-update-rewards.xml"/>
 
 </databaseChangeLog>
