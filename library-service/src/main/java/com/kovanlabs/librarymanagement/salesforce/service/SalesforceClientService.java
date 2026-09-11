@@ -58,7 +58,8 @@ public class SalesforceClientService {
 
     private void authenticate() {
         if (!isConfigured()) {
-            log.info("[SALESFORCE CONFIG] Salesforce integration is not enabled or credentials (SALESFORCE_CLIENT_ID / SALESFORCE_CLIENT_SECRET) are missing.");
+            log.info(
+                    "[SALESFORCE CONFIG] Salesforce integration is not enabled or credentials (SALESFORCE_CLIENT_ID / SALESFORCE_CLIENT_SECRET) are missing.");
             return;
         }
         try {
@@ -71,7 +72,8 @@ public class SalesforceClientService {
             params.add("client_secret", salesforceConfig.getClientSecret());
 
             HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(params, headers);
-            ResponseEntity<String> response = restTemplate.postForEntity(salesforceConfig.getAuthUrl(), request, String.class);
+            ResponseEntity<String> response = restTemplate.postForEntity(salesforceConfig.getAuthUrl(), request,
+                    String.class);
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 JsonNode root = objectMapper.readTree(response.getBody());
@@ -88,7 +90,8 @@ public class SalesforceClientService {
 
     public JsonNode query(String soql) {
         if (!isConfigured()) {
-            log.info("[SALESFORCE QUERY] Salesforce is not enabled or credentials missing. Cannot execute SOQL: {}", soql);
+            log.info("[SALESFORCE QUERY] Salesforce is not enabled or credentials missing. Cannot execute SOQL: {}",
+                    soql);
             return null;
         }
         try {
@@ -123,7 +126,8 @@ public class SalesforceClientService {
         return null;
     }
 
-    public void upsertByExternalId(String sObjectName, String externalIdFieldName, String externalIdValue, Map<String, Object> fields) {
+    public void upsertByExternalId(String sObjectName, String externalIdFieldName, String externalIdValue,
+            Map<String, Object> fields) {
         if (!isConfigured()) {
             return;
         }
@@ -145,11 +149,13 @@ public class SalesforceClientService {
             HttpEntity<String> request = new HttpEntity<>(requestJson, headers);
 
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.PATCH, request, String.class);
-            if (response.getStatusCode().is2xxSuccessful() || response.getStatusCode() == HttpStatus.NO_CONTENT || response.getStatusCode() == HttpStatus.CREATED) {
+            if (response.getStatusCode().is2xxSuccessful() || response.getStatusCode() == HttpStatus.NO_CONTENT
+                    || response.getStatusCode() == HttpStatus.CREATED) {
                 log.info("Successfully synced {} (ExternalId: {}) to Salesforce", sObjectName, externalIdValue);
             }
         } catch (Exception e) {
-            log.error("Failed to sync {} (ExternalId: {}) to Salesforce: {}", sObjectName, externalIdValue, e.getMessage());
+            log.error("Failed to sync {} (ExternalId: {}) to Salesforce: {}", sObjectName, externalIdValue,
+                    e.getMessage());
             this.accessToken = null;
         }
     }
