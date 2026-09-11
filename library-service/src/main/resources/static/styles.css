@@ -23,35 +23,35 @@
 
 /* 1. DARK CHARCOAL THEME (DEFAULT) */
 [data-theme="dark"] {
-  --bg-app: #131211;
-  --bg-surface: #1C1A18;
-  --bg-surface-elevated: #24221F;
-  --bg-input: #181614;
-  --bg-hover: #2A2724;
+  --bg-app: #121214;
+  --bg-surface: #1A1A1E;
+  --bg-surface-elevated: #24242A;
+  --bg-input: #16161A;
+  --bg-hover: #2D2D35;
   
-  --border-subtle: #2A2724;
-  --border-medium: #383430;
-  --border-strong: #4D4742;
+  --border-subtle: #2D2D35;
+  --border-medium: #3E3E48;
+  --border-strong: #585866;
   
-  --text-main: #F5F3EF;
-  --text-muted: #A39E93;
-  --text-subtle: #787368;
+  --text-main: #FAFAFC;
+  --text-muted: #CBD5E1;
+  --text-subtle: #94A3B8;
   
-  --accent-primary: #E07A49; /* Library Amber / Terracotta */
-  --accent-primary-hover: #EC8B5B;
+  --accent-primary: #F97316; /* Vibrant Orange / Terracotta */
+  --accent-primary-hover: #FB923C;
   --accent-primary-text: #FFFFFF;
   
-  --accent-subtle: rgba(224, 122, 73, 0.15);
+  --accent-subtle: rgba(249, 115, 22, 0.18);
   
-  --badge-success-bg: rgba(16, 185, 129, 0.15);
-  --badge-success-text: #34D399;
-  --badge-warning-bg: rgba(245, 158, 11, 0.15);
+  --badge-success-bg: rgba(34, 197, 94, 0.2);
+  --badge-success-text: #4ADE80;
+  --badge-warning-bg: rgba(245, 158, 11, 0.2);
   --badge-warning-text: #FBBF24;
-  --badge-danger-bg: rgba(239, 68, 68, 0.15);
+  --badge-danger-bg: rgba(239, 68, 68, 0.2);
   --badge-danger-text: #F87171;
   
-  --cover-bg-start: #2C2825;
-  --cover-bg-end: #1F1C1A;
+  --cover-bg-start: #2A2A32;
+  --cover-bg-end: #1A1A20;
 }
 
 /* 2. WARM LIGHT THEME */
@@ -1152,12 +1152,22 @@ a {
   width: 100%;
   padding: 10px 14px;
   background-color: var(--bg-input);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-medium);
   border-radius: var(--radius-sm);
   color: var(--text-main);
   font-size: 13px;
   font-family: var(--font-sans);
   transition: all var(--transition);
+}
+
+.form-input::placeholder {
+  color: var(--text-subtle);
+  opacity: 0.8;
+}
+
+.form-select option {
+  background-color: var(--bg-surface);
+  color: var(--text-main);
 }
 
 .form-input:focus, .form-select:focus {

@@ -14,6 +14,8 @@ public record MembershipResponseDto(
     boolean isSigned,
     LocalDateTime signedAt,
     String signedPdfKey,
+    String signatureBase64,
+    LocalDateTime cancelledAt,
     LocalDateTime createdAt,
     LocalDateTime updatedAt
 ) {}

@@ -1670,6 +1670,12 @@ async function loadMembershipStatus() {
   state.currentMembershipId = membership.membershipId;
   state.membershipStatus = membership.status;
 
+  if (membership.status === 'CANCELLED') {
+    state.membershipStatus = 'CANCELLED';
+    document.getElementById('membership-state-none').classList.remove('hidden');
+    return;
+  }
+
   if (membership.status === 'PENDING') {
     document.getElementById('membership-state-pending').classList.remove('hidden');
     document.getElementById('btnActivateMembership').disabled = true;
@@ -1680,7 +1686,7 @@ async function loadMembershipStatus() {
   } else if (membership.status === 'ACTIVE') {
     document.getElementById('membership-state-active').classList.remove('hidden');
     
-    document.getElementById('activeCardId').textContent = membership.membershipId;
+    document.getElementById('activeCardId').textContent = membership.membershipId || 'PENDING';
     document.getElementById('activeCardName').textContent = state.currentUser ? state.currentUser.name : 'Library Member';
     
     // Format Expiry Date
@@ -1704,6 +1710,9 @@ async function applyForMembership() {
   const res = await fetchApi('/memberships', { method: 'POST' });
   if (res.ok) {
     showToast('Membership application submitted successfully', 'success');
+    if (res.data && res.data.agreementHtml) {
+      state.cachedAgreementHtml = res.data.agreementHtml;
+    }
     loadMembershipStatus();
   } else {
     const errorMsg = res.data && res.data.message ? res.data.message : 'Error submitting membership application';
@@ -1713,25 +1722,22 @@ async function applyForMembership() {
 
 async function loadAgreementTemplate() {
   const container = document.getElementById('agreementTextContainer');
-  container.innerHTML = '<p class="text-muted">Loading agreement terms...</p>';
 
-  if (!state.currentMembershipId) return;
-
-  const res = await fetchApi(`/memberships/${state.currentMembershipId}/agreement`);
-  if (res.ok) {
-    let html = res.data;
-    // Replace text placeholders for display
-    if (state.currentUser) {
-      html = html.replace('{{memberName}}', state.currentUser.name)
-                 .replace('{{memberEmail}}', state.currentUser.email);
-    }
-    html = html.replace('{{membershipId}}', state.currentMembershipId)
-               .replace('{{applicationDate}}', new Date().toLocaleDateString());
-    
-    container.innerHTML = html;
-  } else {
-    container.innerHTML = '<p class="text-danger">Failed to load membership agreement terms.</p>';
+  if (state.cachedAgreementHtml) {
+    container.innerHTML = state.cachedAgreementHtml;
+    return;
   }
+
+  if (state.currentMembershipUuid) {
+    const res = await fetchApi(`/memberships/${state.currentMembershipUuid}/agreement`);
+    if (res.ok && res.data) {
+      state.cachedAgreementHtml = res.data;
+      container.innerHTML = res.data;
+      return;
+    }
+  }
+
+  container.innerHTML = '<p class="text-muted">Failed to load agreement terms from S3.</p>';
 }
 
 function handleSignatureFileChange(e) {
@@ -1836,4 +1842,22 @@ async function downloadSignedPdf() {
     console.error('Download error:', error);
     showToast('Error downloading signed PDF', 'error');
   }
+}
+
+function confirmCancelMembership() {
+  showConfirmModal(
+    'Cancel Library Membership',
+    'Are you sure you want to cancel your membership? You will no longer be able to borrow new books.',
+    async () => {
+      const res = await fetchApi('/memberships/cancel', { method: 'POST' });
+      if (res.ok) {
+        showToast('Membership cancelled successfully', 'success');
+        loadMembershipStatus();
+        if (state.currentPage === 'dashboard') loadDashboardMetrics();
+      } else {
+        const errorMsg = res.data && res.data.message ? res.data.message : 'Failed to cancel membership';
+        showToast(errorMsg, 'error');
+      }
+    }
+  );
 }
