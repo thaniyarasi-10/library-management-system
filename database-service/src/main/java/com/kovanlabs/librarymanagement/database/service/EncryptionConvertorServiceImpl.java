@@ -1,11 +1,7 @@
-package com.kovanlabs.librarymanagement.database.converter;
+package com.kovanlabs.librarymanagement.database.service;
 
-import jakarta.persistence.AttributeConverter;
-import jakarta.persistence.Converter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -14,19 +10,15 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
 
-@Component
-@Converter
-public class EncryptionConverter {
-
-    private static final Logger log = LoggerFactory.getLogger(EncryptionConverter.class);
-
+@Slf4j
+public class EncryptionConvertorServiceImpl implements EncryptionConverterService {
     private static final String ALGORITHM = "AES/GCM/NoPadding";
     private static final int GCM_TAG_LENGTH = 128;
     private static final int IV_LENGTH_BYTE = 12;
 
     private final SecretKeySpec keySpec;
 
-    public EncryptionConverter(
+    public EncryptionConvertorServiceImpl(
             @Value("${encryption.secret-key:${ENCRYPTION_SECRET_KEY}}") String secretKey
     ) {
         if (secretKey == null || secretKey.isBlank()) {
