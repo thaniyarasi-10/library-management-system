@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.aws.s3.service;
 
 import com.kovanlabs.librarymanagement.aws.s3.dto.S3UploadResponse;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -68,6 +69,11 @@ public class S3Service {
         }
 
         return builder.build();
+    }
+
+    @PreDestroy
+    public void closeClients() {
+        clientsByRegion.values().forEach(S3Client::close);
     }
 
     public S3UploadResponse uploadFile(MultipartFile file) throws IOException {

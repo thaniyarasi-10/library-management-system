@@ -16,7 +16,8 @@ public interface FineRepository extends JpaRepository<Fine, UUID> {
 
     Optional<Fine> findById(Long id);
 
-    Optional<Fine> findByBookUuidAndUserUuid(UUID bookUuid, UUID userUuid);
+    Optional<Fine> findTopByBookUuidAndUserUuidOrderByIdDesc(UUID bookUuid, UUID userUuid);
+    List<Fine> findByBookUuidAndUserUuid(UUID bookUuid, UUID userUuid);
 
     List<Fine> findByUserUuidAndStatus(UUID userUuid, FineStatus status);
 

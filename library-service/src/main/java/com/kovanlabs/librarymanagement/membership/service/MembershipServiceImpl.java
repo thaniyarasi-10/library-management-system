@@ -53,7 +53,8 @@ public class MembershipServiceImpl implements MembershipService {
 
     @Cacheable(value = "membership-agreement-template", key = "'template'")
     public String getAgreementTemplate() {
-        log.info("Fetching agreement template from S3 bucket: {}, key: {}", membershipBucketName, membershipTemplateKey);
+        log.info("Fetching agreement template from S3 bucket: {}, key: {}", membershipBucketName,
+                membershipTemplateKey);
         return s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
     }
 
@@ -283,7 +284,7 @@ public class MembershipServiceImpl implements MembershipService {
     @Override
     public boolean hasActiveMembership(UUID userUuid) {
         log.info("Checking active membership for user: {} in DATABASE", userUuid);
-        Optional<Membership> membershipOpt = membershipRepository.findByUserUuid(userUuid);
+        Optional<Membership> membershipOpt = membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid);
         if (membershipOpt.isEmpty()) {
             return false;
         }

@@ -47,39 +47,36 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
 
         String jwt = jwtService.generateToken(user);
 
-        // Derive strict target origin from request
-        String scheme = (request != null && request.getScheme() != null) ? request.getScheme() : "http";
-        String serverName = (request != null && request.getServerName() != null) ? request.getServerName() : "localhost";
-        int serverPort = (request != null) ? request.getServerPort() : 80;
-
-        String targetOrigin;
-        if (serverPort <= 0 || (scheme.equalsIgnoreCase("http") && serverPort == 80)
-                || (scheme.equalsIgnoreCase("https") && serverPort == 443)) {
-            targetOrigin = scheme + "://" + serverName;
-        } else {
-            targetOrigin = scheme + "://" + serverName + ":" + serverPort;
+        // Determine frontend origin from Referer header if available
+        String referer = request.getHeader("Referer");
+        String frontendOrigin = "http://localhost:3000";
+        if (referer != null && (referer.contains("localhost:5173") || referer.contains("127.0.0.1:5173"))) {
+            frontendOrigin = "http://localhost:5173";
+        } else if (referer != null && (referer.contains("localhost:3000") || referer.contains("127.0.0.1:3000"))) {
+            frontendOrigin = "http://localhost:3000";
         }
 
-        // Safely serialize message payload as JSON (preventing direct script string concatenation)
+        // Safely serialize message payload as JSON
         Map<String, String> messagePayload = Map.of(
                 "type", "ATHENAEUM_OAUTH_TOKEN",
                 "token", jwt
         );
 
-        String encodedRedirectUrl = "/index.html?token=" + URLEncoder.encode(jwt, StandardCharsets.UTF_8);
+        String fallbackRedirectUrl = frontendOrigin + "/?token=" + URLEncoder.encode(jwt, StandardCharsets.UTF_8);
 
-        // Escape JSON for safe embedding in HTML script block (neutralize any closing script tags)
+        // Escape JSON for safe embedding in HTML script block
         String jsonPayload = objectMapper.writeValueAsString(messagePayload).replace("</", "<\\/");
-        String jsonOrigin = objectMapper.writeValueAsString(targetOrigin).replace("</", "<\\/");
-        String jsonRedirectUrl = objectMapper.writeValueAsString(encodedRedirectUrl).replace("</", "<\\/");
+        String jsonRedirectUrl = objectMapper.writeValueAsString(fallbackRedirectUrl).replace("</", "<\\/");
+
+        String jsonTargetOrigin = objectMapper.writeValueAsString(frontendOrigin).replace("</", "<\\/");
 
         response.setContentType("text/html;charset=UTF-8");
         String html = "<!DOCTYPE html><html><head><title>Authentication Successful</title></head><body>" +
                 "<script>" +
                 "try {" +
                 "  var payload = " + jsonPayload + ";" +
-                "  var targetOrigin = " + jsonOrigin + " || window.location.origin;" +
                 "  var redirectUrl = " + jsonRedirectUrl + ";" +
+                "  var targetOrigin = " + jsonTargetOrigin + ";" +
                 "  if (window.opener && !window.opener.closed) {" +
                 "    window.opener.postMessage(payload, targetOrigin);" +
                 "    setTimeout(function() { window.close(); }, 300);" +
