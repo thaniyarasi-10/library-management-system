@@ -8,7 +8,7 @@ import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.mapping.BookMapper;
-import com.kovanlabs.librarymanagement.service.SalesforceSyncService;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -100,8 +100,18 @@ class BookServiceImplTest {
 
     @Test
     void getAllBooks_paginated_withSalesforce_shouldReturnPagedResponse() {
-        BookResponse sfBook = new BookResponse(uuid1, 1L, "Clean Code", "Robert C. Martin", "9780132350884", "http://s3.com/cover.jpg");
-        when(salesforceSyncService.fetchBooksFromSalesforce(10, 0)).thenReturn(List.of(sfBook));
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.node.ObjectNode root = mapper.createObjectNode();
+        com.fasterxml.jackson.databind.node.ArrayNode records = root.putArray("records");
+        com.fasterxml.jackson.databind.node.ObjectNode bookNode = records.addObject();
+        bookNode.put("External_Book_UUID__c", uuid1.toString());
+        bookNode.put("Name", "Clean Code");
+        bookNode.put("Title__c", "Clean Code");
+        bookNode.put("Author__c", "Robert C. Martin");
+        bookNode.put("ISBN__c", "9780132350884");
+        bookNode.put("Cover_Image_Url__c", "http://s3.com/cover.jpg");
+
+        when(salesforceSyncService.fetchBooksJsonFromSalesforce(10, 0)).thenReturn(root);
         when(salesforceSyncService.getTotalBooksFromSalesforce()).thenReturn(1L);
 
         PagedResponse<BookResponse> response = bookService.getAllBooks(0, 10, "title", "asc");
@@ -113,7 +123,7 @@ class BookServiceImplTest {
 
     @Test
     void getAllBooks_paginated_salesforceFailureFallbackToMySQL() {
-        when(salesforceSyncService.fetchBooksFromSalesforce(10, 0)).thenThrow(new RuntimeException("SF Down"));
+        when(salesforceSyncService.fetchBooksJsonFromSalesforce(10, 0)).thenThrow(new RuntimeException("SF Down"));
         Page<Book> bookPage = new PageImpl<>(List.of(book1), PageRequest.of(0, 10, Sort.by("title").ascending()), 1);
         when(bookRepository.findAll(any(Pageable.class))).thenReturn(bookPage);
 

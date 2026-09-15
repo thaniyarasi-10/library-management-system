@@ -42,6 +42,7 @@ public class UserServiceImpl implements UserService {
     @Autowired
     public UserServiceImpl(
             UserRepository userRepository,
+            RewardRepository rewardRepository,
             @Lazy PasswordEncoder passwordEncoder,
             UserMapper userMapper,
             @Autowired(required = false) SalesforceUserSyncDelegate salesforceSyncDelegate) {

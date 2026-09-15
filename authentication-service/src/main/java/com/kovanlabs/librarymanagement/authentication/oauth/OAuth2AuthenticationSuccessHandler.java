@@ -73,24 +73,21 @@ public class OAuth2AuthenticationSuccessHandler
                             const payload = %s;
                             const targetOrigin = %s;
 
-                            if (window.opener && !window.opener.closed) {
-                                window.opener.postMessage(
-                                    payload,
-                                    targetOrigin
-                                );
+                            if (window.opener) {
+                                try {
+                                    window.opener.postMessage(payload, targetOrigin);
+                                } catch (err) {
+                                    console.error("postMessage error:", err);
+                                }
 
                                 setTimeout(() => {
                                     window.close();
                                 }, 300);
                             } else {
-                                window.location.replace(
-                                    targetOrigin + "/"
-                                );
+                                window.location.replace(targetOrigin + "/");
                             }
                         } catch (e) {
-                            window.location.replace(
-                                %s + "/"
-                            );
+                            window.location.replace(%s + "/");
                         }
                     </script>
 

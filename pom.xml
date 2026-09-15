@@ -26,6 +26,7 @@
         <module>user-service</module>
         <module>communication-service</module>
         <module>aws-service</module>
+        <module>salesforce-core</module>
         <module>library-service</module>
     </modules>
 
@@ -68,6 +69,12 @@
             <dependency>
                 <groupId>com.kovanlabs</groupId>
                 <artifactId>aws-service</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.kovanlabs</groupId>
+                <artifactId>salesforce-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

@@ -1,12 +1,14 @@
-package com.kovanlabs.librarymanagement.service;
+package com.kovanlabs.librarymanagement.salesforce.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.kovanlabs.librarymanagement.config.SalesforceConfig;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kovanlabs.librarymanagement.salesforce.config.SalesforceConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.*;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -28,6 +30,9 @@ class SalesforceClientServiceTest {
 
     @Mock
     private RestTemplate restTemplate;
+
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @InjectMocks
     private SalesforceClientService clientService;

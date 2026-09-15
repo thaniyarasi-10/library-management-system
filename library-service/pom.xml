@@ -40,6 +40,11 @@
             <artifactId>aws-service</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.kovanlabs</groupId>
+            <artifactId>salesforce-core</artifactId>
+        </dependency>
+
         <!-- Spring Boot Starter Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

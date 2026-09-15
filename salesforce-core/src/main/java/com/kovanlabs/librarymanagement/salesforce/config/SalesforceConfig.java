@@ -1,4 +1,4 @@
-package com.kovanlabs.librarymanagement.config;
+package com.kovanlabs.librarymanagement.salesforce.config;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -13,15 +13,15 @@ public class SalesforceConfig {
     @Value("${salesforce.enabled:false}")
     private boolean enabled;
 
-    @Value("${salesforce.client-id}")
+    @Value("${salesforce.client-id:}")
     private String clientId;
 
-    @Value("${salesforce.client-secret}")
+    @Value("${salesforce.client-secret:}")
     private String clientSecret;
 
-    @Value("${salesforce.auth-url}")
+    @Value("${salesforce.auth-url:https://login.salesforce.com/services/oauth2/token}")
     private String authUrl;
 
-    @Value("${salesforce.api-version}")
+    @Value("${salesforce.api-version:v60.0}")
     private String apiVersion;
 }

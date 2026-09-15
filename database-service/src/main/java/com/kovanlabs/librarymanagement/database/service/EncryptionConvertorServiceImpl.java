@@ -2,6 +2,7 @@ package com.kovanlabs.librarymanagement.database.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -11,6 +12,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 @Slf4j
+@Service
 public class EncryptionConvertorServiceImpl implements EncryptionConverterService {
     private static final String ALGORITHM = "AES/GCM/NoPadding";
     private static final int GCM_TAG_LENGTH = 128;

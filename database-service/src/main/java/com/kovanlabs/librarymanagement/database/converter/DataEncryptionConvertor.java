@@ -2,8 +2,12 @@ package com.kovanlabs.librarymanagement.database.converter;
 
 import com.kovanlabs.librarymanagement.database.service.EncryptionConverterService;
 import jakarta.persistence.AttributeConverter;
+import jakarta.persistence.Converter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
+@Component
+@Converter
 @RequiredArgsConstructor
 public class DataEncryptionConvertor implements AttributeConverter<String, String> {
 

@@ -325,7 +325,7 @@ class MembershipServiceImplTest {
                 .expiryDate(LocalDate.now().plusMonths(6))
                 .build();
 
-        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+        when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(eq(userUuid)))
                 .thenReturn(Optional.of(activeMembership));
 
         assertTrue(membershipService.hasActiveMembership(userUuid));
@@ -337,12 +337,12 @@ class MembershipServiceImplTest {
                 .expiryDate(LocalDate.now().minusDays(1))
                 .build();
 
-        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+        when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(eq(userUuid)))
                 .thenReturn(Optional.of(expiredMembership));
 
         assertFalse(membershipService.hasActiveMembership(userUuid));
 
-        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+        when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(eq(userUuid)))
                 .thenReturn(Optional.empty());
 
         assertFalse(membershipService.hasActiveMembership(userUuid));

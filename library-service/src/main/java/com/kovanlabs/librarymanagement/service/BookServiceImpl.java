@@ -8,7 +8,7 @@ import com.kovanlabs.librarymanagement.aws.s3.dto.S3UploadResponse;
 import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
-import com.kovanlabs.librarymanagement.service.SalesforceSyncService;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.util.List;
@@ -62,10 +63,12 @@ public class BookServiceImpl implements BookService {
         if (salesforceSyncService != null) {
             try {
                 int offset = page * size;
-                List<BookResponse> sfBooks = salesforceSyncService.fetchBooksFromSalesforce(size, offset);
+                JsonNode json = salesforceSyncService.fetchBooksJsonFromSalesforce(size, offset);
                 long totalBooks = salesforceSyncService.getTotalBooksFromSalesforce();
 
-                if (sfBooks != null) {
+                if (json != null && json.has("records")) {
+                    List<BookResponse> sfBooks = bookMapper.mapJsonToBookResponseList(json);
+
                     log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL", sfBooks.size());
                     int totalPages = (int) Math.ceil((double) totalBooks / size);
                     return new PagedResponse<>(

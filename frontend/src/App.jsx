@@ -237,8 +237,12 @@ export default function App() {
   const handleGoogleSignIn = () => {
     const popup = window.open(`${baseUrl}/oauth2/authorization/google`, 'googleOAuth', 'width=500,height=600');
     setTimeout(() => {
-      if (popup && !popup.closed) {
-        setActiveModal('googleToken');
+      try {
+        if (popup && !popup.closed) {
+          setActiveModal('googleToken');
+        }
+      } catch (e) {
+        // Cross-Origin-Opener-Policy can restrict inspecting popup.closed
       }
     }, 2500);
   };

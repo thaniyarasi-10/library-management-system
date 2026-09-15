@@ -1,4 +1,4 @@
-package com.kovanlabs.librarymanagement.reward.service;
+package com.kovanlabs.librarymanagement.service;
 
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.Reward;

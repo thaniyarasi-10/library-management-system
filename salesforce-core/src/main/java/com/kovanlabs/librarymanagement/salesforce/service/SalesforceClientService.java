@@ -1,10 +1,10 @@
-package com.kovanlabs.librarymanagement.service;
+package com.kovanlabs.librarymanagement.salesforce.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kovanlabs.librarymanagement.config.SalesforceConfig;
-import lombok.RequiredArgsConstructor;
+import com.kovanlabs.librarymanagement.salesforce.config.SalesforceConfig;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
@@ -19,12 +19,24 @@ import java.util.Map;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class SalesforceClientService {
 
     private final SalesforceConfig salesforceConfig;
-    private final RestTemplate restTemplate = createRestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
+
+    @Autowired
+    public SalesforceClientService(SalesforceConfig salesforceConfig) {
+        this.salesforceConfig = salesforceConfig;
+        this.restTemplate = createRestTemplate();
+        this.objectMapper = new ObjectMapper();
+    }
+
+    public SalesforceClientService(SalesforceConfig salesforceConfig, RestTemplate restTemplate, ObjectMapper objectMapper) {
+        this.salesforceConfig = salesforceConfig;
+        this.restTemplate = restTemplate;
+        this.objectMapper = objectMapper;
+    }
 
     private static RestTemplate createRestTemplate() {
         HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory();

@@ -15,9 +15,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.util.UUID;
+import java.util.List;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
 import com.kovanlabs.librarymanagement.service.MembershipService;
 import lombok.extern.slf4j.Slf4j;
-import com.kovanlabs.librarymanagement.service.SalesforceSyncService;
 
 @Service
 @Slf4j
@@ -123,8 +125,9 @@ public class BorrowServiceImpl implements BorrowService {
     public java.util.List<BorrowResponseDto> getAllBorrows() {
         if (salesforceSyncService != null) {
             try {
-                java.util.List<BorrowResponseDto> sfBorrows = salesforceSyncService.fetchBorrowsFromSalesforce();
-                if (sfBorrows != null && !sfBorrows.isEmpty()) {
+                com.fasterxml.jackson.databind.JsonNode json = salesforceSyncService.fetchBorrowsJsonFromSalesforce();
+                if (json != null && json.has("records") && json.path("records").size() > 0) {
+                    List<BorrowResponseDto> sfBorrows = bookMapper.mapJsonToBorrowResponseList(json);
                     log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} borrow records from Salesforce SOQL", sfBorrows.size());
                     return sfBorrows;
                 }
