@@ -10,15 +10,13 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.io.Serializable;
-
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class ContactSObject implements Serializable {
+public class ContactSObject {
 
     public static final String SOBJECT_NAME = SObject.CONTACT.getObjectName();
     public static final String EXTERNAL_ID_FIELD = ContactFields.EXTERNAL_USER_UUID;

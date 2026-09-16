@@ -10,15 +10,13 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.io.Serializable;
-
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class BookSObject implements Serializable {
+public class BookSObject {
 
     public static final String SOBJECT_NAME = SObject.BOOK.getObjectName();
     public static final String EXTERNAL_ID_FIELD = BookFields.EXTERNAL_BOOK_UUID;
