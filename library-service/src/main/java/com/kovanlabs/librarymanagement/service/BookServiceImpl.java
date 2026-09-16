@@ -29,6 +29,10 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Implementation of {@link BookService} with Redis caching, S3 cover image management,
+ * and dual-write/read operations integrated with Salesforce SObjects.
+ */
 @Service
 @Slf4j
 @Transactional(readOnly = true)
@@ -40,6 +44,12 @@ public class BookServiceImpl implements BookService {
     private final BookMapper bookMapper;
     private final SalesforceSyncService salesforceSyncService;
 
+    /**
+     * Creates a new book record, saves it to the database, and synchronizes with Salesforce.
+     *
+     * @param request Book payload
+     * @return Created {@link BookResponse}
+     */
     @Override
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
@@ -59,6 +69,15 @@ public class BookServiceImpl implements BookService {
         return response;
     }
 
+    /**
+     * Retrieves paginated books from Salesforce SOQL if configured, otherwise falls back to MySQL.
+     *
+     * @param page Zero-based page number
+     * @param size Number of items per page
+     * @param sortBy Field name to sort by
+     * @param sortDir Sort direction ("asc" or "desc")
+     * @return {@link PagedResponse} of {@link BookResponse}
+     */
     @Override
     public PagedResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDir) {
         if (salesforceSyncService != null) {
@@ -104,6 +123,16 @@ public class BookServiceImpl implements BookService {
         );
     }
 
+    /**
+     * Searches books matching the search query in MySQL with pagination.
+     *
+     * @param query Search query
+     * @param page Page index
+     * @param size Page size
+     * @param sortBy Sort field
+     * @param sortDir Sort direction
+     * @return {@link PagedResponse} of matching {@link BookResponse} items
+     */
     @Override
     public PagedResponse<BookResponse> searchBooks(String query, int page, int size, String sortBy, String sortDir) {
         Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
@@ -124,6 +153,12 @@ public class BookServiceImpl implements BookService {
         );
     }
 
+    /**
+     * Retrieves a book by ID with Redis caching.
+     *
+     * @param id The book ID
+     * @return {@link BookResponse} DTO
+     */
     @Override
     @Cacheable(value = "books", key = "#p0")
     public BookResponse getBookById(Long id) {
@@ -133,6 +168,13 @@ public class BookServiceImpl implements BookService {
         return bookMapper.mapToResponse(book);
     }
 
+    /**
+     * Updates an existing book and triggers synchronization with Salesforce.
+     *
+     * @param id The book ID
+     * @param request The updated book payload
+     * @return Updated {@link BookResponse}
+     */
     @Override
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
@@ -158,6 +200,11 @@ public class BookServiceImpl implements BookService {
         return response;
     }
 
+    /**
+     * Deletes a book by ID and evicts all book caches.
+     *
+     * @param id The book ID to delete
+     */
     @Override
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
@@ -167,6 +214,13 @@ public class BookServiceImpl implements BookService {
         bookRepository.delete(book);
     }
 
+    /**
+     * Uploads a book cover image to AWS S3 and updates the book entity.
+     *
+     * @param bookId The book ID
+     * @param file The multipart image file
+     * @return Status message
+     */
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
     public String uploadBookCover(Long bookId, MultipartFile file)  {
@@ -189,6 +243,12 @@ public class BookServiceImpl implements BookService {
         }
     }
 
+    /**
+     * Retrieves the cover image URL for a book by its ID.
+     *
+     * @param id The book ID
+     * @return The cover image URL
+     */
     public String getImageCoverById(Long id){
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Book not found"));

@@ -25,11 +25,15 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * Service for calculating, tracking, persisting, and processing payments for overdue library fines.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class FineService implements UserFineChecker {
 
+    /** Daily penalty rate per overdue day. */
     public static final double FINE_PER_DAY = 5.0;
 
     private final FineRepository fineRepository;
@@ -37,6 +41,12 @@ public class FineService implements UserFineChecker {
     private final UserRepository userRepository;
     private final BorrowRepository borrowRepository;
 
+    /**
+     * Calculates the overdue fine for a specific borrow record based on due date.
+     *
+     * @param borrow The borrow entity
+     * @return {@link FineResult} containing days overdue and fine amount
+     */
     public FineResult calculateFine(Borrow borrow) {
         if (borrow == null || borrow.getDueDate() == null) {
             return new FineResult(borrow, 0, 0.0);
@@ -48,6 +58,14 @@ public class FineService implements UserFineChecker {
         return new FineResult(borrow, daysOverdue, fine);
     }
 
+    /**
+     * Creates a new fine record or updates an existing pending fine for the given book and user.
+     *
+     * @param bookUuid Unique UUID of the book
+     * @param userUuid Unique UUID of the user
+     * @param pendingAmount Fine amount
+     * @return Persisted {@link Fine} entity
+     */
     @Transactional
     public Fine createOrUpdateFine(UUID bookUuid, UUID userUuid, BigDecimal pendingAmount) {
         Optional<Fine> optionalFine = fineRepository.findTopByBookUuidAndUserUuidOrderByIdDesc(bookUuid, userUuid);
@@ -68,6 +86,12 @@ public class FineService implements UserFineChecker {
         return fineRepository.save(fine);
     }
 
+    /**
+     * Processes overdue calculations and records/updates fine for a borrow entry.
+     *
+     * @param borrow The borrow entity
+     * @return Created or updated {@link Fine} entity
+     */
     @Transactional
     public Fine processFineForBorrow(Borrow borrow) {
         if (borrow == null) {
@@ -88,12 +112,24 @@ public class FineService implements UserFineChecker {
         return null;
     }
 
+    /**
+     * Computes the total pending fine amount across all unpaid fines for a given user ID.
+     *
+     * @param userId The database user ID
+     * @return Total fine sum as {@link BigDecimal}
+     */
     public BigDecimal calculateTotalPendingFineForUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with id: " + userId));
         return calculateTotalPendingFineForUser(user.getUuid());
     }
 
+    /**
+     * Computes the total pending fine amount across all unpaid fines for a given user UUID.
+     *
+     * @param userUuid The user UUID
+     * @return Total fine sum as {@link BigDecimal}
+     */
     public BigDecimal calculateTotalPendingFineForUser(UUID userUuid) {
         List<Fine> pendingFines = fineRepository.findByUserUuidAndStatus(userUuid, FineStatus.PENDING);
         return pendingFines.stream()
@@ -102,6 +138,12 @@ public class FineService implements UserFineChecker {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
+    /**
+     * Enriches and maps a {@link Fine} entity to a {@link FineResponseDto} with book and user details.
+     *
+     * @param fine The fine entity
+     * @return Populated {@link FineResponseDto}
+     */
     public FineResponseDto mapToDtoWithDetails(Fine fine) {
         if (fine == null) return null;
         Book book = fine.getBookUuid() != null ? bookRepository.findByUuid(fine.getBookUuid()).orElse(null) : null;
@@ -151,12 +193,23 @@ public class FineService implements UserFineChecker {
                 .build();
     }
 
+    /**
+     * Retrieves all fines formatted as response DTOs.
+     *
+     * @return List of {@link FineResponseDto}s
+     */
     public List<FineResponseDto> getAllFinesDto() {
         return fineRepository.findAllByOrderByIdDesc().stream()
                 .map(this::mapToDtoWithDetails)
                 .toList();
     }
 
+    /**
+     * Retrieves all fines formatted as DTOs for a specific user ID.
+     *
+     * @param userId The database user ID
+     * @return List of {@link FineResponseDto}s
+     */
     public List<FineResponseDto> getFinesDtoByUserId(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with id: " + userId));
@@ -165,6 +218,12 @@ public class FineService implements UserFineChecker {
                 .toList();
     }
 
+    /**
+     * Retrieves all fines formatted as DTOs for a specific user email.
+     *
+     * @param email The user email
+     * @return List of {@link FineResponseDto}s
+     */
     public List<FineResponseDto> getFinesDtoByUserEmail(String email) {
         if (email == null) {
             return java.util.Collections.emptyList();
@@ -176,18 +235,36 @@ public class FineService implements UserFineChecker {
         return getFinesDtoByUserId(user.getId());
     }
 
+    /**
+     * Retrieves fine entities for a specific user ID.
+     *
+     * @param userId The user ID
+     * @return List of {@link Fine} entities
+     */
     public List<Fine> getFinesByUserId(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with id: " + userId));
         return fineRepository.findByUserUuid(user.getUuid());
     }
 
+    /**
+     * Retrieves pending fine entities for a specific user ID.
+     *
+     * @param userId The user ID
+     * @return List of pending {@link Fine} entities
+     */
     public List<Fine> getPendingFinesByUserId(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with id: " + userId));
         return fineRepository.findByUserUuidAndStatus(user.getUuid(), FineStatus.PENDING);
     }
 
+    /**
+     * Marks a fine record as PAID.
+     *
+     * @param fineId The fine ID
+     * @return The updated {@link Fine} entity
+     */
     @Transactional
     public Fine payFine(Long fineId) {
         Fine fine = fineRepository.findById(fineId)
@@ -198,6 +275,12 @@ public class FineService implements UserFineChecker {
         return fineRepository.save(fine);
     }
 
+    /**
+     * Checks if a user has any outstanding pending fine amounts.
+     *
+     * @param userId The user ID
+     * @return {@code true} if total pending fine is greater than zero
+     */
     @Override
     public boolean hasPendingFines(Long userId) {
         BigDecimal totalPending = calculateTotalPendingFineForUser(userId);

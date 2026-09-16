@@ -14,6 +14,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Service for calculating and awarding reward points to users for returning books on time.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -22,6 +25,12 @@ public class RewardService {
     private final BorrowRepository borrowRepository;
     private final RewardRepository rewardRepository;
 
+    /**
+     * Finds unprocessed on-time returned borrows, aggregates points per user,
+     * awards reward points, and marks borrow entries as processed.
+     *
+     * @return Total count of borrow records processed and rewarded
+     */
     @Transactional
     public int processOnTimeReturnRewards() {
         log.info("Starting processing of on-time return rewards");

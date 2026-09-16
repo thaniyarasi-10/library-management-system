@@ -31,6 +31,10 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Implementation of {@link UserService} providing cached database access,
+ * password hashing, reward points calculation, and optional Salesforce dual-write synchronization.
+ */
 @Service
 @Transactional(readOnly = true)
 @Slf4j
@@ -42,6 +46,15 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
     private final SalesforceUserSyncDelegate salesforceSyncDelegate;
 
+    /**
+     * Constructs a new {@link UserServiceImpl} with injected dependencies.
+     *
+     * @param userRepository Repository for User database operations
+     * @param rewardRepository Repository for calculating user reward points
+     * @param passwordEncoder Password hashing encoder
+     * @param userMapper MapStruct mapper for User entities and DTOs
+     * @param salesforceSyncDelegate Optional delegate for synchronizing changes to Salesforce
+     */
     @Autowired
     public UserServiceImpl(
             UserRepository userRepository,
@@ -57,6 +70,12 @@ public class UserServiceImpl implements UserService {
         this.salesforceSyncDelegate = salesforceSyncDelegate;
     }
 
+    /**
+     * Helper method to map a single User entity to {@link UserResponse} along with their calculated reward points.
+     *
+     * @param user The user entity
+     * @return The populated {@link UserResponse}
+     */
     private UserResponse mapToUserResponseWithRewards(User user) {
         if (user == null)
             return null;
@@ -74,6 +93,12 @@ public class UserServiceImpl implements UserService {
                 points);
     }
 
+    /**
+     * Helper method to batch map a list of User entities to {@link UserResponse} DTOs with reward points.
+     *
+     * @param users List of user entities
+     * @return List of mapped {@link UserResponse} DTOs
+     */
     private List<UserResponse> mapToUserResponseListWithRewards(List<User> users) {
         if (users == null || users.isEmpty())
             return List.of();
@@ -96,6 +121,12 @@ public class UserServiceImpl implements UserService {
                 user.getUuid() != null ? rewardMap.getOrDefault(user.getUuid(), 0) : 0)).collect(Collectors.toList());
     }
 
+    /**
+     * Creates a new user, encodes their password, saves to MySQL, and triggers dual-write sync with Salesforce if configured.
+     *
+     * @param request The user creation request payload
+     * @return The created {@link UserResponse} DTO
+     */
     @Override
     @Transactional
     @CacheEvict(value = "users", allEntries = true)
@@ -118,6 +149,11 @@ public class UserServiceImpl implements UserService {
         return response;
     }
 
+    /**
+     * Fetches all users from Salesforce if delegate is active and records exist, otherwise falls back to MySQL.
+     *
+     * @return List of {@link UserResponse} DTOs
+     */
     @Override
     public List<UserResponse> getAllUsers() {
         if (salesforceSyncDelegate != null) {
@@ -137,6 +173,15 @@ public class UserServiceImpl implements UserService {
         return userMapper.mapToResponse(userRepository.findAll());
     }
 
+    /**
+     * Fetches a paginated list of users from Salesforce (with in-memory paging) or MySQL database.
+     *
+     * @param page Zero-based page number
+     * @param size Number of items per page
+     * @param sortBy Field to sort by
+     * @param sortDir Sort direction ("asc" or "desc")
+     * @return {@link PagedResponse} of {@link UserResponse}
+     */
     @Override
     public PagedResponse<UserResponse> getAllUsers(int page, int size, String sortBy, String sortDir) {
         if (salesforceSyncDelegate != null) {
@@ -180,6 +225,16 @@ public class UserServiceImpl implements UserService {
                 usersPage.isLast());
     }
 
+    /**
+     * Searches users across name and email matching the query string.
+     *
+     * @param query Search query string
+     * @param page Page index
+     * @param size Page size
+     * @param sortBy Sort field
+     * @param sortDir Sort direction
+     * @return {@link PagedResponse} containing matching user records
+     */
     @Override
     public PagedResponse<UserResponse> searchUsers(String query, int page, int size, String sortBy, String sortDir) {
         Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
@@ -197,6 +252,12 @@ public class UserServiceImpl implements UserService {
                 usersPage.isLast());
     }
 
+    /**
+     * Retrieves a user by their ID with caching enabled.
+     *
+     * @param id The user ID
+     * @return The {@link UserResponse} DTO
+     */
     @Override
     @Cacheable(value = "users", key = "#p0")
     public UserResponse getUserById(Long id) {
@@ -206,6 +267,13 @@ public class UserServiceImpl implements UserService {
         return mapToUserResponseWithRewards(user);
     }
 
+    /**
+     * Updates an existing user and syncs changes to Salesforce.
+     *
+     * @param id The user ID to update
+     * @param request The updated user payload
+     * @return The updated {@link UserResponse} DTO
+     */
     @Override
     @Transactional
     @CacheEvict(value = "users", key = "#p0")
@@ -237,6 +305,11 @@ public class UserServiceImpl implements UserService {
         return response;
     }
 
+    /**
+     * Deletes a user by their ID and evicts their cache entry.
+     *
+     * @param id The user ID to delete
+     */
     @Override
     @Transactional
     @CacheEvict(value = "users", key = "#p0")
@@ -246,6 +319,12 @@ public class UserServiceImpl implements UserService {
         userRepository.delete(user);
     }
 
+    /**
+     * Retrieves a user by their unique email address.
+     *
+     * @param email The user's email address
+     * @return The matching {@link UserResponse} DTO
+     */
     @Override
     public UserResponse getUserByEmail(String email) {
         User user = userRepository.findByEmail(email)
@@ -254,6 +333,14 @@ public class UserServiceImpl implements UserService {
         return mapToUserResponseWithRewards(user);
     }
 
+    /**
+     * Looks up an existing user by email or creates a new Google OAuth-authenticated user.
+     *
+     * @param googleId The Google OAuth provider ID
+     * @param email The user's email
+     * @param name The user's full name
+     * @return The persisted {@link User} entity
+     */
     @Override
     @Transactional
     public User findOrCreateGoogleUser(String googleId, String email, String name) {

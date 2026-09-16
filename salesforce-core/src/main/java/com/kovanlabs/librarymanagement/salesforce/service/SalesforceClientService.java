@@ -15,6 +15,12 @@ import org.springframework.web.client.RestClient;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Low-level HTTP client service for communicating with Salesforce REST APIs.
+ * <p>
+ * Handles OAuth2 Client Credentials authentication, caching tokens, executing SOQL queries,
+ * and performing upsert operations by External ID using Spring's {@link RestClient}.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -27,12 +33,22 @@ public class SalesforceClientService {
     private String accessToken;
     private String instanceUrl;
 
+    /**
+     * Checks if Salesforce integration is properly enabled and configured with client credentials.
+     *
+     * @return {@code true} if Salesforce configuration is valid and active, {@code false} otherwise
+     */
     public boolean isConfigured() {
         return salesforceConfig.isEnabled()
                 && salesforceConfig.getClientId() != null && !salesforceConfig.getClientId().isBlank()
                 && salesforceConfig.getClientSecret() != null && !salesforceConfig.getClientSecret().isBlank();
     }
 
+    /**
+     * Retrieves the cached OAuth2 access token, or triggers authentication if not present.
+     *
+     * @return The OAuth2 Bearer access token, or {@code null} if authentication fails
+     */
     public synchronized String getAccessToken() {
         if (accessToken != null) {
             return accessToken;
@@ -41,6 +57,11 @@ public class SalesforceClientService {
         return accessToken;
     }
 
+    /**
+     * Retrieves the Salesforce instance URL returned by the OAuth token endpoint.
+     *
+     * @return The Salesforce base instance URL, or {@code null} if unauthenticated
+     */
     public synchronized String getInstanceUrl() {
         if (instanceUrl != null) {
             return instanceUrl;
@@ -49,6 +70,10 @@ public class SalesforceClientService {
         return instanceUrl;
     }
 
+    /**
+     * Authenticates with Salesforce using the OAuth2 client_credentials flow
+     * and caches the access token and instance URL.
+     */
     private void authenticate() {
         if (!isConfigured()) {
             log.info(
@@ -84,6 +109,12 @@ public class SalesforceClientService {
         }
     }
 
+    /**
+     * Executes a SOQL query against Salesforce REST Query API.
+     *
+     * @param soql The SOQL query string to execute
+     * @return The JSON response tree containing records, or {@code null} if the query fails or client is unconfigured
+     */
     public JsonNode query(String soql) {
         if (!isConfigured()) {
             log.info("[SALESFORCE QUERY] Salesforce is not enabled or credentials missing. Cannot execute SOQL: {}",
@@ -120,6 +151,14 @@ public class SalesforceClientService {
         return null;
     }
 
+    /**
+     * Upserts an SObject record in Salesforce using an external ID field (PATCH request).
+     *
+     * @param sObjectName The API name of the target SObject (e.g. "Contact", "Book__c")
+     * @param externalIdFieldName The API name of the External ID field (e.g. "External_Book_UUID__c")
+     * @param externalIdValue The unique external ID value
+     * @param fields The key-value map representing SObject fields to insert or update
+     */
     public void upsertByExternalId(String sObjectName, String externalIdFieldName, String externalIdValue,
             Map<String, Object> fields) {
         if (!isConfigured()) {
