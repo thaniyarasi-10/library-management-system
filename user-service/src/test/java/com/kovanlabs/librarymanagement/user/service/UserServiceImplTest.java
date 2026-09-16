@@ -4,6 +4,7 @@ import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
+import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
@@ -37,7 +38,7 @@ class UserServiceImplTest {
     private UserRepository userRepository;
 
     @Mock
-    private com.kovanlabs.librarymanagement.database.repository.RewardRepository rewardRepository;
+    private RewardRepository rewardRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;

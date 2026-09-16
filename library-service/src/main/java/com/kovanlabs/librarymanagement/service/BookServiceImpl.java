@@ -46,16 +46,17 @@ public class BookServiceImpl implements BookService {
     public BookResponse createBook(BookRequest request) {
         Book book = bookMapper.mapToEntity(request);
         Book savedBook = bookRepository.save(book);
+        BookResponse response = bookMapper.mapToResponse(savedBook);
 
         if (salesforceSyncService != null) {
             try {
-                salesforceSyncService.syncBook(savedBook);
+                salesforceSyncService.syncBook(bookMapper.toBookSObject(response));
             } catch (Exception e) {
                 log.error("Salesforce dual-write failed for book creation: {}", e.getMessage());
             }
         }
 
-        return bookMapper.mapToResponse(savedBook);
+        return response;
     }
 
     @Override
@@ -63,12 +64,11 @@ public class BookServiceImpl implements BookService {
         if (salesforceSyncService != null) {
             try {
                 int offset = page * size;
-                JsonNode json = salesforceSyncService.fetchBooksJsonFromSalesforce(size, offset);
+                var sfBookModels = salesforceSyncService.fetchBooksFromSalesforce(size, offset);
                 long totalBooks = salesforceSyncService.getTotalBooksFromSalesforce();
 
-                if (json != null && json.has("records")) {
-                    List<BookResponse> sfBooks = bookMapper.mapJsonToBookResponseList(json);
-
+                if (sfBookModels != null && !sfBookModels.isEmpty()) {
+                    List<BookResponse> sfBooks = bookMapper.toBookResponseList(sfBookModels);
                     log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL", sfBooks.size());
                     int totalPages = (int) Math.ceil((double) totalBooks / size);
                     return new PagedResponse<>(
@@ -145,16 +145,17 @@ public class BookServiceImpl implements BookService {
         book.setIsbn(request.isbn());
         
         Book updatedBook = bookRepository.save(book);
+        BookResponse response = bookMapper.mapToResponse(updatedBook);
 
         if (salesforceSyncService != null) {
             try {
-                salesforceSyncService.syncBook(updatedBook);
+                salesforceSyncService.syncBook(bookMapper.toBookSObject(response));
             } catch (Exception e) {
                 log.error("Salesforce dual-write failed for book update: {}", e.getMessage());
             }
         }
 
-        return bookMapper.mapToResponse(updatedBook);
+        return response;
     }
 
     @Override

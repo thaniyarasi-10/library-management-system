@@ -1,6 +1,5 @@
 package com.kovanlabs.librarymanagement.mapping;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.kovanlabs.librarymanagement.dto.BookRequest;
 import com.kovanlabs.librarymanagement.dto.BookResponse;
 import com.kovanlabs.librarymanagement.dto.BorrowRequestDto;
@@ -9,20 +8,21 @@ import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
-import com.kovanlabs.librarymanagement.salesforce.constant.fields.BookFields;
-import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
-import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
-@Mapper(componentModel = "spring")
+@Mapper(componentModel = "spring", imports = {LocalDate.class, BorrowStatus.class})
 public interface BookMapper {
+
+    // --- Entity <-> DTO ---
 
     BookResponse mapToResponse(Book book);
 
@@ -46,88 +46,141 @@ public interface BookMapper {
 
     List<BorrowResponseDto> mapToResponseForBorrows(List<Borrow> borrows);
 
-    default BookResponse mapJsonToBookResponse(JsonNode node) {
-        if (node == null || node.isNull()) {
+    @Mapping(target = "uuid", ignore = true)
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "coverImageUrl", ignore = true)
+    @Mapping(target = "coverImageKey", ignore = true)
+    Book mapToEntity(BookRequest request);
+
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "uuid", ignore = true)
+    @Mapping(target = "book", source = "book")
+    @Mapping(target = "user", source = "user")
+    @Mapping(target = "borrowDate", expression = "java(LocalDate.now())")
+    @Mapping(target = "dueDate", expression = "java(LocalDate.now().plusDays(14))")
+    @Mapping(target = "returnedDate", ignore = true)
+    @Mapping(target = "status", expression = "java(BorrowStatus.BORROWED)")
+    Borrow mapToEntity(BorrowRequestDto request, Book book, User user);
+
+    // --- DTO <-> SObject (Salesforce Models) ---
+
+    default BookSObject toBookSObject(BookResponse dto) {
+        if (dto == null) {
             return null;
         }
-        String uuidStr = node.path(BookFields.EXTERNAL_BOOK_UUID).asText(null);
-        String title = node.path(BookFields.TITLE).asText(null);
-        if (title == null || title.isBlank()) {
-            title = node.path(BookFields.NAME).asText(null);
-        }
-        String author = node.path(BookFields.AUTHOR).asText(null);
-        String isbn = node.path(BookFields.ISBN).asText(null);
-        String coverImageUrl = node.path(BookFields.COVER_IMAGE_URL).asText(null);
+        String displayName = (dto.title() != null && !dto.title().isBlank())
+                ? dto.title()
+                : "Untitled";
 
+        return BookSObject.builder()
+                .externalBookUuid(dto.uuid() != null ? dto.uuid().toString() : null)
+                .name(displayName)
+                .title(dto.title())
+                .author(dto.author())
+                .isbn(dto.isbn())
+                .coverImageUrl(dto.coverImageUrl())
+                .build();
+    }
+
+    default BookResponse toBookResponse(BookSObject sObject) {
+        if (sObject == null) {
+            return null;
+        }
+        String title = sObject.getTitle();
+        if (title == null || title.isBlank()) {
+            title = sObject.getName();
+        }
         return new BookResponse(
-                parseUUID(uuidStr),
+                parseUUID(sObject.getExternalBookUuid()),
                 null,
                 title,
-                author,
-                isbn,
-                coverImageUrl
+                sObject.getAuthor(),
+                sObject.getIsbn(),
+                sObject.getCoverImageUrl()
         );
     }
 
-    default List<BookResponse> mapJsonToBookResponseList(JsonNode root) {
-        if (root == null || !root.has("records")) {
+    default List<BookResponse> toBookResponseList(List<BookSObject> sObjects) {
+        if (sObjects == null) {
             return Collections.emptyList();
         }
-        List<BookResponse> list = new ArrayList<>();
-        for (JsonNode record : root.path("records")) {
-            BookResponse resp = mapJsonToBookResponse(record);
-            if (resp != null) {
-                list.add(resp);
-            }
-        }
-        return list;
+        return sObjects.stream()
+                .map(this::toBookResponse)
+                .toList();
     }
 
-    default BorrowResponseDto mapJsonToBorrowResponse(JsonNode node) {
-        if (node == null || node.isNull()) {
+    default BorrowSObject toBorrowSObject(BorrowResponseDto dto) {
+        if (dto == null) {
             return null;
         }
 
-        String borrowUuidStr = node.path(BorrowFields.EXTERNAL_BORROW_UUID).asText(null);
-        String borrowDateStr = node.path(BorrowFields.BORROW_DATE).asText(null);
-        String dueDateStr = node.path(BorrowFields.DUE_DATE).asText(null);
-        String returnDateStr = node.path(BorrowFields.RETURN_DATE).asText(null);
-        String statusStr = node.path(BorrowFields.BORROW_STATUS).asText(null);
+        ContactSObject contact = null;
+        if (dto.userId() != null || dto.userName() != null || dto.userEmail() != null) {
+            contact = ContactSObject.builder()
+                    .externalUserUuid(dto.userId() != null ? dto.userId().toString() : null)
+                    .lastName(dto.userName())
+                    .email(dto.userEmail())
+                    .build();
+        }
 
-        JsonNode contactNode = node.path(BorrowFields.CONTACT_RELATION);
+        BookSObject book = null;
+        if (dto.bookId() != null || dto.bookTitle() != null || dto.bookAuthor() != null) {
+            book = BookSObject.builder()
+                    .externalBookUuid(dto.bookId() != null ? dto.bookId().toString() : null)
+                    .title(dto.bookTitle())
+                    .author(dto.bookAuthor())
+                    .coverImageUrl(dto.bookCoverImageUrl())
+                    .build();
+        }
+
+        return BorrowSObject.builder()
+                .externalBorrowUuid(dto.borrowUuid() != null ? dto.borrowUuid().toString() : null)
+                .borrowDate(dto.borrowDate() != null ? dto.borrowDate().toString() : null)
+                .dueDate(dto.dueDate() != null ? dto.dueDate().toString() : null)
+                .returnDate(dto.returnedDate() != null ? dto.returnedDate().toString() : null)
+                .borrowStatus(dto.status() != null ? dto.status().name() : null)
+                .contact(contact)
+                .book(book)
+                .build();
+    }
+
+    default BorrowResponseDto toBorrowResponse(BorrowSObject sObject) {
+        if (sObject == null) {
+            return null;
+        }
+
         UUID userUuid = null;
         String userName = null;
         String userEmail = null;
-        if (!contactNode.isMissingNode() && !contactNode.isNull()) {
-            userUuid = parseUUID(contactNode.path(ContactFields.EXTERNAL_USER_UUID).asText(null));
-            userName = contactNode.path(ContactFields.LAST_NAME).asText(null);
-            userEmail = contactNode.path(ContactFields.EMAIL).asText(null);
+        if (sObject.getContact() != null) {
+            userUuid = parseUUID(sObject.getContact().getExternalUserUuid());
+            userName = sObject.getContact().getLastName();
+            userEmail = sObject.getContact().getEmail();
         }
 
-        JsonNode bookNode = node.path(BorrowFields.BOOK_RELATION);
         UUID bookUuid = null;
         String bookTitle = null;
         String bookAuthor = null;
         String bookCoverUrl = null;
-        if (!bookNode.isMissingNode() && !bookNode.isNull()) {
-            bookUuid = parseUUID(bookNode.path(BookFields.EXTERNAL_BOOK_UUID).asText(null));
-            bookTitle = bookNode.path(BookFields.TITLE).asText(null);
+        if (sObject.getBook() != null) {
+            bookUuid = parseUUID(sObject.getBook().getExternalBookUuid());
+            bookTitle = sObject.getBook().getTitle();
             if (bookTitle == null || bookTitle.isBlank()) {
-                bookTitle = bookNode.path(BookFields.NAME).asText(null);
+                bookTitle = sObject.getBook().getName();
             }
-            bookAuthor = bookNode.path(BookFields.AUTHOR).asText(null);
-            bookCoverUrl = bookNode.path(BookFields.COVER_IMAGE_URL).asText(null);
+            bookAuthor = sObject.getBook().getAuthor();
+            bookCoverUrl = sObject.getBook().getCoverImageUrl();
         }
 
         BorrowStatus status = null;
-        if (statusStr != null && !statusStr.isBlank()) {
+        if (sObject.getBorrowStatus() != null && !sObject.getBorrowStatus().isBlank()) {
             try {
-                status = BorrowStatus.valueOf(statusStr);
+                status = BorrowStatus.valueOf(sObject.getBorrowStatus());
             } catch (Exception ignored) {}
         }
 
         return BorrowResponseDto.builder()
-                .borrowUuid(parseUUID(borrowUuidStr))
+                .borrowUuid(parseUUID(sObject.getExternalBorrowUuid()))
                 .userId(userUuid)
                 .userName(userName)
                 .userEmail(userEmail)
@@ -135,25 +188,20 @@ public interface BookMapper {
                 .bookTitle(bookTitle)
                 .bookAuthor(bookAuthor)
                 .bookCoverImageUrl(bookCoverUrl)
-                .borrowDate(parseDate(borrowDateStr))
-                .dueDate(parseDate(dueDateStr))
-                .returnedDate(parseDate(returnDateStr))
+                .borrowDate(parseDate(sObject.getBorrowDate()))
+                .dueDate(parseDate(sObject.getDueDate()))
+                .returnedDate(parseDate(sObject.getReturnDate()))
                 .status(status)
                 .build();
     }
 
-    default List<BorrowResponseDto> mapJsonToBorrowResponseList(JsonNode root) {
-        if (root == null || !root.has("records")) {
+    default List<BorrowResponseDto> toBorrowResponseList(List<BorrowSObject> sObjects) {
+        if (sObjects == null) {
             return Collections.emptyList();
         }
-        List<BorrowResponseDto> list = new ArrayList<>();
-        for (JsonNode record : root.path("records")) {
-            BorrowResponseDto resp = mapJsonToBorrowResponse(record);
-            if (resp != null) {
-                list.add(resp);
-            }
-        }
-        return list;
+        return sObjects.stream()
+                .map(this::toBorrowResponse)
+                .toList();
     }
 
     private static UUID parseUUID(String str) {
@@ -177,20 +225,4 @@ public interface BookMapper {
             return null;
         }
     }
-
-    @Mapping(target = "uuid", ignore = true)
-    @Mapping(target = "id", ignore = true)
-    @Mapping(target = "coverImageUrl", ignore = true)
-    @Mapping(target = "coverImageKey", ignore = true)
-    Book mapToEntity(BookRequest request);
-
-    @Mapping(target = "id", ignore = true)
-    @Mapping(target = "uuid", ignore = true)
-    @Mapping(target = "book", source = "book")
-    @Mapping(target = "user", source = "user")
-    @Mapping(target = "borrowDate", expression = "java(java.time.LocalDate.now())")
-    @Mapping(target = "dueDate", expression = "java(java.time.LocalDate.now().plusDays(14))")
-    @Mapping(target = "returnedDate", ignore = true)
-    @Mapping(target = "status", expression = "java(com.kovanlabs.librarymanagement.database.enums.BorrowStatus.BORROWED)")
-    Borrow mapToEntity(BorrowRequestDto request, Book book, User user);
 }

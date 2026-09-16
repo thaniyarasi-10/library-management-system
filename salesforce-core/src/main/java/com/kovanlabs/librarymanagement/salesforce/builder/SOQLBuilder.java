@@ -1,12 +1,20 @@
 package com.kovanlabs.librarymanagement.salesforce.builder;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import com.kovanlabs.librarymanagement.salesforce.enums.SalesforceOperator;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+
 public class SOQLBuilder<T> {
 
     private final List<String> selectFields = new ArrayList<>();
@@ -24,10 +32,54 @@ public class SOQLBuilder<T> {
         return new SOQLBuilder<>();
     }
 
+    public static <E> SOQLBuilder<E> fromSObjectClass(Class<E> sObjectClass) {
+        SOQLBuilder<E> builder = new SOQLBuilder<>();
+        builder.selectFields.addAll(extractSelectFields(sObjectClass, null));
+
+        if (sObjectClass.equals(ContactSObject.class)) {
+            builder.from(ContactSObject.SOBJECT_NAME);
+        } else if (sObjectClass.equals(BookSObject.class)) {
+            builder.from(BookSObject.SOBJECT_NAME);
+        } else if (sObjectClass.equals(BorrowSObject.class)) {
+            builder.from(BorrowSObject.SOBJECT_NAME);
+        }
+
+        return builder;
+    }
+
+    private static List<String> extractSelectFields(Class<?> clazz, String prefix) {
+        if (clazz == null || clazz.equals(Object.class)) {
+            return List.of();
+        }
+
+        return Arrays.stream(clazz.getDeclaredFields())
+                .map(field -> mapFieldToSelectTokens(field, prefix))
+                .flatMap(List::stream)
+                .toList();
+    }
+
+    private static List<String> mapFieldToSelectTokens(Field field, String prefix) {
+        return Optional.ofNullable(field.getAnnotation(JsonProperty.class))
+                .map(JsonProperty::value)
+                .filter(name -> !name.isBlank())
+                .map(fieldName -> {
+                    String fullPath = (prefix == null || prefix.isBlank()) ? fieldName : prefix + "." + fieldName;
+                    Class<?> type = field.getType();
+                    if (type.equals(ContactSObject.class) || type.equals(BookSObject.class) || type.equals(BorrowSObject.class)) {
+                        return extractSelectFields(type, fullPath);
+                    }
+                    return List.of(fullPath);
+                })
+                .orElseGet(List::of);
+    }
+
     public static SOQLBuilder<Object> selectFields(String... fields) {
         SOQLBuilder<Object> builder = new SOQLBuilder<>();
         if (fields != null) {
-            builder.selectFields.addAll(Arrays.asList(fields));
+            Arrays.stream(fields)
+                    .filter(Objects::nonNull)
+                    .filter(f -> !f.isBlank())
+                    .forEach(builder.selectFields::add);
         }
         return builder;
     }
@@ -45,18 +97,20 @@ public class SOQLBuilder<T> {
 
     public SOQLBuilder<T> select(String... fields) {
         if (fields != null) {
-            for (String field : fields) {
-                if (field != null && !field.isBlank()) {
-                    this.selectFields.add(field);
-                }
-            }
+            Arrays.stream(fields)
+                    .filter(Objects::nonNull)
+                    .filter(f -> !f.isBlank())
+                    .forEach(this.selectFields::add);
         }
         return this;
     }
 
     public SOQLBuilder<T> select(Collection<String> fields) {
         if (fields != null) {
-            this.selectFields.addAll(fields);
+            fields.stream()
+                    .filter(Objects::nonNull)
+                    .filter(f -> !f.isBlank())
+                    .forEach(this.selectFields::add);
         }
         return this;
     }
@@ -69,14 +123,7 @@ public class SOQLBuilder<T> {
     }
 
     public SOQLBuilder<T> fields(String... fields) {
-        if (fields != null) {
-            for (String field : fields) {
-                if (field != null && !field.isBlank()) {
-                    this.selectFields.add(field);
-                }
-            }
-        }
-        return this;
+        return select(fields);
     }
 
     public SOQLBuilder<T> from(String objectName) {
@@ -138,20 +185,15 @@ public class SOQLBuilder<T> {
     }
 
     public String build() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("SELECT ");
-        if (isCount) {
-            sb.append("COUNT()");
-        } else {
-            if (selectFields.isEmpty()) {
-                throw new IllegalStateException("SOQL query must specify at least one field to select");
-            }
-            sb.append(String.join(", ", selectFields));
+        if (!isCount && selectFields.isEmpty()) {
+            throw new IllegalStateException("SOQL query must specify at least one field to select");
         }
-
         if (fromObject == null || fromObject.isBlank()) {
             throw new IllegalStateException("SOQL query must specify a FROM sObject");
         }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(isCount ? "SELECT COUNT()" : "SELECT " + String.join(", ", selectFields));
         sb.append(" FROM ").append(fromObject);
 
         if (!whereClauses.isEmpty()) {
@@ -162,13 +204,8 @@ public class SOQLBuilder<T> {
             sb.append(" ORDER BY ").append(String.join(", ", orderByClauses));
         }
 
-        if (limit != null) {
-            sb.append(" LIMIT ").append(limit);
-        }
-
-        if (offset != null) {
-            sb.append(" OFFSET ").append(offset);
-        }
+        Optional.ofNullable(limit).ifPresent(l -> sb.append(" LIMIT ").append(l));
+        Optional.ofNullable(offset).ifPresent(o -> sb.append(" OFFSET ").append(o));
 
         return sb.toString();
     }
@@ -179,19 +216,15 @@ public class SOQLBuilder<T> {
     }
 
     private static String formatValue(Object val) {
-        if (val == null) {
-            return "null";
-        }
-        if (val instanceof Number || val instanceof Boolean) {
-            return String.valueOf(val);
-        }
-        return "'" + escape(val.toString()) + "'";
+        return switch (val) {
+            case null -> "null";
+            case Number num -> String.valueOf(num);
+            case Boolean bool -> String.valueOf(bool);
+            default -> "'" + escape(val.toString()) + "'";
+        };
     }
 
     private static String escape(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replace("'", "\\'");
+        return (value == null) ? "" : value.replace("'", "\\'");
     }
 }

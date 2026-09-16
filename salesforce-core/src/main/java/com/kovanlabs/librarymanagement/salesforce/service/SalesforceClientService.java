@@ -3,45 +3,26 @@ package com.kovanlabs.librarymanagement.salesforce.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kovanlabs.librarymanagement.salesforce.config.SalesforceConfig;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.*;
-import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.client.RestClient;
 
-import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class SalesforceClientService {
 
     private final SalesforceConfig salesforceConfig;
-    private final RestTemplate restTemplate;
+    private final RestClient restClient;
     private final ObjectMapper objectMapper;
-
-    @Autowired
-    public SalesforceClientService(SalesforceConfig salesforceConfig) {
-        this.salesforceConfig = salesforceConfig;
-        this.restTemplate = createRestTemplate();
-        this.objectMapper = new ObjectMapper();
-    }
-
-    public SalesforceClientService(SalesforceConfig salesforceConfig, RestTemplate restTemplate, ObjectMapper objectMapper) {
-        this.salesforceConfig = salesforceConfig;
-        this.restTemplate = restTemplate;
-        this.objectMapper = objectMapper;
-    }
-
-    private static RestTemplate createRestTemplate() {
-        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory();
-        return new RestTemplate(factory);
-    }
 
     private String accessToken;
     private String instanceUrl;
@@ -75,22 +56,25 @@ public class SalesforceClientService {
             return;
         }
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-
             MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
             params.add("grant_type", "client_credentials");
             params.add("client_id", salesforceConfig.getClientId());
             params.add("client_secret", salesforceConfig.getClientSecret());
 
-            HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(params, headers);
-            ResponseEntity<String> response = restTemplate.postForEntity(salesforceConfig.getAuthUrl(), request,
-                    String.class);
+            String responseBody = restClient.post()
+                    .uri(salesforceConfig.getAuthUrl())
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(params)
+                    .retrieve()
+                    .onStatus(HttpStatusCode::isError, (req, res) -> {
+                        log.error("[SALESFORCE AUTH] Authentication returned error status: {}", res.getStatusCode());
+                    })
+                    .body(String.class);
 
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                JsonNode root = objectMapper.readTree(response.getBody());
-                this.accessToken = root.path("access_token").asText();
-                this.instanceUrl = root.path("instance_url").asText();
+            if (responseBody != null && !responseBody.isBlank()) {
+                JsonNode root = objectMapper.readTree(responseBody);
+                this.accessToken = root.path("access_token").asText(null);
+                this.instanceUrl = root.path("instance_url").asText(null);
                 log.info("[SALESFORCE AUTH] Successfully authenticated with Salesforce at {}", instanceUrl);
             }
         } catch (Exception e) {
@@ -114,22 +98,20 @@ public class SalesforceClientService {
                 return null;
             }
 
-            URI uri = UriComponentsBuilder
-                    .fromUriString(host + "/services/data/" + salesforceConfig.getApiVersion() + "/query")
-                    .queryParam("q", soql)
-                    .build()
-                    .toUri();
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(token);
-            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+            String uri = host + "/services/data/" + salesforceConfig.getApiVersion() + "/query?q={soql}";
 
             log.info("[SALESFORCE QUERY] Executing SOQL: {}", soql);
-            HttpEntity<Void> request = new HttpEntity<>(headers);
-            ResponseEntity<String> response = restTemplate.exchange(uri, HttpMethod.GET, request, String.class);
+            String responseBody = restClient.get()
+                    .uri(uri, soql)
+                    .headers(headers -> {
+                        headers.setBearerAuth(token);
+                        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+                    })
+                    .retrieve()
+                    .body(String.class);
 
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                return objectMapper.readTree(response.getBody());
+            if (responseBody != null) {
+                return objectMapper.readTree(responseBody);
             }
         } catch (Exception e) {
             log.error("[SALESFORCE QUERY] SOQL query failed [{}]: {}", soql, e.getMessage());
@@ -150,21 +132,22 @@ public class SalesforceClientService {
                 return;
             }
 
-            String url = host + "/services/data/" + salesforceConfig.getApiVersion()
+            String uri = host + "/services/data/" + salesforceConfig.getApiVersion()
                     + "/sobjects/" + sObjectName + "/" + externalIdFieldName + "/" + externalIdValue;
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(token);
-            headers.setContentType(MediaType.APPLICATION_JSON);
-
             String requestJson = objectMapper.writeValueAsString(fields);
-            HttpEntity<String> request = new HttpEntity<>(requestJson, headers);
 
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.PATCH, request, String.class);
-            if (response.getStatusCode().is2xxSuccessful() || response.getStatusCode() == HttpStatus.NO_CONTENT
-                    || response.getStatusCode() == HttpStatus.CREATED) {
-                log.info("Successfully synced {} (ExternalId: {}) to Salesforce", sObjectName, externalIdValue);
-            }
+            restClient.patch()
+                    .uri(uri)
+                    .headers(headers -> {
+                        headers.setBearerAuth(token);
+                        headers.setContentType(MediaType.APPLICATION_JSON);
+                    })
+                    .body(requestJson)
+                    .retrieve()
+                    .toBodilessEntity();
+
+            log.info("Successfully synced {} (ExternalId: {}) to Salesforce", sObjectName, externalIdValue);
         } catch (Exception e) {
             log.error("Failed to sync {} (ExternalId: {}) to Salesforce: {}", sObjectName, externalIdValue,
                     e.getMessage());

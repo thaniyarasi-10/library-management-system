@@ -5,11 +5,47 @@ import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
 import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import com.kovanlabs.librarymanagement.salesforce.enums.SalesforceOperator;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class SOQLBuilderTest {
+
+    @Test
+    void build_fromSObjectClass_ContactSObject_buildsCorrectQuery() {
+        String soql = SOQLBuilder.fromSObjectClass(ContactSObject.class)
+                .whereNotNull(ContactSObject.EXTERNAL_ID_FIELD)
+                .build();
+
+        assertEquals("SELECT External_User_UUID__c, LastName, Email FROM Contact WHERE External_User_UUID__c != null", soql);
+    }
+
+    @Test
+    void build_fromSObjectClass_BookSObject_buildsCorrectQuery() {
+        String soql = SOQLBuilder.fromSObjectClass(BookSObject.class)
+                .whereNotNull(BookSObject.EXTERNAL_ID_FIELD)
+                .limit(10)
+                .offset(0)
+                .build();
+
+        assertEquals("SELECT External_Book_UUID__c, Name, Title__c, Author__c, ISBN__c, Cover_Image_Url__c FROM Book__c WHERE External_Book_UUID__c != null LIMIT 10 OFFSET 0", soql);
+    }
+
+    @Test
+    void build_fromSObjectClass_BorrowSObject_buildsCorrectNestedQuery() {
+        String soql = SOQLBuilder.fromSObjectClass(BorrowSObject.class)
+                .whereNotNull(BorrowSObject.EXTERNAL_ID_FIELD)
+                .build();
+
+        assertTrue(soql.startsWith("SELECT "));
+        assertTrue(soql.contains("External_Borrow_UUID__c"));
+        assertTrue(soql.contains("Contact__r.LastName"));
+        assertTrue(soql.contains("Book__r.Title__c"));
+        assertTrue(soql.endsWith(" FROM Borrow__c WHERE External_Borrow_UUID__c != null"));
+    }
 
     @Test
     void build_withInstanceAndFieldConstants_buildsCorrectQuery() {

@@ -1,22 +1,20 @@
 package com.kovanlabs.librarymanagement.salesforce.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.kovanlabs.librarymanagement.database.entity.Book;
-import com.kovanlabs.librarymanagement.database.entity.Borrow;
-import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.salesforce.builder.SOQLBuilder;
-import com.kovanlabs.librarymanagement.salesforce.constant.fields.BookFields;
-import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
-import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
-import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import com.kovanlabs.librarymanagement.salesforce.mapping.SalesforceMapper;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import com.kovanlabs.librarymanagement.user.service.SalesforceUserSyncDelegate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class SalesforceSyncService implements SalesforceUserSyncDelegate {
@@ -31,75 +29,83 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
         this.salesforceMapper = salesforceMapper;
     }
 
+    // --- WRITE OPERATIONS (SObject -> Map payload -> Salesforce) ---
+
     @Override
-    public void syncUser(Object userObj) {
-        if (userObj instanceof User u) {
-            syncUser(u);
-        }
-    }
-
-    // --- WRITE OPERATIONS ---
-
-    public void syncUser(User user) {
-        if (user == null || user.getUuid() == null) {
+    public void syncUser(UserResponse user) {
+        if (user == null || user.uuid() == null) {
             return;
         }
         try {
-            Map<String, Object> fields = salesforceMapper.toContactFields(user);
-            clientService.upsertByExternalId(
-                    SObject.CONTACT.getObjectName(),
-                    ContactFields.EXTERNAL_USER_UUID,
-                    user.getUuid().toString(),
-                    fields
-            );
+            ContactSObject contact = salesforceMapper.toContactSObject(user);
+            syncContact(contact);
         } catch (Exception e) {
-            log.error("Salesforce sync error for User [UUID: {}]: {}", user.getUuid(), e.getMessage());
+            log.error("Salesforce sync error for User [UUID: {}]: {}", user.uuid(), e.getMessage());
         }
     }
 
-    public void syncBook(Book book) {
-        if (book == null || book.getUuid() == null) {
+    public void syncContact(ContactSObject contact) {
+        if (contact == null || contact.getExternalUserUuid() == null) {
             return;
         }
         try {
-            Map<String, Object> fields = salesforceMapper.toBookFields(book);
+            Map<String, Object> fields = salesforceMapper.toPayloadMap(contact);
             clientService.upsertByExternalId(
-                    SObject.BOOK.getObjectName(),
-                    BookFields.EXTERNAL_BOOK_UUID,
-                    book.getUuid().toString(),
+                    ContactSObject.SOBJECT_NAME,
+                    ContactSObject.EXTERNAL_ID_FIELD,
+                    contact.getExternalUserUuid(),
                     fields
             );
         } catch (Exception e) {
-            log.error("Salesforce sync error for Book [UUID: {}]: {}", book.getUuid(), e.getMessage());
+            log.error("Salesforce sync error for Contact [UUID: {}]: {}", contact.getExternalUserUuid(), e.getMessage());
         }
     }
 
-    public void syncBorrow(Borrow borrow) {
-        if (borrow == null || borrow.getUuid() == null) {
+    public void syncBook(BookSObject book) {
+        if (book == null || book.getExternalBookUuid() == null) {
             return;
         }
         try {
-            Map<String, Object> fields = salesforceMapper.toBorrowFields(borrow);
+            Map<String, Object> fields = salesforceMapper.toPayloadMap(book);
             clientService.upsertByExternalId(
-                    SObject.BORROW.getObjectName(),
-                    BorrowFields.EXTERNAL_BORROW_UUID,
-                    borrow.getUuid().toString(),
+                    BookSObject.SOBJECT_NAME,
+                    BookSObject.EXTERNAL_ID_FIELD,
+                    book.getExternalBookUuid(),
                     fields
             );
         } catch (Exception e) {
-            log.error("Salesforce sync error for Borrow [UUID: {}]: {}", borrow.getUuid(), e.getMessage());
+            log.error("Salesforce sync error for Book [UUID: {}]: {}", book.getExternalBookUuid(), e.getMessage());
         }
     }
 
-    // --- READ OPERATIONS (SOQL QUERIES) ---
+    public void syncBorrow(BorrowSObject borrow) {
+        if (borrow == null || borrow.getExternalBorrowUuid() == null) {
+            return;
+        }
+        try {
+            Map<String, Object> fields = salesforceMapper.toPayloadMap(borrow);
+            clientService.upsertByExternalId(
+                    BorrowSObject.SOBJECT_NAME,
+                    BorrowSObject.EXTERNAL_ID_FIELD,
+                    borrow.getExternalBorrowUuid(),
+                    fields
+            );
+        } catch (Exception e) {
+            log.error("Salesforce sync error for Borrow [UUID: {}]: {}", borrow.getExternalBorrowUuid(), e.getMessage());
+        }
+    }
 
+    // --- READ OPERATIONS (SOQL -> SObjects) ---
+
+    @Override
     public List<UserResponse> fetchUsersFromSalesforce() {
-        String soql = new SOQLBuilder<>()
-                .select(ContactFields.LAST_NAME,
-                        ContactFields.EMAIL,
-                        ContactFields.EXTERNAL_USER_UUID)
-                .from(SObject.CONTACT)
-                .whereNotNull(ContactFields.EXTERNAL_USER_UUID)
+        List<ContactSObject> contacts = fetchContactsFromSalesforce();
+        return salesforceMapper.toUserResponseList(contacts);
+    }
+
+    public List<ContactSObject> fetchContactsFromSalesforce() {
+        String soql = SOQLBuilder.fromSObjectClass(ContactSObject.class)
+                .whereNotNull(ContactSObject.EXTERNAL_ID_FIELD)
                 .build();
 
         JsonNode json = clientService.query(soql);
@@ -107,21 +113,13 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
             return Collections.emptyList();
         }
 
-        List<UserResponse> list = new ArrayList<>();
-        for (JsonNode node : json.path("records")) {
-            UserResponse userResponse = salesforceMapper.toUserResponse(node);
-            if (userResponse != null) {
-                list.add(userResponse);
-            }
-        }
-        return list;
+        return salesforceMapper.toSObjectList(json, ContactSObject.class);
     }
 
     public long getTotalBooksFromSalesforce() {
-        String soql = new SOQLBuilder<>()
+        String soql = SOQLBuilder.fromSObjectClass(BookSObject.class)
                 .count()
-                .from(SObject.BOOK)
-                .whereNotNull(BookFields.EXTERNAL_BOOK_UUID)
+                .whereNotNull(BookSObject.EXTERNAL_ID_FIELD)
                 .build();
 
         JsonNode json = clientService.query(soql);
@@ -131,44 +129,31 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
         return json.path("totalSize").asLong();
     }
 
-    public JsonNode fetchBooksJsonFromSalesforce(int size, int offset) {
-        String soql = new SOQLBuilder<>()
-                .select(BookFields.NAME,
-                        BookFields.TITLE,
-                        BookFields.AUTHOR,
-                        BookFields.ISBN,
-                        BookFields.COVER_IMAGE_URL,
-                        BookFields.EXTERNAL_BOOK_UUID)
-                .from(SObject.BOOK)
-                .whereNotNull(BookFields.EXTERNAL_BOOK_UUID)
+    public List<BookSObject> fetchBooksFromSalesforce(int size, int offset) {
+        String soql = SOQLBuilder.fromSObjectClass(BookSObject.class)
+                .whereNotNull(BookSObject.EXTERNAL_ID_FIELD)
                 .limit(size)
                 .offset(offset)
                 .build();
 
-        return clientService.query(soql);
+        JsonNode json = clientService.query(soql);
+        if (json == null || !json.has("records")) {
+            return Collections.emptyList();
+        }
+
+        return salesforceMapper.toSObjectList(json, BookSObject.class);
     }
 
-    public JsonNode fetchBorrowsJsonFromSalesforce() {
-        String soql = new SOQLBuilder<>()
-                .select(
-                        BorrowFields.EXTERNAL_BORROW_UUID,
-                        BorrowFields.BORROW_DATE,
-                        BorrowFields.DUE_DATE,
-                        BorrowFields.RETURN_DATE,
-                        BorrowFields.BORROW_STATUS,
-                        BorrowFields.CONTACT_LAST_NAME,
-                        BorrowFields.CONTACT_EMAIL,
-                        BorrowFields.CONTACT_EXTERNAL_USER_UUID,
-                        BorrowFields.BOOK_NAME,
-                        BorrowFields.BOOK_TITLE,
-                        BorrowFields.BOOK_AUTHOR,
-                        BorrowFields.BOOK_COVER_IMAGE_URL,
-                        BorrowFields.BOOK_EXTERNAL_BOOK_UUID
-                )
-                .from(SObject.BORROW)
-                .whereNotNull(BorrowFields.EXTERNAL_BORROW_UUID)
+    public List<BorrowSObject> fetchBorrowsFromSalesforce() {
+        String soql = SOQLBuilder.fromSObjectClass(BorrowSObject.class)
+                .whereNotNull(BorrowSObject.EXTERNAL_ID_FIELD)
                 .build();
 
-        return clientService.query(soql);
+        JsonNode json = clientService.query(soql);
+        if (json == null || !json.has("records")) {
+            return Collections.emptyList();
+        }
+
+        return salesforceMapper.toSObjectList(json, BorrowSObject.class);
     }
 }

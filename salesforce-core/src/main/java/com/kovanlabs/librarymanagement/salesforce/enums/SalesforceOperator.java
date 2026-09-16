@@ -1,5 +1,10 @@
 package com.kovanlabs.librarymanagement.salesforce.enums;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+
+@AllArgsConstructor
+@Getter
 public enum SalesforceOperator {
     AND("AND"),
     OR("OR"),
@@ -15,14 +20,6 @@ public enum SalesforceOperator {
     NOT_IN("NOT IN");
 
     private final String operator;
-
-    SalesforceOperator(String operator) {
-        this.operator = operator;
-    }
-
-    public String getOperator() {
-        return this.operator;
-    }
 
     @Override
     public String toString() {

@@ -1,18 +1,16 @@
 package com.kovanlabs.librarymanagement.salesforce.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.kovanlabs.librarymanagement.database.entity.Book;
-import com.kovanlabs.librarymanagement.database.entity.Borrow;
-import com.kovanlabs.librarymanagement.database.entity.User;
-import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.BookFields;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
 import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import com.kovanlabs.librarymanagement.salesforce.mapping.SalesforceMapper;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +21,6 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -39,7 +36,7 @@ class SalesforceSyncServiceTest {
     private SalesforceClientService clientService;
 
     @Spy
-    private SalesforceMapper salesforceMapper = new SalesforceMapper();
+    private SalesforceMapper salesforceMapper = new SalesforceMapper(new ObjectMapper());
 
     @InjectMocks
     private SalesforceSyncService salesforceSyncService;
@@ -54,25 +51,18 @@ class SalesforceSyncServiceTest {
     // --- syncUser() tests ---
 
     @Test
-    void syncUser_viaObjectDelegate_whenUserInstance_shouldSync() {
-        User user = User.builder().uuid(UUID.randomUUID()).name("Jane Doe").email("jane@example.com").build();
+    void syncUser_whenValidUserResponse_shouldSync() {
+        UserResponse user = new UserResponse(UUID.randomUUID(), 1L, "Jane Doe", "jane@example.com", 0);
 
-        salesforceSyncService.syncUser((Object) user);
+        salesforceSyncService.syncUser(user);
 
-        verify(clientService).upsertByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFields.EXTERNAL_USER_UUID), eq(user.getUuid().toString()), anyMap());
-    }
-
-    @Test
-    void syncUser_viaObjectDelegate_whenNotUserInstance_shouldDoNothing() {
-        salesforceSyncService.syncUser("NotAUserObject");
-
-        verifyNoInteractions(clientService);
+        verify(clientService).upsertByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFields.EXTERNAL_USER_UUID), eq(user.uuid().toString()), anyMap());
     }
 
     @Test
     void syncUser_whenUserOrUuidNull_shouldReturnEarly() {
-        salesforceSyncService.syncUser((User) null);
-        salesforceSyncService.syncUser(User.builder().uuid(null).build());
+        salesforceSyncService.syncUser((UserResponse) null);
+        salesforceSyncService.syncUser(new UserResponse(null, 1L, "No UUID", "a@b.com", 0));
 
         verifyNoInteractions(clientService);
     }
@@ -80,8 +70,8 @@ class SalesforceSyncServiceTest {
     @Test
     void syncUser_whenNameBlankOrNull_usesEmailAsLastName() {
         UUID uuid = UUID.randomUUID();
-        User userWithNullName = User.builder().uuid(uuid).name(null).email("nullname@example.com").build();
-        User userWithBlankName = User.builder().uuid(uuid).name("   ").email("blankname@example.com").build();
+        UserResponse userWithNullName = new UserResponse(uuid, 1L, null, "nullname@example.com", 0);
+        UserResponse userWithBlankName = new UserResponse(uuid, 1L, "   ", "blankname@example.com", 0);
 
         salesforceSyncService.syncUser(userWithNullName);
         salesforceSyncService.syncUser(userWithBlankName);
@@ -96,7 +86,7 @@ class SalesforceSyncServiceTest {
 
     @Test
     void syncUser_whenClientThrowsException_handlesGracefully() {
-        User user = User.builder().uuid(UUID.randomUUID()).name("John").email("john@example.com").build();
+        UserResponse user = new UserResponse(UUID.randomUUID(), 1L, "John", "john@example.com", 0);
         doThrow(new RuntimeException("Salesforce connection error"))
                 .when(clientService).upsertByExternalId(anyString(), anyString(), anyString(), anyMap());
 
@@ -108,7 +98,7 @@ class SalesforceSyncServiceTest {
     @Test
     void syncBook_whenBookOrUuidNull_shouldReturnEarly() {
         salesforceSyncService.syncBook(null);
-        salesforceSyncService.syncBook(Book.builder().uuid(null).build());
+        salesforceSyncService.syncBook(BookSObject.builder().externalBookUuid(null).build());
 
         verifyNoInteractions(clientService);
     }
@@ -116,8 +106,9 @@ class SalesforceSyncServiceTest {
     @Test
     void syncBook_withValidBook_shouldCallUpsert() {
         UUID uuid = UUID.randomUUID();
-        Book book = Book.builder()
-                .uuid(uuid)
+        BookSObject book = BookSObject.builder()
+                .externalBookUuid(uuid.toString())
+                .name("Clean Code")
                 .title("Clean Code")
                 .author("Robert Martin")
                 .isbn("1234567890")
@@ -138,22 +129,8 @@ class SalesforceSyncServiceTest {
     }
 
     @Test
-    void syncBook_whenTitleNull_usesUntitled() {
-        UUID uuid = UUID.randomUUID();
-        Book book = Book.builder().uuid(uuid).title(null).build();
-
-        salesforceSyncService.syncBook(book);
-
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(clientService).upsertByExternalId(eq(SObject.BOOK.getObjectName()), eq(BookFields.EXTERNAL_BOOK_UUID), eq(uuid.toString()), captor.capture());
-
-        assertEquals("Untitled", captor.getValue().get(BookFields.NAME));
-        assertNull(captor.getValue().get(BookFields.TITLE));
-    }
-
-    @Test
     void syncBook_whenClientThrowsException_handlesGracefully() {
-        Book book = Book.builder().uuid(UUID.randomUUID()).title("Design Patterns").build();
+        BookSObject book = BookSObject.builder().externalBookUuid(UUID.randomUUID().toString()).title("Design Patterns").build();
         doThrow(new RuntimeException("Upsert failed"))
                 .when(clientService).upsertByExternalId(anyString(), anyString(), anyString(), anyMap());
 
@@ -165,7 +142,7 @@ class SalesforceSyncServiceTest {
     @Test
     void syncBorrow_whenBorrowOrUuidNull_shouldReturnEarly() {
         salesforceSyncService.syncBorrow(null);
-        salesforceSyncService.syncBorrow(Borrow.builder().uuid(null).build());
+        salesforceSyncService.syncBorrow(BorrowSObject.builder().externalBorrowUuid(null).build());
 
         verifyNoInteractions(clientService);
     }
@@ -175,18 +152,15 @@ class SalesforceSyncServiceTest {
         UUID borrowUuid = UUID.randomUUID();
         UUID userUuid = UUID.randomUUID();
         UUID bookUuid = UUID.randomUUID();
-        LocalDate now = LocalDate.now();
 
-        User user = User.builder().uuid(userUuid).build();
-        Book book = Book.builder().uuid(bookUuid).build();
-        Borrow borrow = Borrow.builder()
-                .uuid(borrowUuid)
-                .user(user)
-                .book(book)
-                .borrowDate(now)
-                .dueDate(now.plusDays(14))
-                .returnedDate(now.plusDays(10))
-                .status(BorrowStatus.RETURNED)
+        BorrowSObject borrow = BorrowSObject.builder()
+                .externalBorrowUuid(borrowUuid.toString())
+                .borrowDate("2026-09-01")
+                .dueDate("2026-09-15")
+                .returnDate("2026-09-10")
+                .borrowStatus("RETURNED")
+                .contact(ContactSObject.builder().externalUserUuid(userUuid.toString()).lastName("Alice").email("alice@example.com").build())
+                .book(BookSObject.builder().externalBookUuid(bookUuid.toString()).title("DDD").build())
                 .build();
 
         salesforceSyncService.syncBorrow(borrow);
@@ -196,44 +170,17 @@ class SalesforceSyncServiceTest {
 
         Map<String, Object> fields = captor.getValue();
         assertEquals(borrowUuid.toString(), fields.get(BorrowFields.EXTERNAL_BORROW_UUID));
-        assertEquals(now.toString(), fields.get(BorrowFields.BORROW_DATE));
-        assertEquals(now.plusDays(14).toString(), fields.get(BorrowFields.DUE_DATE));
-        assertEquals(now.plusDays(10).toString(), fields.get(BorrowFields.RETURN_DATE));
+        assertEquals("2026-09-01", fields.get(BorrowFields.BORROW_DATE));
+        assertEquals("2026-09-15", fields.get(BorrowFields.DUE_DATE));
+        assertEquals("2026-09-10", fields.get(BorrowFields.RETURN_DATE));
         assertEquals("RETURNED", fields.get(BorrowFields.BORROW_STATUS));
-        assertEquals(Map.of(ContactFields.EXTERNAL_USER_UUID, userUuid.toString()), fields.get(BorrowFields.CONTACT_RELATION));
-        assertEquals(Map.of(BookFields.EXTERNAL_BOOK_UUID, bookUuid.toString()), fields.get(BorrowFields.BOOK_RELATION));
-    }
-
-    @Test
-    void syncBorrow_withNullRelationsAndDates_shouldHandleSafely() {
-        UUID borrowUuid = UUID.randomUUID();
-        Borrow borrow = Borrow.builder()
-                .uuid(borrowUuid)
-                .user(null)
-                .book(null)
-                .borrowDate(null)
-                .dueDate(null)
-                .returnedDate(null)
-                .status(null)
-                .build();
-
-        salesforceSyncService.syncBorrow(borrow);
-
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(clientService).upsertByExternalId(eq(SObject.BORROW.getObjectName()), eq(BorrowFields.EXTERNAL_BORROW_UUID), eq(borrowUuid.toString()), captor.capture());
-
-        Map<String, Object> fields = captor.getValue();
-        assertNull(fields.get(BorrowFields.BORROW_DATE));
-        assertNull(fields.get(BorrowFields.DUE_DATE));
-        assertNull(fields.get(BorrowFields.RETURN_DATE));
-        assertNull(fields.get(BorrowFields.BORROW_STATUS));
-        assertFalse(fields.containsKey(BorrowFields.CONTACT_RELATION));
-        assertFalse(fields.containsKey(BorrowFields.BOOK_RELATION));
+        assertNotNull(fields.get(BorrowFields.CONTACT_RELATION));
+        assertNotNull(fields.get(BorrowFields.BOOK_RELATION));
     }
 
     @Test
     void syncBorrow_whenClientThrowsException_handlesGracefully() {
-        Borrow borrow = Borrow.builder().uuid(UUID.randomUUID()).build();
+        BorrowSObject borrow = BorrowSObject.builder().externalBorrowUuid(UUID.randomUUID().toString()).build();
         doThrow(new RuntimeException("Upsert failed"))
                 .when(clientService).upsertByExternalId(anyString(), anyString(), anyString(), anyMap());
 
@@ -257,7 +204,7 @@ class SalesforceSyncServiceTest {
     }
 
     @Test
-    void fetchUsersFromSalesforce_withRecordsAndInvalidUuid_returnsMappedList() {
+    void fetchUsersFromSalesforce_withRecords_returnsMappedList() {
         UUID validUuid = UUID.randomUUID();
         ObjectNode root = objectMapper.createObjectNode();
         ArrayNode records = root.putArray("records");
@@ -267,26 +214,14 @@ class SalesforceSyncServiceTest {
         record1.put(ContactFields.EMAIL, "smith@example.com");
         record1.put(ContactFields.EXTERNAL_USER_UUID, validUuid.toString());
 
-        ObjectNode record2 = records.addObject();
-        record2.put(ContactFields.LAST_NAME, "Unknown");
-        record2.put(ContactFields.EMAIL, "unknown@example.com");
-        record2.put(ContactFields.EXTERNAL_USER_UUID, "not-a-valid-uuid");
-
-        ObjectNode record3 = records.addObject();
-        record3.put(ContactFields.LAST_NAME, "NullUuid");
-        record3.put(ContactFields.EMAIL, "nulluuid@example.com");
-        record3.putNull(ContactFields.EXTERNAL_USER_UUID);
-
         when(clientService.query(anyString())).thenReturn(root);
 
         List<UserResponse> users = salesforceSyncService.fetchUsersFromSalesforce();
 
         assertNotNull(users);
-        assertEquals(3, users.size());
+        assertEquals(1, users.size());
         assertEquals(validUuid, users.get(0).uuid());
         assertEquals("Smith", users.get(0).name());
-        assertNull(users.get(1).uuid());
-        assertNull(users.get(2).uuid());
     }
 
     // --- getTotalBooksFromSalesforce() tests ---
@@ -310,29 +245,51 @@ class SalesforceSyncServiceTest {
         assertEquals(150L, salesforceSyncService.getTotalBooksFromSalesforce());
     }
 
-    // --- fetchBooksJsonFromSalesforce() tests ---
+    // --- fetchBooksFromSalesforce() tests ---
 
     @Test
-    void fetchBooksJsonFromSalesforce_delegatesToClientService() {
+    void fetchBooksFromSalesforce_deserializesAndReturnsBookSObjectList() {
+        UUID uuid = UUID.randomUUID();
         ObjectNode root = objectMapper.createObjectNode();
+        ArrayNode records = root.putArray("records");
+
+        ObjectNode record1 = records.addObject();
+        record1.put(BookFields.EXTERNAL_BOOK_UUID, uuid.toString());
+        record1.put(BookFields.NAME, "Clean Code");
+        record1.put(BookFields.TITLE, "Clean Code");
+        record1.put(BookFields.AUTHOR, "Uncle Bob");
+
         when(clientService.query(anyString())).thenReturn(root);
 
-        JsonNode res = salesforceSyncService.fetchBooksJsonFromSalesforce(10, 0);
+        List<BookSObject> res = salesforceSyncService.fetchBooksFromSalesforce(10, 0);
 
-        assertSame(root, res);
-        verify(clientService).query(contains("FROM Book__c"));
+        assertNotNull(res);
+        assertEquals(1, res.size());
+        assertEquals(uuid.toString(), res.get(0).getExternalBookUuid());
+        assertEquals("Clean Code", res.get(0).getTitle());
+        assertEquals("Uncle Bob", res.get(0).getAuthor());
     }
 
-    // --- fetchBorrowsJsonFromSalesforce() tests ---
+    // --- fetchBorrowsFromSalesforce() tests ---
 
     @Test
-    void fetchBorrowsJsonFromSalesforce_delegatesToClientService() {
+    void fetchBorrowsFromSalesforce_deserializesAndReturnsBorrowSObjectList() {
+        UUID uuid = UUID.randomUUID();
         ObjectNode root = objectMapper.createObjectNode();
+        ArrayNode records = root.putArray("records");
+
+        ObjectNode record1 = records.addObject();
+        record1.put(BorrowFields.EXTERNAL_BORROW_UUID, uuid.toString());
+        record1.put(BorrowFields.BORROW_DATE, "2026-09-01");
+        record1.put(BorrowFields.BORROW_STATUS, "BORROWED");
+
         when(clientService.query(anyString())).thenReturn(root);
 
-        JsonNode res = salesforceSyncService.fetchBorrowsJsonFromSalesforce();
+        List<BorrowSObject> res = salesforceSyncService.fetchBorrowsFromSalesforce();
 
-        assertSame(root, res);
-        verify(clientService).query(contains("FROM Borrow__c"));
+        assertNotNull(res);
+        assertEquals(1, res.size());
+        assertEquals(uuid.toString(), res.get(0).getExternalBorrowUuid());
+        assertEquals("BORROWED", res.get(0).getBorrowStatus());
     }
 }

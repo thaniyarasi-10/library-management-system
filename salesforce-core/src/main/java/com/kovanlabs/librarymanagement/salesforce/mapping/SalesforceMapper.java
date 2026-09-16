@@ -1,103 +1,93 @@
 package com.kovanlabs.librarymanagement.salesforce.mapping;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.kovanlabs.librarymanagement.database.entity.Book;
-import com.kovanlabs.librarymanagement.database.entity.Borrow;
-import com.kovanlabs.librarymanagement.database.entity.User;
-import com.kovanlabs.librarymanagement.salesforce.constant.fields.BookFields;
-import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
-import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 @Component
+@RequiredArgsConstructor
 public class SalesforceMapper {
 
-    // --- Entity to Salesforce Payload Map (Writes) ---
+    private final ObjectMapper objectMapper;
 
-    public Map<String, Object> toContactFields(User user) {
+    // --- User DTO <-> ContactSObject Mappings ---
+
+    public ContactSObject toContactSObject(UserResponse user) {
         if (user == null) {
-            return Collections.emptyMap();
+            return null;
         }
-        String lastName = (user.getName() != null && !user.getName().isBlank())
-                ? user.getName()
-                : user.getEmail();
+        String lastName = (user.name() != null && !user.name().isBlank())
+                ? user.name()
+                : user.email();
 
-        Map<String, Object> fields = new HashMap<>();
-        fields.put(ContactFields.LAST_NAME, lastName);
-        fields.put(ContactFields.EMAIL, user.getEmail());
-        return fields;
+        return ContactSObject.builder()
+                .externalUserUuid(user.uuid() != null ? user.uuid().toString() : null)
+                .lastName(lastName)
+                .email(user.email())
+                .build();
     }
 
-    public Map<String, Object> toBookFields(Book book) {
-        if (book == null) {
-            return Collections.emptyMap();
+    public UserResponse toUserResponse(ContactSObject contact) {
+        if (contact == null) {
+            return null;
         }
-        String displayName = (book.getTitle() != null && !book.getTitle().isBlank())
-                ? book.getTitle()
-                : "Untitled";
-
-        Map<String, Object> fields = new HashMap<>();
-        fields.put(BookFields.NAME, displayName);
-        fields.put(BookFields.TITLE, book.getTitle());
-        fields.put(BookFields.AUTHOR, book.getAuthor());
-        fields.put(BookFields.ISBN, book.getIsbn());
-        fields.put(BookFields.COVER_IMAGE_URL, book.getCoverImageUrl());
-        return fields;
+        UUID uuid = parseUUID(contact.getExternalUserUuid());
+        return new UserResponse(uuid, null, contact.getLastName(), contact.getEmail(), 0);
     }
 
-    public Map<String, Object> toBorrowFields(Borrow borrow) {
-        if (borrow == null) {
-            return Collections.emptyMap();
+    public List<UserResponse> toUserResponseList(List<ContactSObject> contacts) {
+        if (contacts == null) {
+            return Collections.emptyList();
         }
-        Map<String, Object> fields = new HashMap<>();
-        fields.put(BorrowFields.BORROW_DATE,
-                borrow.getBorrowDate() != null ? borrow.getBorrowDate().toString() : null);
-        fields.put(BorrowFields.DUE_DATE, borrow.getDueDate() != null ? borrow.getDueDate().toString() : null);
-        fields.put(BorrowFields.RETURN_DATE,
-                borrow.getReturnedDate() != null ? borrow.getReturnedDate().toString() : null);
-        fields.put(BorrowFields.BORROW_STATUS, borrow.getStatus() != null ? borrow.getStatus().name() : null);
-
-        if (borrow.getUser() != null && borrow.getUser().getUuid() != null) {
-            fields.put(BorrowFields.CONTACT_RELATION,
-                    Map.of(ContactFields.EXTERNAL_USER_UUID, borrow.getUser().getUuid().toString()));
-        }
-
-        if (borrow.getBook() != null && borrow.getBook().getUuid() != null) {
-            fields.put(BorrowFields.BOOK_RELATION,
-                    Map.of(BookFields.EXTERNAL_BOOK_UUID, borrow.getBook().getUuid().toString()));
-        }
-
-        return fields;
+        return contacts.stream()
+                .map(this::toUserResponse)
+                .toList();
     }
 
-    // --- Salesforce SOQL JSON Node to UserResponse (Reads) ---
+    // --- SObject -> Map Payload (Writes) ---
 
-    public UserResponse toUserResponse(JsonNode node) {
+    public Map<String, Object> toPayloadMap(Object sObject) {
+        if (sObject == null) {
+            return Collections.emptyMap();
+        }
+        return objectMapper.convertValue(sObject, new TypeReference<Map<String, Object>>() {});
+    }
+
+    // --- JSON / JsonNode to SObject Deserialization ---
+
+    public <T> T toSObject(JsonNode node, Class<T> clazz) {
         if (node == null || node.isNull()) {
             return null;
         }
-        String uuidStr = node.path(ContactFields.EXTERNAL_USER_UUID).asText(null);
-        UUID uuid = parseUUID(uuidStr);
-        String name = node.path(ContactFields.LAST_NAME).asText(null);
-        String email = node.path(ContactFields.EMAIL).asText(null);
-
-        return new UserResponse(uuid, null, name, email, 0);
+        try {
+            return objectMapper.treeToValue(node, clazz);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
-    public List<UserResponse> toUserResponseList(List<JsonNode> nodes) {
-        if (nodes == null) {
+    public <T> List<T> toSObjectList(JsonNode root, Class<T> clazz) {
+        if (root == null || !root.has("records")) {
             return Collections.emptyList();
         }
-        return nodes.stream()
-                .map(this::toUserResponse)
-                .toList();
+        List<T> list = new ArrayList<>();
+        for (JsonNode record : root.path("records")) {
+            T obj = toSObject(record, clazz);
+            if (obj != null) {
+                list.add(obj);
+            }
+        }
+        return list;
     }
 
     private static UUID parseUUID(String str) {

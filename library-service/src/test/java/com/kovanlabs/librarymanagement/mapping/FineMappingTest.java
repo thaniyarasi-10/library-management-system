@@ -3,7 +3,9 @@ package com.kovanlabs.librarymanagement.mapping;
 import com.kovanlabs.librarymanagement.database.entity.Fine;
 import com.kovanlabs.librarymanagement.database.enums.FineStatus;
 import com.kovanlabs.librarymanagement.dto.FineResponseDto;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mapstruct.factory.Mappers;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -13,6 +15,13 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 class FineMappingTest {
+
+    private FineMapper fineMapper;
+
+    @BeforeEach
+    void setUp() {
+        fineMapper = Mappers.getMapper(FineMapper.class);
+    }
 
     @Test
     void testMapToResponse_SingleFine() {
@@ -32,7 +41,7 @@ class FineMappingTest {
                 .updatedAt(now)
                 .build();
 
-        FineResponseDto response = FineMapping.mapToResponse(fine);
+        FineResponseDto response = fineMapper.mapToResponse(fine);
 
         assertNotNull(response);
         assertEquals(fineUuid, response.uuid());
@@ -47,7 +56,7 @@ class FineMappingTest {
 
     @Test
     void testMapToResponse_NullFine() {
-        assertNull(FineMapping.mapToResponse((Fine) null));
+        assertNull(fineMapper.mapToResponse((Fine) null));
     }
 
     @Test
@@ -55,7 +64,7 @@ class FineMappingTest {
         Fine fine1 = Fine.builder().id(1L).pendingFineAmount(BigDecimal.TEN).status(FineStatus.PENDING).build();
         Fine fine2 = Fine.builder().id(2L).pendingFineAmount(BigDecimal.ZERO).status(FineStatus.PAID).build();
 
-        List<FineResponseDto> responses = FineMapping.mapToResponse(List.of(fine1, fine2));
+        List<FineResponseDto> responses = fineMapper.mapToResponse(List.of(fine1, fine2));
 
         assertNotNull(responses);
         assertEquals(2, responses.size());
@@ -67,8 +76,7 @@ class FineMappingTest {
 
     @Test
     void testMapToResponse_NullFineList() {
-        List<FineResponseDto> responses = FineMapping.mapToResponse((List<Fine>) null);
-        assertNotNull(responses);
-        assertTrue(responses.isEmpty());
+        List<FineResponseDto> responses = fineMapper.mapToResponse((List<Fine>) null);
+        assertNull(responses);
     }
 }

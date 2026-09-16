@@ -1,31 +1,34 @@
 package com.kovanlabs.librarymanagement.user.service;
 
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.database.entity.Reward;
+import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
+import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
+import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
+import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import com.kovanlabs.librarymanagement.user.mapping.UserMapper;
-import com.kovanlabs.librarymanagement.database.entity.User;
-import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
-import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
-import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
-import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
-
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -55,11 +58,12 @@ public class UserServiceImpl implements UserService {
     }
 
     private UserResponse mapToUserResponseWithRewards(User user) {
-        if (user == null) return null;
+        if (user == null)
+            return null;
         Integer points = 0;
         if (user.getUuid() != null) {
             points = rewardRepository.findByUserUuid(user.getUuid())
-                    .map(com.kovanlabs.librarymanagement.database.entity.Reward::getPoints)
+                    .map(Reward::getPoints)
                     .orElse(0);
         }
         return new UserResponse(
@@ -67,31 +71,29 @@ public class UserServiceImpl implements UserService {
                 user.getId(),
                 user.getName(),
                 user.getEmail(),
-                points
-        );
+                points);
     }
 
     private List<UserResponse> mapToUserResponseListWithRewards(List<User> users) {
-        if (users == null || users.isEmpty()) return List.of();
-        List<java.util.UUID> uuids = users.stream()
+        if (users == null || users.isEmpty())
+            return List.of();
+        List<UUID> uuids = users.stream()
                 .map(User::getUuid)
-                .filter(java.util.Objects::nonNull)
+                .filter(Objects::nonNull)
                 .toList();
 
-        java.util.Map<java.util.UUID, Integer> rewardMap = rewardRepository.findByUserUuidIn(uuids).stream()
+        Map<UUID, Integer> rewardMap = rewardRepository.findByUserUuidIn(uuids).stream()
                 .collect(Collectors.toMap(
-                        com.kovanlabs.librarymanagement.database.entity.Reward::getUserUuid,
-                        com.kovanlabs.librarymanagement.database.entity.Reward::getPoints,
-                        (p1, p2) -> p1
-                ));
+                        Reward::getUserUuid,
+                        Reward::getPoints,
+                        (p1, p2) -> p1));
 
         return users.stream().map(user -> new UserResponse(
                 user.getUuid(),
                 user.getId(),
                 user.getName(),
                 user.getEmail(),
-                user.getUuid() != null ? rewardMap.getOrDefault(user.getUuid(), 0) : 0
-        )).collect(Collectors.toList());
+                user.getUuid() != null ? rewardMap.getOrDefault(user.getUuid(), 0) : 0)).collect(Collectors.toList());
     }
 
     @Override
@@ -103,16 +105,17 @@ public class UserServiceImpl implements UserService {
             user.setPassword(passwordEncoder.encode(request.password()));
         }
         User savedUser = userRepository.save(user);
+        UserResponse response = mapToUserResponseWithRewards(savedUser);
 
         if (salesforceSyncDelegate != null) {
             try {
-                salesforceSyncDelegate.syncUser(savedUser);
+                salesforceSyncDelegate.syncUser(response);
             } catch (Exception e) {
                 log.error("Salesforce dual-write failed for user creation: {}", e.getMessage());
             }
         }
 
-        return mapToUserResponseWithRewards(savedUser);
+        return response;
     }
 
     @Override
@@ -121,11 +124,13 @@ public class UserServiceImpl implements UserService {
             try {
                 List<UserResponse> sfUsers = salesforceSyncDelegate.fetchUsersFromSalesforce();
                 if (sfUsers != null && !sfUsers.isEmpty()) {
-                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} users from Salesforce SOQL", sfUsers.size());
+                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} users from Salesforce SOQL",
+                            sfUsers.size());
                     return sfUsers;
                 }
             } catch (Exception e) {
-                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for users, falling back to MySQL: {}", e.getMessage());
+                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for users, falling back to MySQL: {}",
+                        e.getMessage());
             }
         }
         log.info("[DATA SOURCE: MYSQL] Fetching users from MySQL database");
@@ -138,7 +143,9 @@ public class UserServiceImpl implements UserService {
             try {
                 List<UserResponse> sfUsers = salesforceSyncDelegate.fetchUsersFromSalesforce();
                 if (sfUsers != null && !sfUsers.isEmpty()) {
-                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} users from Salesforce SOQL (paging in memory)", sfUsers.size());
+                    log.info(
+                            "[DATA SOURCE: SALESFORCE] Successfully fetched {} users from Salesforce SOQL (paging in memory)",
+                            sfUsers.size());
                     int fromIndex = Math.min(page * size, sfUsers.size());
                     int toIndex = Math.min(fromIndex + size, sfUsers.size());
                     List<UserResponse> pageContent = sfUsers.subList(fromIndex, toIndex);
@@ -149,11 +156,11 @@ public class UserServiceImpl implements UserService {
                             size,
                             (long) sfUsers.size(),
                             totalPages,
-                            page >= totalPages - 1
-                    );
+                            page >= totalPages - 1);
                 }
             } catch (Exception e) {
-                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for users, falling back to MySQL: {}", e.getMessage());
+                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for users, falling back to MySQL: {}",
+                        e.getMessage());
             }
         }
 
@@ -170,8 +177,7 @@ public class UserServiceImpl implements UserService {
                 usersPage.getSize(),
                 usersPage.getTotalElements(),
                 usersPage.getTotalPages(),
-                usersPage.isLast()
-        );
+                usersPage.isLast());
     }
 
     @Override
@@ -188,8 +194,7 @@ public class UserServiceImpl implements UserService {
                 usersPage.getSize(),
                 usersPage.getTotalElements(),
                 usersPage.getTotalPages(),
-                usersPage.isLast()
-        );
+                usersPage.isLast());
     }
 
     @Override
@@ -219,16 +224,17 @@ public class UserServiceImpl implements UserService {
         }
 
         User updatedUser = userRepository.save(user);
+        UserResponse response = mapToUserResponseWithRewards(updatedUser);
 
         if (salesforceSyncDelegate != null) {
             try {
-                salesforceSyncDelegate.syncUser(updatedUser);
+                salesforceSyncDelegate.syncUser(response);
             } catch (Exception e) {
                 log.error("Salesforce dual-write failed for user update: {}", e.getMessage());
             }
         }
 
-        return mapToUserResponseWithRewards(updatedUser);
+        return response;
     }
 
     @Override
@@ -243,7 +249,8 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserResponse getUserByEmail(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with email: " + email));
+                .orElseThrow(
+                        () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with email: " + email));
         return mapToUserResponseWithRewards(user);
     }
 

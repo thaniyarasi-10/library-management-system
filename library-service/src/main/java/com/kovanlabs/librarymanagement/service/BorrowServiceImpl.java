@@ -78,16 +78,17 @@ public class BorrowServiceImpl implements BorrowService {
         Borrow borrow = bookMapper.mapToEntity(borrowRequestDto, book, user);
 
         Borrow savedBorrow = borrowRepository.save(borrow);
+        BorrowResponseDto response = bookMapper.mapToResponse(savedBorrow);
 
         if (salesforceSyncService != null) {
             try {
-                salesforceSyncService.syncBorrow(savedBorrow);
+                salesforceSyncService.syncBorrow(bookMapper.toBorrowSObject(response));
             } catch (Exception e) {
                 log.error("Salesforce dual-write failed for borrow creation: {}", e.getMessage());
             }
         }
 
-        return bookMapper.mapToResponse(savedBorrow);
+        return response;
     }
 
     @Override
@@ -109,25 +110,26 @@ public class BorrowServiceImpl implements BorrowService {
         borrow.setStatus(BorrowStatus.RETURNED);
 
         Borrow updatedBorrow = borrowRepository.save(borrow);
+        BorrowResponseDto response = bookMapper.mapToResponse(updatedBorrow);
 
         if (salesforceSyncService != null) {
             try {
-                salesforceSyncService.syncBorrow(updatedBorrow);
+                salesforceSyncService.syncBorrow(bookMapper.toBorrowSObject(response));
             } catch (Exception e) {
                 log.error("Salesforce dual-write failed for borrow return: {}", e.getMessage());
             }
         }
 
-        return bookMapper.mapToResponse(updatedBorrow);
+        return response;
     }
 
     @Override
     public java.util.List<BorrowResponseDto> getAllBorrows() {
         if (salesforceSyncService != null) {
             try {
-                com.fasterxml.jackson.databind.JsonNode json = salesforceSyncService.fetchBorrowsJsonFromSalesforce();
-                if (json != null && json.has("records") && json.path("records").size() > 0) {
-                    List<BorrowResponseDto> sfBorrows = bookMapper.mapJsonToBorrowResponseList(json);
+                var sfBorrowModels = salesforceSyncService.fetchBorrowsFromSalesforce();
+                if (sfBorrowModels != null && !sfBorrowModels.isEmpty()) {
+                    List<BorrowResponseDto> sfBorrows = bookMapper.toBorrowResponseList(sfBorrowModels);
                     log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} borrow records from Salesforce SOQL", sfBorrows.size());
                     return sfBorrows;
                 }

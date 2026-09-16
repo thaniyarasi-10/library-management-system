@@ -156,4 +156,59 @@ class BookMapperTest {
         assertEquals(LocalDate.now(), borrow.getBorrowDate());
         assertEquals(LocalDate.now().plusDays(14), borrow.getDueDate());
     }
+
+    @Test
+    void testToBookSObject_and_toBookResponse() {
+        UUID uuid = UUID.randomUUID();
+        BookResponse dto = new BookResponse(uuid, 1L, "Clean Architecture", "Uncle Bob", "1234567890", "http://img.png");
+
+        var sObject = bookMapper.toBookSObject(dto);
+        assertNotNull(sObject);
+        assertEquals(uuid.toString(), sObject.getExternalBookUuid());
+        assertEquals("Clean Architecture", sObject.getTitle());
+        assertEquals("Clean Architecture", sObject.getName());
+
+        BookResponse mappedBack = bookMapper.toBookResponse(sObject);
+        assertNotNull(mappedBack);
+        assertEquals(uuid, mappedBack.uuid());
+        assertEquals("Clean Architecture", mappedBack.title());
+        assertEquals("Uncle Bob", mappedBack.author());
+    }
+
+    @Test
+    void testToBorrowSObject_and_toBorrowResponse() {
+        UUID borrowUuid = UUID.randomUUID();
+        UUID userUuid = UUID.randomUUID();
+        UUID bookUuid = UUID.randomUUID();
+        LocalDate now = LocalDate.now();
+
+        BorrowResponseDto dto = BorrowResponseDto.builder()
+                .borrowUuid(borrowUuid)
+                .userId(userUuid)
+                .userName("Alice")
+                .userEmail("alice@example.com")
+                .bookId(bookUuid)
+                .bookTitle("DDD")
+                .borrowDate(now)
+                .status(BorrowStatus.BORROWED)
+                .build();
+
+        var sObject = bookMapper.toBorrowSObject(dto);
+        assertNotNull(sObject);
+        assertEquals(borrowUuid.toString(), sObject.getExternalBorrowUuid());
+        assertEquals("BORROWED", sObject.getBorrowStatus());
+        assertNotNull(sObject.getContact());
+        assertEquals(userUuid.toString(), sObject.getContact().getExternalUserUuid());
+        assertNotNull(sObject.getBook());
+        assertEquals(bookUuid.toString(), sObject.getBook().getExternalBookUuid());
+
+        BorrowResponseDto mappedBack = bookMapper.toBorrowResponse(sObject);
+        assertNotNull(mappedBack);
+        assertEquals(borrowUuid, mappedBack.borrowUuid());
+        assertEquals(userUuid, mappedBack.userId());
+        assertEquals("Alice", mappedBack.userName());
+        assertEquals(bookUuid, mappedBack.bookId());
+        assertEquals("DDD", mappedBack.bookTitle());
+        assertEquals(BorrowStatus.BORROWED, mappedBack.status());
+    }
 }

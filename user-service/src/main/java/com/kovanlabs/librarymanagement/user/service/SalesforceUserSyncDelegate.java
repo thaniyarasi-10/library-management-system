@@ -5,6 +5,8 @@ import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import java.util.List;
 
 public interface SalesforceUserSyncDelegate {
-    void syncUser(Object user);
+
+    void syncUser(UserResponse user);
+
     List<UserResponse> fetchUsersFromSalesforce();
 }
