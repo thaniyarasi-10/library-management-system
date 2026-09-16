@@ -1,8 +1,8 @@
-package com.kovanlabs.librarymanagement.salesforce.constant;
+package com.kovanlabs.librarymanagement.salesforce.constant.fields;
 
-public final class ContactFieldConstants {
+public final class ContactFields {
 
-    private ContactFieldConstants() {
+    private ContactFields() {
         // Prevent instantiation
     }
 

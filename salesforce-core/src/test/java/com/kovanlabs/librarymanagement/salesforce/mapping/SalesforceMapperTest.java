@@ -6,9 +6,9 @@ import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
-import com.kovanlabs.librarymanagement.salesforce.constant.BookFieldConstants;
-import com.kovanlabs.librarymanagement.salesforce.constant.BorrowFieldConstants;
-import com.kovanlabs.librarymanagement.salesforce.constant.ContactFieldConstants;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.BookFields;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,16 +38,16 @@ class SalesforceMapperTest {
         Map<String, Object> fields = mapper.toContactFields(user);
 
         assertNotNull(fields);
-        assertEquals("John Doe", fields.get(ContactFieldConstants.LAST_NAME));
-        assertEquals("john@example.com", fields.get(ContactFieldConstants.EMAIL));
-        assertEquals(uuid.toString(), fields.get(ContactFieldConstants.EXTERNAL_USER_UUID));
+        assertEquals("John Doe", fields.get(ContactFields.LAST_NAME));
+        assertEquals("john@example.com", fields.get(ContactFields.EMAIL));
+        assertEquals(uuid.toString(), fields.get(ContactFields.EXTERNAL_USER_UUID));
     }
 
     @Test
     void toContactFields_withBlankName_usesEmail() {
         User user = User.builder().uuid(UUID.randomUUID()).name("   ").email("blank@example.com").build();
         Map<String, Object> fields = mapper.toContactFields(user);
-        assertEquals("blank@example.com", fields.get(ContactFieldConstants.LAST_NAME));
+        assertEquals("blank@example.com", fields.get(ContactFields.LAST_NAME));
     }
 
     @Test
@@ -59,9 +59,9 @@ class SalesforceMapperTest {
     void toUserResponse_mapsCorrectly() {
         UUID uuid = UUID.randomUUID();
         ObjectNode node = objectMapper.createObjectNode();
-        node.put(ContactFieldConstants.EXTERNAL_USER_UUID, uuid.toString());
-        node.put(ContactFieldConstants.LAST_NAME, "Jane");
-        node.put(ContactFieldConstants.EMAIL, "jane@example.com");
+        node.put(ContactFields.EXTERNAL_USER_UUID, uuid.toString());
+        node.put(ContactFields.LAST_NAME, "Jane");
+        node.put(ContactFields.EMAIL, "jane@example.com");
 
         UserResponse res = mapper.toUserResponse(node);
         assertNotNull(res);
@@ -83,12 +83,12 @@ class SalesforceMapperTest {
 
         Map<String, Object> fields = mapper.toBookFields(book);
         assertNotNull(fields);
-        assertEquals("Clean Architecture", fields.get(BookFieldConstants.NAME));
-        assertEquals("Clean Architecture", fields.get(BookFieldConstants.TITLE));
-        assertEquals("Uncle Bob", fields.get(BookFieldConstants.AUTHOR));
-        assertEquals("1234567890", fields.get(BookFieldConstants.ISBN));
-        assertEquals("http://cover.jpg", fields.get(BookFieldConstants.COVER_IMAGE_URL));
-        assertEquals(uuid.toString(), fields.get(BookFieldConstants.EXTERNAL_BOOK_UUID));
+        assertEquals("Clean Architecture", fields.get(BookFields.NAME));
+        assertEquals("Clean Architecture", fields.get(BookFields.TITLE));
+        assertEquals("Uncle Bob", fields.get(BookFields.AUTHOR));
+        assertEquals("1234567890", fields.get(BookFields.ISBN));
+        assertEquals("http://cover.jpg", fields.get(BookFields.COVER_IMAGE_URL));
+        assertEquals(uuid.toString(), fields.get(BookFields.EXTERNAL_BOOK_UUID));
     }
 
     @Test
@@ -112,11 +112,11 @@ class SalesforceMapperTest {
 
         Map<String, Object> fields = mapper.toBorrowFields(borrow);
         assertNotNull(fields);
-        assertEquals(borrowUuid.toString(), fields.get(BorrowFieldConstants.EXTERNAL_BORROW_UUID));
-        assertEquals(now.toString(), fields.get(BorrowFieldConstants.BORROW_DATE));
-        assertEquals("RETURNED", fields.get(BorrowFieldConstants.BORROW_STATUS));
-        assertEquals(Map.of(ContactFieldConstants.EXTERNAL_USER_UUID, userUuid.toString()), fields.get(BorrowFieldConstants.CONTACT_RELATION));
-        assertEquals(Map.of(BookFieldConstants.EXTERNAL_BOOK_UUID, bookUuid.toString()), fields.get(BorrowFieldConstants.BOOK_RELATION));
+        assertEquals(borrowUuid.toString(), fields.get(BorrowFields.EXTERNAL_BORROW_UUID));
+        assertEquals(now.toString(), fields.get(BorrowFields.BORROW_DATE));
+        assertEquals("RETURNED", fields.get(BorrowFields.BORROW_STATUS));
+        assertEquals(Map.of(ContactFields.EXTERNAL_USER_UUID, userUuid.toString()), fields.get(BorrowFields.CONTACT_RELATION));
+        assertEquals(Map.of(BookFields.EXTERNAL_BOOK_UUID, bookUuid.toString()), fields.get(BorrowFields.BOOK_RELATION));
     }
 
     @Test

@@ -8,9 +8,9 @@ import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
-import com.kovanlabs.librarymanagement.salesforce.constant.BookFieldConstants;
-import com.kovanlabs.librarymanagement.salesforce.constant.BorrowFieldConstants;
-import com.kovanlabs.librarymanagement.salesforce.constant.ContactFieldConstants;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.BookFields;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
 import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import com.kovanlabs.librarymanagement.salesforce.mapping.SalesforceMapper;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
@@ -59,7 +59,7 @@ class SalesforceSyncServiceTest {
 
         salesforceSyncService.syncUser((Object) user);
 
-        verify(clientService).upsertByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFieldConstants.EXTERNAL_USER_UUID), eq(user.getUuid().toString()), anyMap());
+        verify(clientService).upsertByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFields.EXTERNAL_USER_UUID), eq(user.getUuid().toString()), anyMap());
     }
 
     @Test
@@ -87,11 +87,11 @@ class SalesforceSyncServiceTest {
         salesforceSyncService.syncUser(userWithBlankName);
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(clientService, times(2)).upsertByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFieldConstants.EXTERNAL_USER_UUID), eq(uuid.toString()), captor.capture());
+        verify(clientService, times(2)).upsertByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFields.EXTERNAL_USER_UUID), eq(uuid.toString()), captor.capture());
 
         List<Map<String, Object>> capturedMaps = captor.getAllValues();
-        assertEquals("nullname@example.com", capturedMaps.get(0).get(ContactFieldConstants.LAST_NAME));
-        assertEquals("blankname@example.com", capturedMaps.get(1).get(ContactFieldConstants.LAST_NAME));
+        assertEquals("nullname@example.com", capturedMaps.get(0).get(ContactFields.LAST_NAME));
+        assertEquals("blankname@example.com", capturedMaps.get(1).get(ContactFields.LAST_NAME));
     }
 
     @Test
@@ -127,14 +127,14 @@ class SalesforceSyncServiceTest {
         salesforceSyncService.syncBook(book);
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(clientService).upsertByExternalId(eq(SObject.BOOK.getObjectName()), eq(BookFieldConstants.EXTERNAL_BOOK_UUID), eq(uuid.toString()), captor.capture());
+        verify(clientService).upsertByExternalId(eq(SObject.BOOK.getObjectName()), eq(BookFields.EXTERNAL_BOOK_UUID), eq(uuid.toString()), captor.capture());
 
         Map<String, Object> fields = captor.getValue();
-        assertEquals("Clean Code", fields.get(BookFieldConstants.NAME));
-        assertEquals("Clean Code", fields.get(BookFieldConstants.TITLE));
-        assertEquals("Robert Martin", fields.get(BookFieldConstants.AUTHOR));
-        assertEquals("1234567890", fields.get(BookFieldConstants.ISBN));
-        assertEquals("http://images.com/cleancode.png", fields.get(BookFieldConstants.COVER_IMAGE_URL));
+        assertEquals("Clean Code", fields.get(BookFields.NAME));
+        assertEquals("Clean Code", fields.get(BookFields.TITLE));
+        assertEquals("Robert Martin", fields.get(BookFields.AUTHOR));
+        assertEquals("1234567890", fields.get(BookFields.ISBN));
+        assertEquals("http://images.com/cleancode.png", fields.get(BookFields.COVER_IMAGE_URL));
     }
 
     @Test
@@ -145,10 +145,10 @@ class SalesforceSyncServiceTest {
         salesforceSyncService.syncBook(book);
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(clientService).upsertByExternalId(eq(SObject.BOOK.getObjectName()), eq(BookFieldConstants.EXTERNAL_BOOK_UUID), eq(uuid.toString()), captor.capture());
+        verify(clientService).upsertByExternalId(eq(SObject.BOOK.getObjectName()), eq(BookFields.EXTERNAL_BOOK_UUID), eq(uuid.toString()), captor.capture());
 
-        assertEquals("Untitled", captor.getValue().get(BookFieldConstants.NAME));
-        assertNull(captor.getValue().get(BookFieldConstants.TITLE));
+        assertEquals("Untitled", captor.getValue().get(BookFields.NAME));
+        assertNull(captor.getValue().get(BookFields.TITLE));
     }
 
     @Test
@@ -192,16 +192,16 @@ class SalesforceSyncServiceTest {
         salesforceSyncService.syncBorrow(borrow);
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(clientService).upsertByExternalId(eq(SObject.BORROW.getObjectName()), eq(BorrowFieldConstants.EXTERNAL_BORROW_UUID), eq(borrowUuid.toString()), captor.capture());
+        verify(clientService).upsertByExternalId(eq(SObject.BORROW.getObjectName()), eq(BorrowFields.EXTERNAL_BORROW_UUID), eq(borrowUuid.toString()), captor.capture());
 
         Map<String, Object> fields = captor.getValue();
-        assertEquals(borrowUuid.toString(), fields.get(BorrowFieldConstants.EXTERNAL_BORROW_UUID));
-        assertEquals(now.toString(), fields.get(BorrowFieldConstants.BORROW_DATE));
-        assertEquals(now.plusDays(14).toString(), fields.get(BorrowFieldConstants.DUE_DATE));
-        assertEquals(now.plusDays(10).toString(), fields.get(BorrowFieldConstants.RETURN_DATE));
-        assertEquals("RETURNED", fields.get(BorrowFieldConstants.BORROW_STATUS));
-        assertEquals(Map.of(ContactFieldConstants.EXTERNAL_USER_UUID, userUuid.toString()), fields.get(BorrowFieldConstants.CONTACT_RELATION));
-        assertEquals(Map.of(BookFieldConstants.EXTERNAL_BOOK_UUID, bookUuid.toString()), fields.get(BorrowFieldConstants.BOOK_RELATION));
+        assertEquals(borrowUuid.toString(), fields.get(BorrowFields.EXTERNAL_BORROW_UUID));
+        assertEquals(now.toString(), fields.get(BorrowFields.BORROW_DATE));
+        assertEquals(now.plusDays(14).toString(), fields.get(BorrowFields.DUE_DATE));
+        assertEquals(now.plusDays(10).toString(), fields.get(BorrowFields.RETURN_DATE));
+        assertEquals("RETURNED", fields.get(BorrowFields.BORROW_STATUS));
+        assertEquals(Map.of(ContactFields.EXTERNAL_USER_UUID, userUuid.toString()), fields.get(BorrowFields.CONTACT_RELATION));
+        assertEquals(Map.of(BookFields.EXTERNAL_BOOK_UUID, bookUuid.toString()), fields.get(BorrowFields.BOOK_RELATION));
     }
 
     @Test
@@ -220,15 +220,15 @@ class SalesforceSyncServiceTest {
         salesforceSyncService.syncBorrow(borrow);
 
         ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(clientService).upsertByExternalId(eq(SObject.BORROW.getObjectName()), eq(BorrowFieldConstants.EXTERNAL_BORROW_UUID), eq(borrowUuid.toString()), captor.capture());
+        verify(clientService).upsertByExternalId(eq(SObject.BORROW.getObjectName()), eq(BorrowFields.EXTERNAL_BORROW_UUID), eq(borrowUuid.toString()), captor.capture());
 
         Map<String, Object> fields = captor.getValue();
-        assertNull(fields.get(BorrowFieldConstants.BORROW_DATE));
-        assertNull(fields.get(BorrowFieldConstants.DUE_DATE));
-        assertNull(fields.get(BorrowFieldConstants.RETURN_DATE));
-        assertNull(fields.get(BorrowFieldConstants.BORROW_STATUS));
-        assertFalse(fields.containsKey(BorrowFieldConstants.CONTACT_RELATION));
-        assertFalse(fields.containsKey(BorrowFieldConstants.BOOK_RELATION));
+        assertNull(fields.get(BorrowFields.BORROW_DATE));
+        assertNull(fields.get(BorrowFields.DUE_DATE));
+        assertNull(fields.get(BorrowFields.RETURN_DATE));
+        assertNull(fields.get(BorrowFields.BORROW_STATUS));
+        assertFalse(fields.containsKey(BorrowFields.CONTACT_RELATION));
+        assertFalse(fields.containsKey(BorrowFields.BOOK_RELATION));
     }
 
     @Test
@@ -263,19 +263,19 @@ class SalesforceSyncServiceTest {
         ArrayNode records = root.putArray("records");
 
         ObjectNode record1 = records.addObject();
-        record1.put(ContactFieldConstants.LAST_NAME, "Smith");
-        record1.put(ContactFieldConstants.EMAIL, "smith@example.com");
-        record1.put(ContactFieldConstants.EXTERNAL_USER_UUID, validUuid.toString());
+        record1.put(ContactFields.LAST_NAME, "Smith");
+        record1.put(ContactFields.EMAIL, "smith@example.com");
+        record1.put(ContactFields.EXTERNAL_USER_UUID, validUuid.toString());
 
         ObjectNode record2 = records.addObject();
-        record2.put(ContactFieldConstants.LAST_NAME, "Unknown");
-        record2.put(ContactFieldConstants.EMAIL, "unknown@example.com");
-        record2.put(ContactFieldConstants.EXTERNAL_USER_UUID, "not-a-valid-uuid");
+        record2.put(ContactFields.LAST_NAME, "Unknown");
+        record2.put(ContactFields.EMAIL, "unknown@example.com");
+        record2.put(ContactFields.EXTERNAL_USER_UUID, "not-a-valid-uuid");
 
         ObjectNode record3 = records.addObject();
-        record3.put(ContactFieldConstants.LAST_NAME, "NullUuid");
-        record3.put(ContactFieldConstants.EMAIL, "nulluuid@example.com");
-        record3.putNull(ContactFieldConstants.EXTERNAL_USER_UUID);
+        record3.put(ContactFields.LAST_NAME, "NullUuid");
+        record3.put(ContactFields.EMAIL, "nulluuid@example.com");
+        record3.putNull(ContactFields.EXTERNAL_USER_UUID);
 
         when(clientService.query(anyString())).thenReturn(root);
 

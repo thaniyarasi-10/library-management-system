@@ -1,8 +1,8 @@
-package com.kovanlabs.librarymanagement.salesforce.constant;
+package com.kovanlabs.librarymanagement.salesforce.constant.fields;
 
-public final class BorrowFieldConstants {
+public final class BorrowFields {
 
-    private BorrowFieldConstants() {
+    private BorrowFields() {
         // Prevent instantiation
     }
 

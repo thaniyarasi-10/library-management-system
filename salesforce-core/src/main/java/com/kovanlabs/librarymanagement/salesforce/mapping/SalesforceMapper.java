@@ -4,9 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
-import com.kovanlabs.librarymanagement.salesforce.constant.BookFieldConstants;
-import com.kovanlabs.librarymanagement.salesforce.constant.BorrowFieldConstants;
-import com.kovanlabs.librarymanagement.salesforce.constant.ContactFieldConstants;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.BookFields;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import org.springframework.stereotype.Component;
 
@@ -30,8 +30,8 @@ public class SalesforceMapper {
                 : user.getEmail();
 
         Map<String, Object> fields = new HashMap<>();
-        fields.put(ContactFieldConstants.LAST_NAME, lastName);
-        fields.put(ContactFieldConstants.EMAIL, user.getEmail());
+        fields.put(ContactFields.LAST_NAME, lastName);
+        fields.put(ContactFields.EMAIL, user.getEmail());
         return fields;
     }
 
@@ -44,11 +44,11 @@ public class SalesforceMapper {
                 : "Untitled";
 
         Map<String, Object> fields = new HashMap<>();
-        fields.put(BookFieldConstants.NAME, displayName);
-        fields.put(BookFieldConstants.TITLE, book.getTitle());
-        fields.put(BookFieldConstants.AUTHOR, book.getAuthor());
-        fields.put(BookFieldConstants.ISBN, book.getIsbn());
-        fields.put(BookFieldConstants.COVER_IMAGE_URL, book.getCoverImageUrl());
+        fields.put(BookFields.NAME, displayName);
+        fields.put(BookFields.TITLE, book.getTitle());
+        fields.put(BookFields.AUTHOR, book.getAuthor());
+        fields.put(BookFields.ISBN, book.getIsbn());
+        fields.put(BookFields.COVER_IMAGE_URL, book.getCoverImageUrl());
         return fields;
     }
 
@@ -57,21 +57,21 @@ public class SalesforceMapper {
             return Collections.emptyMap();
         }
         Map<String, Object> fields = new HashMap<>();
-        fields.put(BorrowFieldConstants.BORROW_DATE,
+        fields.put(BorrowFields.BORROW_DATE,
                 borrow.getBorrowDate() != null ? borrow.getBorrowDate().toString() : null);
-        fields.put(BorrowFieldConstants.DUE_DATE, borrow.getDueDate() != null ? borrow.getDueDate().toString() : null);
-        fields.put(BorrowFieldConstants.RETURN_DATE,
+        fields.put(BorrowFields.DUE_DATE, borrow.getDueDate() != null ? borrow.getDueDate().toString() : null);
+        fields.put(BorrowFields.RETURN_DATE,
                 borrow.getReturnedDate() != null ? borrow.getReturnedDate().toString() : null);
-        fields.put(BorrowFieldConstants.BORROW_STATUS, borrow.getStatus() != null ? borrow.getStatus().name() : null);
+        fields.put(BorrowFields.BORROW_STATUS, borrow.getStatus() != null ? borrow.getStatus().name() : null);
 
         if (borrow.getUser() != null && borrow.getUser().getUuid() != null) {
-            fields.put(BorrowFieldConstants.CONTACT_RELATION,
-                    Map.of(ContactFieldConstants.EXTERNAL_USER_UUID, borrow.getUser().getUuid().toString()));
+            fields.put(BorrowFields.CONTACT_RELATION,
+                    Map.of(ContactFields.EXTERNAL_USER_UUID, borrow.getUser().getUuid().toString()));
         }
 
         if (borrow.getBook() != null && borrow.getBook().getUuid() != null) {
-            fields.put(BorrowFieldConstants.BOOK_RELATION,
-                    Map.of(BookFieldConstants.EXTERNAL_BOOK_UUID, borrow.getBook().getUuid().toString()));
+            fields.put(BorrowFields.BOOK_RELATION,
+                    Map.of(BookFields.EXTERNAL_BOOK_UUID, borrow.getBook().getUuid().toString()));
         }
 
         return fields;
@@ -83,10 +83,10 @@ public class SalesforceMapper {
         if (node == null || node.isNull()) {
             return null;
         }
-        String uuidStr = node.path(ContactFieldConstants.EXTERNAL_USER_UUID).asText(null);
+        String uuidStr = node.path(ContactFields.EXTERNAL_USER_UUID).asText(null);
         UUID uuid = parseUUID(uuidStr);
-        String name = node.path(ContactFieldConstants.LAST_NAME).asText(null);
-        String email = node.path(ContactFieldConstants.EMAIL).asText(null);
+        String name = node.path(ContactFields.LAST_NAME).asText(null);
+        String email = node.path(ContactFields.EMAIL).asText(null);
 
         return new UserResponse(uuid, null, name, email, 0);
     }

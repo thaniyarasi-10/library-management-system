@@ -9,9 +9,9 @@ import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
-import com.kovanlabs.librarymanagement.salesforce.constant.BookFieldConstants;
-import com.kovanlabs.librarymanagement.salesforce.constant.BorrowFieldConstants;
-import com.kovanlabs.librarymanagement.salesforce.constant.ContactFieldConstants;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.BookFields;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -50,14 +50,14 @@ public interface BookMapper {
         if (node == null || node.isNull()) {
             return null;
         }
-        String uuidStr = node.path(BookFieldConstants.EXTERNAL_BOOK_UUID).asText(null);
-        String title = node.path(BookFieldConstants.TITLE).asText(null);
+        String uuidStr = node.path(BookFields.EXTERNAL_BOOK_UUID).asText(null);
+        String title = node.path(BookFields.TITLE).asText(null);
         if (title == null || title.isBlank()) {
-            title = node.path(BookFieldConstants.NAME).asText(null);
+            title = node.path(BookFields.NAME).asText(null);
         }
-        String author = node.path(BookFieldConstants.AUTHOR).asText(null);
-        String isbn = node.path(BookFieldConstants.ISBN).asText(null);
-        String coverImageUrl = node.path(BookFieldConstants.COVER_IMAGE_URL).asText(null);
+        String author = node.path(BookFields.AUTHOR).asText(null);
+        String isbn = node.path(BookFields.ISBN).asText(null);
+        String coverImageUrl = node.path(BookFields.COVER_IMAGE_URL).asText(null);
 
         return new BookResponse(
                 parseUUID(uuidStr),
@@ -88,35 +88,35 @@ public interface BookMapper {
             return null;
         }
 
-        String borrowUuidStr = node.path(BorrowFieldConstants.EXTERNAL_BORROW_UUID).asText(null);
-        String borrowDateStr = node.path(BorrowFieldConstants.BORROW_DATE).asText(null);
-        String dueDateStr = node.path(BorrowFieldConstants.DUE_DATE).asText(null);
-        String returnDateStr = node.path(BorrowFieldConstants.RETURN_DATE).asText(null);
-        String statusStr = node.path(BorrowFieldConstants.BORROW_STATUS).asText(null);
+        String borrowUuidStr = node.path(BorrowFields.EXTERNAL_BORROW_UUID).asText(null);
+        String borrowDateStr = node.path(BorrowFields.BORROW_DATE).asText(null);
+        String dueDateStr = node.path(BorrowFields.DUE_DATE).asText(null);
+        String returnDateStr = node.path(BorrowFields.RETURN_DATE).asText(null);
+        String statusStr = node.path(BorrowFields.BORROW_STATUS).asText(null);
 
-        JsonNode contactNode = node.path(BorrowFieldConstants.CONTACT_RELATION);
+        JsonNode contactNode = node.path(BorrowFields.CONTACT_RELATION);
         UUID userUuid = null;
         String userName = null;
         String userEmail = null;
         if (!contactNode.isMissingNode() && !contactNode.isNull()) {
-            userUuid = parseUUID(contactNode.path(ContactFieldConstants.EXTERNAL_USER_UUID).asText(null));
-            userName = contactNode.path(ContactFieldConstants.LAST_NAME).asText(null);
-            userEmail = contactNode.path(ContactFieldConstants.EMAIL).asText(null);
+            userUuid = parseUUID(contactNode.path(ContactFields.EXTERNAL_USER_UUID).asText(null));
+            userName = contactNode.path(ContactFields.LAST_NAME).asText(null);
+            userEmail = contactNode.path(ContactFields.EMAIL).asText(null);
         }
 
-        JsonNode bookNode = node.path(BorrowFieldConstants.BOOK_RELATION);
+        JsonNode bookNode = node.path(BorrowFields.BOOK_RELATION);
         UUID bookUuid = null;
         String bookTitle = null;
         String bookAuthor = null;
         String bookCoverUrl = null;
         if (!bookNode.isMissingNode() && !bookNode.isNull()) {
-            bookUuid = parseUUID(bookNode.path(BookFieldConstants.EXTERNAL_BOOK_UUID).asText(null));
-            bookTitle = bookNode.path(BookFieldConstants.TITLE).asText(null);
+            bookUuid = parseUUID(bookNode.path(BookFields.EXTERNAL_BOOK_UUID).asText(null));
+            bookTitle = bookNode.path(BookFields.TITLE).asText(null);
             if (bookTitle == null || bookTitle.isBlank()) {
-                bookTitle = bookNode.path(BookFieldConstants.NAME).asText(null);
+                bookTitle = bookNode.path(BookFields.NAME).asText(null);
             }
-            bookAuthor = bookNode.path(BookFieldConstants.AUTHOR).asText(null);
-            bookCoverUrl = bookNode.path(BookFieldConstants.COVER_IMAGE_URL).asText(null);
+            bookAuthor = bookNode.path(BookFields.AUTHOR).asText(null);
+            bookCoverUrl = bookNode.path(BookFields.COVER_IMAGE_URL).asText(null);
         }
 
         BorrowStatus status = null;
