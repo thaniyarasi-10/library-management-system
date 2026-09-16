@@ -11,6 +11,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
 
+/**
+ * AES/GCM/NoPadding implementation of {@link EncryptionConverterService} for field-level attribute encryption.
+ */
 @Slf4j
 @Service
 public class EncryptionConvertorServiceImpl implements EncryptionConverterService {
@@ -20,6 +23,11 @@ public class EncryptionConvertorServiceImpl implements EncryptionConverterServic
 
     private final SecretKeySpec keySpec;
 
+    /**
+     * Constructs {@link EncryptionConvertorServiceImpl} with secret key loaded from application properties or environment.
+     *
+     * @param secretKey 256-bit AES secret key
+     */
     public EncryptionConvertorServiceImpl(
             @Value("${encryption.secret-key:${ENCRYPTION_SECRET_KEY}}") String secretKey
     ) {
@@ -35,6 +43,12 @@ public class EncryptionConvertorServiceImpl implements EncryptionConverterServic
         this.keySpec = new SecretKeySpec(keyBytes, "AES");
     }
 
+    /**
+     * Encrypts plaintext string using AES-GCM with a random initialization vector.
+     *
+     * @param attribute Plaintext string
+     * @return Base64 encoded string containing prepended IV and ciphertext
+     */
     public String encrypt(String attribute) {
         if (attribute == null || attribute.isEmpty()) {
             return attribute;
@@ -64,6 +78,12 @@ public class EncryptionConvertorServiceImpl implements EncryptionConverterServic
         }
     }
 
+    /**
+     * Decrypts Base64 string by extracting the IV and decoding ciphertext using AES-GCM.
+     *
+     * @param dbData Base64 encoded ciphertext
+     * @return Decrypted UTF-8 plaintext string
+     */
     public String decrypt(String dbData) {
         if (dbData == null || dbData.isEmpty()) {
             return dbData;

@@ -31,6 +31,10 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
+/**
+ * Implementation of {@link MembershipService} handling S3 agreement templates, OpenHTMLtoPDF rendering,
+ * and lifecycle transitions for library memberships.
+ */
 @Service
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
@@ -51,6 +55,11 @@ public class MembershipServiceImpl implements MembershipService {
     @Value("${aws.s3.membership.template-key}")
     private String membershipTemplateKey;
 
+    /**
+     * Downloads and caches the membership agreement HTML template from AWS S3.
+     *
+     * @return Raw HTML template string
+     */
     @Cacheable(value = "membership-agreement-template", key = "'template'")
     public String getAgreementTemplate() {
         log.info("Fetching agreement template from S3 bucket: {}, key: {}", membershipBucketName,
@@ -58,6 +67,12 @@ public class MembershipServiceImpl implements MembershipService {
         return s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
     }
 
+    /**
+     * Submits a membership application in PENDING status and returns the populated agreement HTML.
+     *
+     * @param email The user's email address
+     * @return Application response containing UUID and agreement HTML
+     */
     @Override
     @Transactional
     public MembershipApplicationResponse applyForMembership(String email) {
@@ -101,6 +116,14 @@ public class MembershipServiceImpl implements MembershipService {
         return new MembershipApplicationResponse(saved.getUuid(), saved.getMembershipId(), agreementHtml);
     }
 
+    /**
+     * Validates signature PNG, embeds Base64 image into agreement, renders PDF, uploads to S3, and activates membership.
+     *
+     * @param membershipUuid Application UUID
+     * @param file Signature image
+     * @param email User email
+     * @return Activated membership response DTO
+     */
     @Override
     @Transactional
     public MembershipResponseDto signAgreement(UUID membershipUuid, MultipartFile file, String email) {
@@ -190,6 +213,12 @@ public class MembershipServiceImpl implements MembershipService {
         }
     }
 
+    /**
+     * Retrieves the latest membership status for a user by email.
+     *
+     * @param email User email
+     * @return Membership response DTO
+     */
     @Override
     public MembershipResponseDto getMyMembership(String email) {
         User user = userRepository.findByEmail(email)
@@ -205,6 +234,12 @@ public class MembershipServiceImpl implements MembershipService {
         return membershipMapper.mapToResponse(membership);
     }
 
+    /**
+     * Cancels an active or pending membership application for a user.
+     *
+     * @param email User email
+     * @return Cancelled membership response DTO
+     */
     @Override
     @Transactional
     public MembershipResponseDto cancelMembership(String email) {
@@ -231,6 +266,13 @@ public class MembershipServiceImpl implements MembershipService {
         return membershipMapper.mapToResponse(updated);
     }
 
+    /**
+     * Generates populated HTML representation of the agreement for review.
+     *
+     * @param membershipUuid Unique UUID
+     * @param email User email
+     * @return Formatted HTML agreement
+     */
     @Override
     public String getAgreementHtmlByUuid(UUID membershipUuid, String email) {
         User user = userRepository.findByEmail(email)
@@ -262,6 +304,13 @@ public class MembershipServiceImpl implements MembershipService {
                 .replace("{{EXPIRY_DATE}}", "N/A (Pending Activation)");
     }
 
+    /**
+     * Downloads the stored signed agreement PDF from S3.
+     *
+     * @param membershipId Numeric ID
+     * @param email User email
+     * @return PDF byte array
+     */
     @Override
     public byte[] downloadAgreementPdf(Long membershipId, String email) {
         User user = userRepository.findByEmail(email)
@@ -281,6 +330,12 @@ public class MembershipServiceImpl implements MembershipService {
         return s3Service.downloadFile(membershipBucketName, membershipBucketRegion, membership.getSignedPdfKey());
     }
 
+    /**
+     * Checks if a user has an active, unexpired membership in the database.
+     *
+     * @param userUuid User UUID
+     * @return {@code true} if active and not expired
+     */
     @Override
     public boolean hasActiveMembership(UUID userUuid) {
         log.info("Checking active membership for user: {} in DATABASE", userUuid);
@@ -295,11 +350,21 @@ public class MembershipServiceImpl implements MembershipService {
         return isActive && isNotExpired;
     }
 
+    /**
+     * Evicts cached active membership entries for a user.
+     *
+     * @param userUuid User UUID
+     */
     @CacheEvict(value = "active-memberships", key = "#userUuid")
     public void evictActiveMembershipCache(UUID userUuid) {
         log.info("Evicting active membership cache for user: {}", userUuid);
     }
 
+    /**
+     * Generates a 6-digit unique random membership ID.
+     *
+     * @return Unique Long ID
+     */
     private Long generateUniqueMembershipId() {
         long randomId;
         boolean unique;
@@ -310,6 +375,13 @@ public class MembershipServiceImpl implements MembershipService {
         return randomId;
     }
 
+    /**
+     * Converts HTML string into a PDF byte stream using OpenHTMLtoPDF.
+     *
+     * @param htmlContent HTML string
+     * @return Rendered PDF bytes
+     * @throws Exception if rendering fails
+     */
     private byte[] renderHtmlToPdf(String htmlContent) throws Exception {
         try (ByteArrayOutputStream os = new ByteArrayOutputStream()) {
             PdfRendererBuilder builder = new PdfRendererBuilder();

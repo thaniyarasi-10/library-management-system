@@ -21,6 +21,10 @@ import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
 import com.kovanlabs.librarymanagement.service.MembershipService;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Implementation of {@link BorrowService} enforcing membership checks, fine checks,
+ * and dual-write synchronization with Salesforce Borrow SObjects.
+ */
 @Service
 @Slf4j
 public class BorrowServiceImpl implements BorrowService {
@@ -33,6 +37,17 @@ public class BorrowServiceImpl implements BorrowService {
     private final MembershipService membershipService;
     private final SalesforceSyncService salesforceSyncService;
 
+    /**
+     * Constructs {@link BorrowServiceImpl} with injected repositories, checkers, and services.
+     *
+     * @param borrowRepository Repository for borrow transactions
+     * @param bookRepository Repository for books
+     * @param userRepository Repository for users
+     * @param userFineChecker Checker for pending user fines
+     * @param bookMapper MapStruct mapper for conversions
+     * @param membershipService Service to verify active membership
+     * @param salesforceSyncService Service to synchronize with Salesforce
+     */
     public BorrowServiceImpl(
             BorrowRepository borrowRepository,
             BookRepository bookRepository,
@@ -51,6 +66,12 @@ public class BorrowServiceImpl implements BorrowService {
         this.salesforceSyncService = salesforceSyncService;
     }
 
+    /**
+     * Validates membership status and pending fines, persists borrow record, and syncs with Salesforce.
+     *
+     * @param borrowRequestDto The borrow payload
+     * @return Created {@link BorrowResponseDto}
+     */
     @Override
     public BorrowResponseDto borrowBook(BorrowRequestDto borrowRequestDto) {
         if (borrowRequestDto == null || borrowRequestDto.userId() == null || borrowRequestDto.bookId() == null) {
@@ -91,6 +112,12 @@ public class BorrowServiceImpl implements BorrowService {
         return response;
     }
 
+    /**
+     * Returns a borrowed book, updates return date and status, and syncs with Salesforce.
+     *
+     * @param borrowId The borrow record ID
+     * @return Updated {@link BorrowResponseDto}
+     */
     @Override
     public BorrowResponseDto returnBook(Long borrowId) {
         if (borrowId == null) {
@@ -123,6 +150,11 @@ public class BorrowServiceImpl implements BorrowService {
         return response;
     }
 
+    /**
+     * Retrieves all borrow records from Salesforce SOQL if available, otherwise from MySQL.
+     *
+     * @return List of {@link BorrowResponseDto}s
+     */
     @Override
     public java.util.List<BorrowResponseDto> getAllBorrows() {
         if (salesforceSyncService != null) {
@@ -143,6 +175,12 @@ public class BorrowServiceImpl implements BorrowService {
                 .toList();
     }
 
+    /**
+     * Retrieves all borrow records for a specific user ID.
+     *
+     * @param userId The user database ID
+     * @return List of {@link BorrowResponseDto}s
+     */
     @Override
     public java.util.List<BorrowResponseDto> getBorrowsByUserId(Long userId) {
         if (userId == null) {
@@ -153,6 +191,12 @@ public class BorrowServiceImpl implements BorrowService {
                 .toList();
     }
 
+    /**
+     * Retrieves all borrow records for a specific user email.
+     *
+     * @param email The user email
+     * @return List of {@link BorrowResponseDto}s
+     */
     @Override
     public java.util.List<BorrowResponseDto> getBorrowsByUserEmail(String email) {
         if (email == null) {

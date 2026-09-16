@@ -77,6 +77,4 @@ public class BookController {
     public ResponseEntity<String> getBookCover(@PathVariable("bookId") Long bookId) {
         return ResponseEntity.ok(bookService.getImageCoverById(bookId));
     }
-
-
 }
