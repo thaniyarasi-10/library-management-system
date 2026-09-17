@@ -43,9 +43,6 @@ class UserServiceImplTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
-    @Spy
-    private UserMapper userMapper = Mappers.getMapper(UserMapper.class);
-
     @InjectMocks
     private UserServiceImpl userService;
 

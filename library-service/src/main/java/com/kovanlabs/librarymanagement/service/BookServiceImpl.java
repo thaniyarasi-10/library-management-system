@@ -41,7 +41,6 @@ public class BookServiceImpl implements BookService {
 
     private final BookRepository bookRepository;
     private final S3Service s3Service;
-    private final BookMapper bookMapper;
     private final SalesforceSyncService salesforceSyncService;
 
     /**
@@ -54,13 +53,13 @@ public class BookServiceImpl implements BookService {
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
     public BookResponse createBook(BookRequest request) {
-        Book book = bookMapper.mapToEntity(request);
+        Book book = BookMapper.INSTANCE.mapToEntity(request);
         Book savedBook = bookRepository.save(book);
-        BookResponse response = bookMapper.mapToResponse(savedBook);
+        BookResponse response = BookMapper.INSTANCE.mapToResponse(savedBook);
 
         if (salesforceSyncService != null) {
             try {
-                salesforceSyncService.syncBook(bookMapper.toBookSObject(response));
+                salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(response));
             } catch (Exception e) {
                 log.error("Salesforce dual-write failed for book creation: {}", e.getMessage());
             }
@@ -87,7 +86,7 @@ public class BookServiceImpl implements BookService {
                 long totalBooks = salesforceSyncService.getTotalBooksFromSalesforce();
 
                 if (sfBookModels != null && !sfBookModels.isEmpty()) {
-                    List<BookResponse> sfBooks = bookMapper.toBookResponseList(sfBookModels);
+                    List<BookResponse> sfBooks = BookMapper.INSTANCE.toBookResponseList(sfBookModels);
                     log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL", sfBooks.size());
                     int totalPages = (int) Math.ceil((double) totalBooks / size);
                     return new PagedResponse<>(
@@ -110,7 +109,7 @@ public class BookServiceImpl implements BookService {
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<Book> booksPage = bookRepository.findAll(pageable);
         List<BookResponse> content = booksPage.getContent().stream()
-                .map(bookMapper::mapToResponse)
+                .map(BookMapper.INSTANCE::mapToResponse)
                 .collect(Collectors.toList());
 
         return new PagedResponse<>(
@@ -140,7 +139,7 @@ public class BookServiceImpl implements BookService {
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<Book> booksPage = bookRepository.searchBooks(query, pageable);
         List<BookResponse> content = booksPage.getContent().stream()
-                .map(bookMapper::mapToResponse)
+                .map(BookMapper.INSTANCE::mapToResponse)
                 .collect(Collectors.toList());
 
         return new PagedResponse<>(
@@ -165,7 +164,7 @@ public class BookServiceImpl implements BookService {
         log.info("CACHE MISS - Fetching book {} from DATABASE", id);
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
-        return bookMapper.mapToResponse(book);
+        return BookMapper.INSTANCE.mapToResponse(book);
     }
 
     /**
@@ -187,11 +186,11 @@ public class BookServiceImpl implements BookService {
         book.setIsbn(request.isbn());
         
         Book updatedBook = bookRepository.save(book);
-        BookResponse response = bookMapper.mapToResponse(updatedBook);
+        BookResponse response = BookMapper.INSTANCE.mapToResponse(updatedBook);
 
         if (salesforceSyncService != null) {
             try {
-                salesforceSyncService.syncBook(bookMapper.toBookSObject(response));
+                salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(response));
             } catch (Exception e) {
                 log.error("Salesforce dual-write failed for book update: {}", e.getMessage());
             }

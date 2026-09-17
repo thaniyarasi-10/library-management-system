@@ -43,7 +43,6 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final RewardRepository rewardRepository;
     private final PasswordEncoder passwordEncoder;
-    private final UserMapper userMapper;
     private final SalesforceUserSyncDelegate salesforceSyncDelegate;
 
     /**
@@ -52,7 +51,6 @@ public class UserServiceImpl implements UserService {
      * @param userRepository Repository for User database operations
      * @param rewardRepository Repository for calculating user reward points
      * @param passwordEncoder Password hashing encoder
-     * @param userMapper MapStruct mapper for User entities and DTOs
      * @param salesforceSyncDelegate Optional delegate for synchronizing changes to Salesforce
      */
     @Autowired
@@ -60,13 +58,11 @@ public class UserServiceImpl implements UserService {
             UserRepository userRepository,
             RewardRepository rewardRepository,
             @Lazy PasswordEncoder passwordEncoder,
-            UserMapper userMapper,
             @Autowired(required = false) SalesforceUserSyncDelegate salesforceSyncDelegate) {
 
         this.userRepository = userRepository;
         this.rewardRepository = rewardRepository;
         this.passwordEncoder = passwordEncoder;
-        this.userMapper = userMapper;
         this.salesforceSyncDelegate = salesforceSyncDelegate;
     }
 
@@ -131,7 +127,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     @CacheEvict(value = "users", allEntries = true)
     public UserResponse createUser(UserRequest request) {
-        User user = userMapper.mapToEntity(request);
+        User user = UserMapper.INSTANCE.mapToEntity(request);
         if (user != null && request.password() != null) {
             user.setPassword(passwordEncoder.encode(request.password()));
         }
@@ -170,7 +166,7 @@ public class UserServiceImpl implements UserService {
             }
         }
         log.info("[DATA SOURCE: MYSQL] Fetching users from MySQL database");
-        return userMapper.mapToResponse(userRepository.findAll());
+        return UserMapper.INSTANCE.mapToResponse(userRepository.findAll());
     }
 
     /**

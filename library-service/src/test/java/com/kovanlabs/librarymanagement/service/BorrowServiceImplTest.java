@@ -9,15 +9,12 @@ import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
-import com.kovanlabs.librarymanagement.mapping.BookMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mapstruct.factory.Mappers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -47,9 +44,6 @@ class BorrowServiceImplTest {
 
     @Mock
     private MembershipService membershipService;
-
-    @Spy
-    private BookMapper bookMapper = Mappers.getMapper(BookMapper.class);
 
     @InjectMocks
     private BorrowServiceImpl borrowService;
@@ -193,7 +187,6 @@ class BorrowServiceImplTest {
                         bookRepository,
                         userRepository,
                         null,
-                        bookMapper,
                         membershipService,
                         null
                 );

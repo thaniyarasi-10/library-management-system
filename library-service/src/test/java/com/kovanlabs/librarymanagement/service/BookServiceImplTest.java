@@ -43,9 +43,6 @@ class BookServiceImplTest {
     @Mock
     private SalesforceSyncService salesforceSyncService;
 
-    @Spy
-    private BookMapper bookMapper = Mappers.getMapper(BookMapper.class);
-
     @InjectMocks
     private BookServiceImpl bookService;
 

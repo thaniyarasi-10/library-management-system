@@ -5,14 +5,17 @@ import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.factory.Mappers;
 
 import java.util.List;
 
 /**
  * MapStruct mapper for converting between {@link User} entities and User DTOs.
  */
-@Mapper(componentModel = "spring")
+@Mapper
 public interface UserMapper {
+
+    UserMapper INSTANCE = Mappers.getMapper(UserMapper.class);
 
     /**
      * Maps a {@link User} entity to a {@link UserResponse} DTO.

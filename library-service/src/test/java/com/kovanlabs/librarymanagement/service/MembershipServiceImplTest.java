@@ -42,9 +42,6 @@ class MembershipServiceImplTest {
     @Mock
     private S3Service s3Service;
 
-    @Mock
-    private MembershipMapper membershipMapper;
-
     @InjectMocks
     private MembershipServiceImpl membershipService;
 
@@ -65,15 +62,6 @@ class MembershipServiceImplTest {
                 .email(email)
                 .name("John Doe")
                 .build();
-    }
-
-    private MembershipResponseDto createSampleDto(UUID memUuid, String status) {
-        return new MembershipResponseDto(
-                memUuid, 123456L, userUuid, status,
-                LocalDateTime.now(), LocalDate.now().plusYears(1), true,
-                LocalDateTime.now(), "key.pdf", "sigBase64",
-                null, LocalDateTime.now(), LocalDateTime.now()
-        );
     }
 
     @Test
@@ -219,9 +207,6 @@ class MembershipServiceImplTest {
         when(s3Service.downloadFileAsString(anyString(), anyString(), anyString())).thenReturn(sampleHtmlTemplate);
         when(membershipRepository.save(any(Membership.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        MembershipResponseDto responseDto = createSampleDto(memUuid, "ACTIVE");
-        when(membershipMapper.mapToResponse(any())).thenReturn(responseDto);
-
         MembershipResponseDto result = membershipService.signAgreement(memUuid, file, email);
 
         assertNotNull(result);
@@ -232,8 +217,9 @@ class MembershipServiceImplTest {
 
     @Test
     void testGetMyMembership_success() {
+        UUID memUuid = UUID.randomUUID();
         Membership membership = Membership.builder()
-                .uuid(UUID.randomUUID())
+                .uuid(memUuid)
                 .userUuid(userUuid)
                 .status(MembershipStatus.ACTIVE)
                 .build();
@@ -242,19 +228,17 @@ class MembershipServiceImplTest {
         when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
                 .thenReturn(Optional.of(membership));
 
-        MembershipResponseDto responseDto = createSampleDto(membership.getUuid(), "ACTIVE");
-        when(membershipMapper.mapToResponse(membership)).thenReturn(responseDto);
-
         MembershipResponseDto result = membershipService.getMyMembership(email);
 
         assertNotNull(result);
-        assertEquals(membership.getUuid(), result.uuid());
+        assertEquals(memUuid, result.uuid());
     }
 
     @Test
     void testCancelMembership_success() {
+        UUID memUuid = UUID.randomUUID();
         Membership membership = Membership.builder()
-                .uuid(UUID.randomUUID())
+                .uuid(memUuid)
                 .userUuid(userUuid)
                 .status(MembershipStatus.ACTIVE)
                 .build();
@@ -263,9 +247,6 @@ class MembershipServiceImplTest {
         when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
                 .thenReturn(Optional.of(membership));
         when(membershipRepository.save(any(Membership.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        MembershipResponseDto responseDto = createSampleDto(membership.getUuid(), "CANCELLED");
-        when(membershipMapper.mapToResponse(any())).thenReturn(responseDto);
 
         MembershipResponseDto result = membershipService.cancelMembership(email);
 
