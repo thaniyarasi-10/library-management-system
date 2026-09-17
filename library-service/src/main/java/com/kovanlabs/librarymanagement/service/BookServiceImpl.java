@@ -86,6 +86,11 @@ public class BookServiceImpl implements BookService {
                 long totalBooks = salesforceSyncService.getTotalBooksFromSalesforce();
 
                 if (sfBookModels != null && !sfBookModels.isEmpty()) {
+                    for (var sfBook : sfBookModels) {
+                        if (sfBook != null && sfBook.getErrors() != null && !sfBook.getErrors().isEmpty()) {
+                            log.warn("Salesforce error for Book [UUID: {}]: {}", sfBook.getExternalBookUuid(), sfBook.getErrors());
+                        }
+                    }
                     List<BookResponse> sfBooks = BookMapper.INSTANCE.toBookResponseList(sfBookModels);
                     log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL", sfBooks.size());
                     int totalPages = (int) Math.ceil((double) totalBooks / size);

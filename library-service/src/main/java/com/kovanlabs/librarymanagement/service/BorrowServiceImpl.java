@@ -133,6 +133,11 @@ public class BorrowServiceImpl implements BorrowService {
             try {
                 var sfBorrowModels = salesforceSyncService.fetchBorrowsFromSalesforce();
                 if (sfBorrowModels != null && !sfBorrowModels.isEmpty()) {
+                    for (var sfBorrow : sfBorrowModels) {
+                        if (sfBorrow != null && sfBorrow.getErrors() != null && !sfBorrow.getErrors().isEmpty()) {
+                            log.warn("Salesforce error for Borrow [UUID: {}]: {}", sfBorrow.getExternalBorrowUuid(), sfBorrow.getErrors());
+                        }
+                    }
                     List<BorrowResponseDto> sfBorrows = BorrowMapper.INSTANCE.toBorrowResponseList(sfBorrowModels);
                     log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} borrow records from Salesforce SOQL", sfBorrows.size());
                     return sfBorrows;

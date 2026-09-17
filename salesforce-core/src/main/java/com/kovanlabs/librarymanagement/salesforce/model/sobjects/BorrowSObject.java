@@ -5,20 +5,17 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
 import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
-@Data
-@Builder
+@Getter
+@SuperBuilder
 @NoArgsConstructor
-@AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class BorrowSObject {
+public class BorrowSObject extends SObjectBase {
 
-    public static final String SOBJECT_NAME = SObject.BORROW.getObjectName();
     public static final String EXTERNAL_ID_FIELD = BorrowFields.EXTERNAL_BORROW_UUID;
 
     @JsonProperty(BorrowFields.EXTERNAL_BORROW_UUID)

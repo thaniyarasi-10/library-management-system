@@ -3,7 +3,9 @@ package com.kovanlabs.librarymanagement.salesforce.mapping;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.SObjectAttributes;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -40,6 +42,9 @@ public class SalesforceMapper {
                 : user.email();
 
         return ContactSObject.builder()
+                .attributes(SObjectAttributes.builder()
+                    .type(SObject.CONTACT.getObjectName())
+                    .build())
                 .externalUserUuid(user.uuid() != null ? user.uuid().toString() : null)
                 .lastName(lastName)
                 .email(user.email())
