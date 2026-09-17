@@ -292,4 +292,26 @@ class SalesforceSyncServiceTest {
         assertEquals(uuid.toString(), res.get(0).getExternalBorrowUuid());
         assertEquals("BORROWED", res.get(0).getBorrowStatus());
     }
+
+    @Test
+    void fetchBooksFromSalesforce_withErrorsInResponse_logsAndReturnsBooks() {
+        UUID uuid = UUID.randomUUID();
+        ObjectNode root = objectMapper.createObjectNode();
+        ArrayNode records = root.putArray("records");
+
+        ObjectNode record1 = records.addObject();
+        record1.put(BookFields.EXTERNAL_BOOK_UUID, uuid.toString());
+        record1.put(BookFields.TITLE, "Faulty Book");
+        ArrayNode errs = record1.putArray("errors");
+        errs.add("Salesforce partial failure");
+
+        when(clientService.query(anyString())).thenReturn(root);
+
+        List<BookSObject> res = salesforceSyncService.fetchBooksFromSalesforce(10, 0);
+
+        assertNotNull(res);
+        assertEquals(1, res.size());
+        assertEquals(1, res.get(0).getErrors().size());
+        assertEquals("Salesforce partial failure", res.get(0).getErrors().get(0));
+    }
 }

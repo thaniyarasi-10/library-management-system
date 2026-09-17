@@ -5,20 +5,17 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
 import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
-@Data
-@Builder
+@Getter
+@SuperBuilder
 @NoArgsConstructor
-@AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class ContactSObject {
+public class ContactSObject extends SObjectBase {
 
-    public static final String SOBJECT_NAME = SObject.CONTACT.getObjectName();
     public static final String EXTERNAL_ID_FIELD = ContactFields.EXTERNAL_USER_UUID;
 
     @JsonProperty(ContactFields.EXTERNAL_USER_UUID)

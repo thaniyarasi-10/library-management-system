@@ -12,8 +12,4 @@ public enum SObject {
 
     private final String objectName;
 
-    @Override
-    public String toString() {
-        return this.objectName;
-    }
 }

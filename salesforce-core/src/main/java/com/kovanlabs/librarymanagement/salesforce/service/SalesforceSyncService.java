@@ -2,6 +2,10 @@ package com.kovanlabs.librarymanagement.salesforce.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.kovanlabs.librarymanagement.salesforce.builder.SOQLBuilder;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.BookFields;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
+import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
+import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import com.kovanlabs.librarymanagement.salesforce.mapping.SalesforceMapper;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
@@ -73,7 +77,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
         try {
             Map<String, Object> fields = salesforceMapper.toPayloadMap(contact);
             clientService.upsertByExternalId(
-                    ContactSObject.SOBJECT_NAME,
+                    SObject.CONTACT.getObjectName(),
                     ContactSObject.EXTERNAL_ID_FIELD,
                     contact.getExternalUserUuid(),
                     fields
@@ -95,7 +99,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
         try {
             Map<String, Object> fields = salesforceMapper.toPayloadMap(book);
             clientService.upsertByExternalId(
-                    BookSObject.SOBJECT_NAME,
+                    SObject.BOOK.getObjectName(),
                     BookSObject.EXTERNAL_ID_FIELD,
                     book.getExternalBookUuid(),
                     fields
@@ -117,7 +121,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
         try {
             Map<String, Object> fields = salesforceMapper.toPayloadMap(borrow);
             clientService.upsertByExternalId(
-                    BorrowSObject.SOBJECT_NAME,
+                    SObject.BORROW.getObjectName(),
                     BorrowSObject.EXTERNAL_ID_FIELD,
                     borrow.getExternalBorrowUuid(),
                     fields
@@ -146,7 +150,9 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
      * @return List of {@link ContactSObject} instances
      */
     public List<ContactSObject> fetchContactsFromSalesforce() {
-        String soql = SOQLBuilder.fromSObjectClass(ContactSObject.class)
+        String soql = new SOQLBuilder<>()
+                .select(ContactFields.EXTERNAL_USER_UUID, ContactFields.LAST_NAME, ContactFields.EMAIL)
+                .from(SObject.CONTACT)
                 .whereNotNull(ContactSObject.EXTERNAL_ID_FIELD)
                 .build();
 
@@ -155,7 +161,13 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
             return Collections.emptyList();
         }
 
-        return salesforceMapper.toSObjectList(json, ContactSObject.class);
+        List<ContactSObject> contacts = salesforceMapper.toSObjectList(json, ContactSObject.class);
+        for (ContactSObject contact : contacts) {
+            if (contact != null) {
+                log.warn("Salesforce error for Contact [UUID: {}]: {}", contact.getExternalUserUuid(), contact.getErrors());
+            }
+        }
+        return contacts;
     }
 
     /**
@@ -164,8 +176,9 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
      * @return The total count of book records in Salesforce
      */
     public long getTotalBooksFromSalesforce() {
-        String soql = SOQLBuilder.fromSObjectClass(BookSObject.class)
+        String soql = new SOQLBuilder<>()
                 .count()
+                .from(SObject.BOOK)
                 .whereNotNull(BookSObject.EXTERNAL_ID_FIELD)
                 .build();
 
@@ -184,7 +197,9 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
      * @return List of {@link BookSObject} instances
      */
     public List<BookSObject> fetchBooksFromSalesforce(int size, int offset) {
-        String soql = SOQLBuilder.fromSObjectClass(BookSObject.class)
+        String soql = new SOQLBuilder<>()
+                .select(BookFields.EXTERNAL_BOOK_UUID, BookFields.NAME, BookFields.TITLE, BookFields.AUTHOR, BookFields.ISBN, BookFields.COVER_IMAGE_URL)
+                .from(SObject.BOOK)
                 .whereNotNull(BookSObject.EXTERNAL_ID_FIELD)
                 .limit(size)
                 .offset(offset)
@@ -195,7 +210,13 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
             return Collections.emptyList();
         }
 
-        return salesforceMapper.toSObjectList(json, BookSObject.class);
+        List<BookSObject> books = salesforceMapper.toSObjectList(json, BookSObject.class);
+        for (BookSObject book : books) {
+            if (book != null) {
+                log.warn("Salesforce error for Book [UUID: {}]: {}", book.getExternalBookUuid(), book.getErrors());
+            }
+        }
+        return books;
     }
 
     /**
@@ -204,7 +225,9 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
      * @return List of {@link BorrowSObject} instances
      */
     public List<BorrowSObject> fetchBorrowsFromSalesforce() {
-        String soql = SOQLBuilder.fromSObjectClass(BorrowSObject.class)
+        String soql = new SOQLBuilder<>()
+                .select(BorrowFields.EXTERNAL_BORROW_UUID, BorrowFields.BORROW_DATE, BorrowFields.DUE_DATE, BorrowFields.RETURN_DATE, BorrowFields.BORROW_STATUS)
+                .from(SObject.BORROW)
                 .whereNotNull(BorrowSObject.EXTERNAL_ID_FIELD)
                 .build();
 
@@ -213,6 +236,12 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
             return Collections.emptyList();
         }
 
-        return salesforceMapper.toSObjectList(json, BorrowSObject.class);
+        List<BorrowSObject> borrows = salesforceMapper.toSObjectList(json, BorrowSObject.class);
+        for (BorrowSObject borrow : borrows) {
+            if (borrow != null ) {
+                log.warn("Salesforce error for Borrow [UUID: {}]: {}", borrow.getExternalBorrowUuid(), borrow.getErrors());
+            }
+        }
+        return borrows;
     }
 }

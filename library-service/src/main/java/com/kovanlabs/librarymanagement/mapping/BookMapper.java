@@ -3,7 +3,9 @@ package com.kovanlabs.librarymanagement.mapping;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.dto.BookRequest;
 import com.kovanlabs.librarymanagement.dto.BookResponse;
+import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.SObjectAttributes;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.Named;
@@ -16,7 +18,7 @@ import java.util.UUID;
  * MapStruct mapper for Book entity conversions, DTO transformations,
  * and Salesforce Book SObject mappings.
  */
-@Mapper
+@Mapper(imports = {SObject.class, SObjectAttributes.class})
 public interface BookMapper {
 
     BookMapper INSTANCE = Mappers.getMapper(BookMapper.class);
@@ -59,6 +61,7 @@ public interface BookMapper {
      * @param dto The book response DTO
      * @return The mapped {@link BookSObject}
      */
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.BOOK.getObjectName()).build())")
     @Mapping(target = "externalBookUuid", source = "uuid")
     @Mapping(target = "name", source = "title", defaultValue = "Untitled")
     @Mapping(target = "title", source = "title")

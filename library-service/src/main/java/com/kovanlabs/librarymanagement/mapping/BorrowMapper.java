@@ -6,9 +6,11 @@ import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.dto.BorrowResponseDto;
+import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.SObjectAttributes;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.Named;
@@ -22,7 +24,7 @@ import java.util.UUID;
  * MapStruct mapper for Borrow entity conversions, DTO transformations,
  * and Salesforce Borrow SObject mappings using static INSTANCE.
  */
-@Mapper(imports = {LocalDate.class, BorrowStatus.class})
+@Mapper(imports = {LocalDate.class, BorrowStatus.class, SObject.class, SObjectAttributes.class})
 public interface BorrowMapper {
 
     BorrowMapper INSTANCE = Mappers.getMapper(BorrowMapper.class);
@@ -76,6 +78,7 @@ public interface BorrowMapper {
 
     // --- DTO <-> SObject (Salesforce Models) ---
 
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.BORROW.getObjectName()).build())")
     @Mapping(target = "externalBorrowUuid", source = "borrowUuid")
     @Mapping(target = "borrowDate", source = "borrowDate")
     @Mapping(target = "dueDate", source = "dueDate")
@@ -91,6 +94,7 @@ public interface BorrowMapper {
      * @param dto The borrow response DTO
      * @return The mapped {@link ContactSObject}
      */
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.CONTACT.getObjectName()).build())")
     @Mapping(target = "externalUserUuid", source = "userId")
     @Mapping(target = "lastName", source = "userName")
     @Mapping(target = "email", source = "userEmail")
@@ -102,6 +106,7 @@ public interface BorrowMapper {
      * @param dto The borrow response DTO
      * @return The mapped {@link BookSObject}
      */
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.BOOK.getObjectName()).build())")
     @Mapping(target = "externalBookUuid", source = "bookId")
     @Mapping(target = "title", source = "bookTitle")
     @Mapping(target = "name", source = "bookTitle", defaultValue = "Untitled")
