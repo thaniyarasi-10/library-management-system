@@ -130,21 +130,8 @@ public interface BookMapper {
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
     BookResponse toBookResponse(BookSObject sObject);
 
-    /**
-     * Maps a list of {@link BookSObject} records to a list of {@link BookResponse} DTOs.
-     *
-     * @param sObjects List of Book SObjects
-     * @return List of {@link BookResponse} DTOs
-     */
     List<BookResponse> toBookResponseList(List<BookSObject> sObjects);
 
-    /**
-     * Maps a {@link BorrowResponseDto} to a Salesforce {@link BorrowSObject},
-     * including mapped nested Contact and Book SObjects.
-     *
-     * @param dto The borrow response DTO
-     * @return The mapped {@link BorrowSObject}
-     */
     @Mapping(target = "externalBorrowUuid", source = "borrowUuid")
     @Mapping(target = "borrowDate", source = "borrowDate")
     @Mapping(target = "dueDate", source = "dueDate")
