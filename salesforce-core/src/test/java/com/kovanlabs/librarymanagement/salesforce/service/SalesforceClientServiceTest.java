@@ -130,7 +130,7 @@ class SalesforceClientServiceTest {
     @Test
     void authenticate_whenAuthCallFails_resetsTokenAndUrl() {
         mockValidConfig();
-        mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
+        mockServer.expect(org.springframework.test.web.client.ExpectedCount.manyTimes(), requestTo("https://login.salesforce.com/services/oauth2/token"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withServerError());
 

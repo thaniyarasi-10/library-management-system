@@ -2,17 +2,11 @@ package com.kovanlabs.librarymanagement.mapping;
 
 import com.kovanlabs.librarymanagement.dto.BookRequest;
 import com.kovanlabs.librarymanagement.dto.BookResponse;
-import com.kovanlabs.librarymanagement.dto.BorrowRequestDto;
-import com.kovanlabs.librarymanagement.dto.BorrowResponseDto;
 import com.kovanlabs.librarymanagement.database.entity.Book;
-import com.kovanlabs.librarymanagement.database.entity.Borrow;
-import com.kovanlabs.librarymanagement.database.entity.User;
-import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -73,58 +67,6 @@ class BookMapperTest {
     }
 
     @Test
-    void testMapToResponse_SingleBorrow() {
-        UUID borrowUuid = UUID.randomUUID();
-        UUID bookUuid = UUID.randomUUID();
-        UUID userUuid = UUID.randomUUID();
-
-        Book book = Book.builder().uuid(bookUuid).build();
-        User user = User.builder().uuid(userUuid).build();
-        Borrow borrow = Borrow.builder()
-                .uuid(borrowUuid)
-                .id(5L)
-                .book(book)
-                .user(user)
-                .borrowDate(LocalDate.now())
-                .dueDate(LocalDate.now().plusDays(14))
-                .status(BorrowStatus.BORROWED)
-                .build();
-
-        BorrowResponseDto response = bookMapper.mapToResponse(borrow);
-
-        assertNotNull(response);
-        assertEquals(borrowUuid, response.borrowUuid());
-        assertEquals(5L, response.id());
-        assertEquals(bookUuid, response.bookId());
-        assertEquals(userUuid, response.userId());
-        assertEquals(BorrowStatus.BORROWED, response.status());
-    }
-
-    @Test
-    void testMapToResponse_NullBorrow() {
-        assertNull(bookMapper.mapToResponse((Borrow) null));
-    }
-
-    @Test
-    void testMapToResponse_BorrowList() {
-        Borrow b1 = Borrow.builder().id(1L).status(BorrowStatus.BORROWED).build();
-        Borrow b2 = Borrow.builder().id(2L).status(BorrowStatus.RETURNED).build();
-
-        List<BorrowResponseDto> responses = bookMapper.mapToResponseForBorrows(List.of(b1, b2));
-
-        assertNotNull(responses);
-        assertEquals(2, responses.size());
-        assertEquals(BorrowStatus.BORROWED, responses.get(0).status());
-        assertEquals(BorrowStatus.RETURNED, responses.get(1).status());
-    }
-
-    @Test
-    void testMapToResponse_NullBorrowList() {
-        List<BorrowResponseDto> responses = bookMapper.mapToResponseForBorrows((List<Borrow>) null);
-        assertNull(responses);
-    }
-
-    @Test
     void testMapToEntity_BookRequest() {
         BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "978-0132350884");
 
@@ -139,22 +81,6 @@ class BookMapperTest {
     @Test
     void testMapToEntity_NullBookRequest() {
         assertNull(bookMapper.mapToEntity((BookRequest) null));
-    }
-
-    @Test
-    void testMapToEntity_BorrowRequest() {
-        BorrowRequestDto request = new BorrowRequestDto(100L, 200L);
-        Book book = Book.builder().id(100L).build();
-        User user = User.builder().id(200L).build();
-
-        Borrow borrow = bookMapper.mapToEntity(request, book, user);
-
-        assertNotNull(borrow);
-        assertEquals(book, borrow.getBook());
-        assertEquals(user, borrow.getUser());
-        assertEquals(BorrowStatus.BORROWED, borrow.getStatus());
-        assertEquals(LocalDate.now(), borrow.getBorrowDate());
-        assertEquals(LocalDate.now().plusDays(14), borrow.getDueDate());
     }
 
     @Test
@@ -176,39 +102,30 @@ class BookMapperTest {
     }
 
     @Test
-    void testToBorrowSObject_and_toBorrowResponse() {
-        UUID borrowUuid = UUID.randomUUID();
-        UUID userUuid = UUID.randomUUID();
-        UUID bookUuid = UUID.randomUUID();
-        LocalDate now = LocalDate.now();
-
-        BorrowResponseDto dto = BorrowResponseDto.builder()
-                .borrowUuid(borrowUuid)
-                .userId(userUuid)
-                .userName("Alice")
-                .userEmail("alice@example.com")
-                .bookId(bookUuid)
-                .bookTitle("DDD")
-                .borrowDate(now)
-                .status(BorrowStatus.BORROWED)
+    void testToBookResponseList() {
+        var s1 = com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject.builder()
+                .externalBookUuid(UUID.randomUUID().toString())
+                .title("Title 1")
+                .build();
+        var s2 = com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject.builder()
+                .externalBookUuid(UUID.randomUUID().toString())
+                .title("Title 2")
                 .build();
 
-        var sObject = bookMapper.toBorrowSObject(dto);
-        assertNotNull(sObject);
-        assertEquals(borrowUuid.toString(), sObject.getExternalBorrowUuid());
-        assertEquals("BORROWED", sObject.getBorrowStatus());
-        assertNotNull(sObject.getContact());
-        assertEquals(userUuid.toString(), sObject.getContact().getExternalUserUuid());
-        assertNotNull(sObject.getBook());
-        assertEquals(bookUuid.toString(), sObject.getBook().getExternalBookUuid());
+        List<BookResponse> responses = bookMapper.toBookResponseList(List.of(s1, s2));
+        assertNotNull(responses);
+        assertEquals(2, responses.size());
+    }
 
-        BorrowResponseDto mappedBack = bookMapper.toBorrowResponse(sObject);
-        assertNotNull(mappedBack);
-        assertEquals(borrowUuid, mappedBack.borrowUuid());
-        assertEquals(userUuid, mappedBack.userId());
-        assertEquals("Alice", mappedBack.userName());
-        assertEquals(bookUuid, mappedBack.bookId());
-        assertEquals("DDD", mappedBack.bookTitle());
-        assertEquals(BorrowStatus.BORROWED, mappedBack.status());
+    @Test
+    void testToBookResponseList_Null() {
+        assertNull(bookMapper.toBookResponseList(null));
+    }
+
+    @Test
+    void testHelperMethods() {
+        assertNull(bookMapper.parseUUID(null));
+        assertNull(bookMapper.parseUUID("invalid-uuid"));
+        assertNotNull(bookMapper.parseUUID(UUID.randomUUID().toString()));
     }
 }

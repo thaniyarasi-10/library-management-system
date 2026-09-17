@@ -2,7 +2,7 @@ package com.kovanlabs.librarymanagement.service;
 
 import com.kovanlabs.librarymanagement.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.dto.BorrowResponseDto;
-import com.kovanlabs.librarymanagement.mapping.BookMapper;
+import com.kovanlabs.librarymanagement.mapping.BorrowMapper;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
@@ -19,6 +19,7 @@ import java.util.UUID;
 import java.util.List;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
 import com.kovanlabs.librarymanagement.service.MembershipService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -27,44 +28,15 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class BorrowServiceImpl implements BorrowService {
 
     private final BorrowRepository borrowRepository;
     private final BookRepository bookRepository;
     private final UserRepository userRepository;
     private final UserFineChecker userFineChecker;
-    private final BookMapper bookMapper;
     private final MembershipService membershipService;
     private final SalesforceSyncService salesforceSyncService;
-
-    /**
-     * Constructs {@link BorrowServiceImpl} with injected repositories, checkers, and services.
-     *
-     * @param borrowRepository Repository for borrow transactions
-     * @param bookRepository Repository for books
-     * @param userRepository Repository for users
-     * @param userFineChecker Checker for pending user fines
-     * @param bookMapper MapStruct mapper for conversions
-     * @param membershipService Service to verify active membership
-     * @param salesforceSyncService Service to synchronize with Salesforce
-     */
-    public BorrowServiceImpl(
-            BorrowRepository borrowRepository,
-            BookRepository bookRepository,
-            UserRepository userRepository,
-            UserFineChecker userFineChecker,
-            BookMapper bookMapper,
-            MembershipService membershipService,
-            SalesforceSyncService salesforceSyncService) {
-
-        this.borrowRepository = borrowRepository;
-        this.bookRepository = bookRepository;
-        this.userRepository = userRepository;
-        this.userFineChecker = userFineChecker;
-        this.bookMapper = bookMapper;
-        this.membershipService = membershipService;
-        this.salesforceSyncService = salesforceSyncService;
-    }
 
     /**
      * Validates membership status and pending fines, persists borrow record, and syncs with Salesforce.
@@ -96,14 +68,14 @@ public class BorrowServiceImpl implements BorrowService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Book not found with id: " + borrowRequestDto.bookId()));
 
-        Borrow borrow = bookMapper.mapToEntity(borrowRequestDto, book, user);
+        Borrow borrow = BorrowMapper.INSTANCE.mapToEntity(borrowRequestDto, book, user);
 
         Borrow savedBorrow = borrowRepository.save(borrow);
-        BorrowResponseDto response = bookMapper.mapToResponse(savedBorrow);
+        BorrowResponseDto response = BorrowMapper.INSTANCE.mapToResponse(savedBorrow);
 
         if (salesforceSyncService != null) {
             try {
-                salesforceSyncService.syncBorrow(bookMapper.toBorrowSObject(response));
+                salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(response));
             } catch (Exception e) {
                 log.error("Salesforce dual-write failed for borrow creation: {}", e.getMessage());
             }
@@ -137,11 +109,11 @@ public class BorrowServiceImpl implements BorrowService {
         borrow.setStatus(BorrowStatus.RETURNED);
 
         Borrow updatedBorrow = borrowRepository.save(borrow);
-        BorrowResponseDto response = bookMapper.mapToResponse(updatedBorrow);
+        BorrowResponseDto response = BorrowMapper.INSTANCE.mapToResponse(updatedBorrow);
 
         if (salesforceSyncService != null) {
             try {
-                salesforceSyncService.syncBorrow(bookMapper.toBorrowSObject(response));
+                salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(response));
             } catch (Exception e) {
                 log.error("Salesforce dual-write failed for borrow return: {}", e.getMessage());
             }
@@ -161,7 +133,7 @@ public class BorrowServiceImpl implements BorrowService {
             try {
                 var sfBorrowModels = salesforceSyncService.fetchBorrowsFromSalesforce();
                 if (sfBorrowModels != null && !sfBorrowModels.isEmpty()) {
-                    List<BorrowResponseDto> sfBorrows = bookMapper.toBorrowResponseList(sfBorrowModels);
+                    List<BorrowResponseDto> sfBorrows = BorrowMapper.INSTANCE.toBorrowResponseList(sfBorrowModels);
                     log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} borrow records from Salesforce SOQL", sfBorrows.size());
                     return sfBorrows;
                 }
@@ -171,7 +143,7 @@ public class BorrowServiceImpl implements BorrowService {
         }
         log.info("[DATA SOURCE: MYSQL] Fetching borrow records from MySQL database");
         return borrowRepository.findAllByOrderByIdDesc().stream()
-                .map(bookMapper::mapToResponse)
+                .map(BorrowMapper.INSTANCE::mapToResponse)
                 .toList();
     }
 
@@ -187,7 +159,7 @@ public class BorrowServiceImpl implements BorrowService {
             return java.util.Collections.emptyList();
         }
         return borrowRepository.findByUser_IdOrderByIdDesc(userId).stream()
-                .map(bookMapper::mapToResponse)
+                .map(BorrowMapper.INSTANCE::mapToResponse)
                 .toList();
     }
 

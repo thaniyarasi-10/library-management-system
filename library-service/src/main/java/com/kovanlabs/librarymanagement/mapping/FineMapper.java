@@ -3,14 +3,17 @@ package com.kovanlabs.librarymanagement.mapping;
 import com.kovanlabs.librarymanagement.database.entity.Fine;
 import com.kovanlabs.librarymanagement.dto.FineResponseDto;
 import org.mapstruct.Mapper;
+import org.mapstruct.factory.Mappers;
 
 import java.util.List;
 
 /**
  * MapStruct mapper for converting {@link Fine} database entities to {@link FineResponseDto}.
  */
-@Mapper(componentModel = "spring")
+@Mapper
 public interface FineMapper {
+
+    FineMapper INSTANCE = Mappers.getMapper(FineMapper.class);
 
     /**
      * Maps a single {@link Fine} entity to a {@link FineResponseDto}.

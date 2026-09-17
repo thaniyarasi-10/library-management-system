@@ -44,7 +44,6 @@ public class MembershipServiceImpl implements MembershipService {
     private final MembershipRepository membershipRepository;
     private final UserRepository userRepository;
     private final S3Service s3Service;
-    private final MembershipMapper membershipMapper;
 
     @Value("${aws.s3.membership.bucket-name}")
     private String membershipBucketName;
@@ -202,7 +201,7 @@ public class MembershipServiceImpl implements MembershipService {
 
             evictActiveMembershipCache(user.getUuid());
 
-            return membershipMapper.mapToResponse(updated);
+            return MembershipMapper.INSTANCE.mapToResponse(updated);
 
         } catch (ResponseStatusException e) {
             throw e;
@@ -231,7 +230,7 @@ public class MembershipServiceImpl implements MembershipService {
                         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                                 "No membership application found")));
 
-        return membershipMapper.mapToResponse(membership);
+        return MembershipMapper.INSTANCE.mapToResponse(membership);
     }
 
     /**
@@ -263,7 +262,7 @@ public class MembershipServiceImpl implements MembershipService {
         evictActiveMembershipCache(user.getUuid());
         log.info("Membership cancelled successfully for user: {}", email);
 
-        return membershipMapper.mapToResponse(updated);
+        return MembershipMapper.INSTANCE.mapToResponse(updated);
     }
 
     /**
