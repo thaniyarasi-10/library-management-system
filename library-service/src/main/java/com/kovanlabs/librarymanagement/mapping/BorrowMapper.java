@@ -32,8 +32,7 @@ public interface BorrowMapper {
     // --- Entity <-> DTO ---
 
     /**
-     * Maps a {@link Borrow} record and its nested relationships to a
-     * {@link BorrowResponseDto}.
+     * Maps a {@link Borrow} record and its nested relationships to a {@link BorrowResponseDto}.
      *
      * @param borrow The borrow entity
      * @return The mapped {@link BorrowResponseDto}
@@ -51,8 +50,7 @@ public interface BorrowMapper {
     BorrowResponseDto mapToResponse(Borrow borrow);
 
     /**
-     * Maps a list of {@link Borrow} entities to a list of
-     * {@link BorrowResponseDto}s.
+     * Maps a list of {@link Borrow} entities to a list of {@link BorrowResponseDto}s.
      *
      * @param borrows List of borrow entities
      * @return List of mapped {@link BorrowResponseDto}s
@@ -63,8 +61,8 @@ public interface BorrowMapper {
      * Constructs a new {@link Borrow} entity associated with a given Book and User.
      *
      * @param request The borrow request DTO
-     * @param book    The book being borrowed
-     * @param user    The user borrowing the book
+     * @param book The book being borrowed
+     * @param user The user borrowing the book
      * @return The populated {@link Borrow} entity
      */
     @Mapping(target = "id", ignore = true)
