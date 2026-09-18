@@ -22,4 +22,7 @@ public class SalesforceConfig {
 
     @Value("${salesforce.api-version:v60.0}")
     private String apiVersion;
+
+    @Value("${salesforce.max-retries:3}")
+    private int maxRetries;
 }

@@ -51,6 +51,8 @@ public interface BookMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "coverImageUrl", ignore = true)
     @Mapping(target = "coverImageKey", ignore = true)
+    @Mapping(target = "salesforceSyncStatus", ignore = true)
+    @Mapping(target = "salesforceRetryCount", ignore = true)
     Book mapToEntity(BookRequest request);
 
     // --- DTO <-> SObject (Salesforce Models) ---

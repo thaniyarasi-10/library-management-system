@@ -21,6 +21,9 @@ public class ContactSObject extends SObjectBase {
     @JsonProperty(ContactFields.EXTERNAL_USER_UUID)
     private String externalUserUuid;
 
+    @JsonProperty(ContactFields.LEGACY_USER_ID)
+    private Long legacyUserId;
+
     @JsonProperty(ContactFields.LAST_NAME)
     private String lastName;
 

@@ -3,6 +3,7 @@ package com.kovanlabs.librarymanagement.salesforce.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kovanlabs.librarymanagement.salesforce.config.SalesforceConfig;
+import com.kovanlabs.librarymanagement.salesforce.exception.SalesforceSyncException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -130,7 +131,9 @@ class SalesforceClientServiceTest {
     @Test
     void authenticate_whenAuthCallFails_resetsTokenAndUrl() {
         mockValidConfig();
-        mockServer.expect(org.springframework.test.web.client.ExpectedCount.manyTimes(), requestTo("https://login.salesforce.com/services/oauth2/token"))
+        mockServer
+                .expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                        requestTo("https://login.salesforce.com/services/oauth2/token"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withServerError());
 
@@ -156,7 +159,9 @@ class SalesforceClientServiceTest {
 
         String queryResponseBody = "{\"totalSize\":1,\"done\":true,\"records\":[{\"Name\":\"Test Book\"}]}";
 
-        mockServer.expect(requestTo("https://mock.salesforce.com/services/data/v58.0/query?q=SELECT%20Name%20FROM%20Book__c"))
+        mockServer
+                .expect(requestTo(
+                        "https://mock.salesforce.com/services/data/v58.0/query?q=SELECT%20Name%20FROM%20Book__c"))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer mock-access-token"))
                 .andRespond(withSuccess(queryResponseBody, MediaType.APPLICATION_JSON));
@@ -174,7 +179,9 @@ class SalesforceClientServiceTest {
         mockValidConfig();
         mockSuccessfulAuth();
 
-        mockServer.expect(requestTo("https://mock.salesforce.com/services/data/v58.0/query?q=SELECT%20Name%20FROM%20Book__c"))
+        mockServer
+                .expect(requestTo(
+                        "https://mock.salesforce.com/services/data/v58.0/query?q=SELECT%20Name%20FROM%20Book__c"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withServerError());
 
@@ -186,10 +193,11 @@ class SalesforceClientServiceTest {
     // --- upsertByExternalId() tests ---
 
     @Test
-    void upsertByExternalId_whenNotConfigured_returnsImmediately() {
+    void upsertByExternalId_whenNotConfigured_throwsSalesforceSyncException() {
         when(salesforceConfig.isEnabled()).thenReturn(false);
 
-        clientService.upsertByExternalId("Book__c", "External_Book_UUID__c", "uuid-123", Map.of("Name", "Book"));
+        assertThrows(SalesforceSyncException.class, () -> clientService.upsertByExternalId("Book__c",
+                "External_Book_UUID__c", "uuid-123", Map.of("Name", "Book")));
         mockServer.verify();
     }
 
@@ -198,29 +206,29 @@ class SalesforceClientServiceTest {
         mockValidConfig();
         mockSuccessfulAuth();
 
-        mockServer.expect(requestTo("https://mock.salesforce.com/services/data/v58.0/sobjects/Book__c/External_Book_UUID__c/uuid-123"))
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/sobjects/Book__c/External_Book_UUID__c/uuid-123"))
                 .andExpect(method(HttpMethod.PATCH))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer mock-access-token"))
                 .andExpect(header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE))
                 .andRespond(withNoContent());
 
-        assertDoesNotThrow(() ->
-                clientService.upsertByExternalId("Book__c", "External_Book_UUID__c", "uuid-123", Map.of("Name", "Clean Architecture"))
-        );
+        assertDoesNotThrow(() -> clientService.upsertByExternalId("Book__c", "External_Book_UUID__c", "uuid-123",
+                Map.of("Name", "Clean Architecture")));
         mockServer.verify();
     }
 
     @Test
-    void upsertByExternalId_whenServerError_handlesGracefully() {
+    void upsertByExternalId_whenServerError_throwsSalesforceSyncException() {
         mockValidConfig();
         mockSuccessfulAuth();
 
-        mockServer.expect(requestTo("https://mock.salesforce.com/services/data/v58.0/sobjects/Book__c/External_Book_UUID__c/uuid-123"))
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/sobjects/Book__c/External_Book_UUID__c/uuid-123"))
                 .andExpect(method(HttpMethod.PATCH))
                 .andRespond(withServerError());
 
-        assertDoesNotThrow(() ->
-                clientService.upsertByExternalId("Book__c", "External_Book_UUID__c", "uuid-123", Map.of("Name", "Error Book"))
-        );
+        assertThrows(SalesforceSyncException.class, () -> clientService.upsertByExternalId("Book__c",
+                "External_Book_UUID__c", "uuid-123", Map.of("Name", "Error Book")));
     }
 }

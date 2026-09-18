@@ -7,6 +7,7 @@ import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.aws.s3.dto.S3UploadResponse;
 import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
 import com.kovanlabs.librarymanagement.database.entity.Book;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
 import lombok.RequiredArgsConstructor;
@@ -60,8 +61,15 @@ public class BookServiceImpl implements BookService {
         if (salesforceSyncService != null) {
             try {
                 salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(response));
+                savedBook.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                bookRepository.save(savedBook);
             } catch (Exception e) {
-                log.error("Salesforce dual-write failed for book creation: {}", e.getMessage());
+                int retryCount = savedBook.getSalesforceRetryCount() + 1;
+                savedBook.setSalesforceRetryCount(retryCount);
+                savedBook.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+                bookRepository.save(savedBook);
+                log.error("Salesforce dual-write failed for book creation [Book ID: {}, UUID: {}, Operation: CREATE, RetryCount: {}]: {}",
+                        savedBook.getId(), savedBook.getUuid(), retryCount, e.getMessage());
             }
         }
 
@@ -196,8 +204,15 @@ public class BookServiceImpl implements BookService {
         if (salesforceSyncService != null) {
             try {
                 salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(response));
+                updatedBook.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                bookRepository.save(updatedBook);
             } catch (Exception e) {
-                log.error("Salesforce dual-write failed for book update: {}", e.getMessage());
+                int retryCount = updatedBook.getSalesforceRetryCount() + 1;
+                updatedBook.setSalesforceRetryCount(retryCount);
+                updatedBook.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+                bookRepository.save(updatedBook);
+                log.error("Salesforce dual-write failed for book update [Book ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
+                        updatedBook.getId(), updatedBook.getUuid(), retryCount, e.getMessage());
             }
         }
 

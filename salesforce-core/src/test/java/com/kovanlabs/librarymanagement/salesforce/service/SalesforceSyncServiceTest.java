@@ -7,6 +7,7 @@ import com.kovanlabs.librarymanagement.salesforce.constant.fields.BookFields;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
 import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
+import com.kovanlabs.librarymanagement.salesforce.exception.SalesforceSyncException;
 import com.kovanlabs.librarymanagement.salesforce.mapping.SalesforceMapper;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
@@ -85,12 +86,13 @@ class SalesforceSyncServiceTest {
     }
 
     @Test
-    void syncUser_whenClientThrowsException_handlesGracefully() {
+    void syncUser_whenClientThrowsException_propagatesException() {
         UserResponse user = new UserResponse(UUID.randomUUID(), 1L, "John", "john@example.com", 0);
-        doThrow(new RuntimeException("Salesforce connection error"))
+        doThrow(new SalesforceSyncException("Salesforce connection error"))
                 .when(clientService).upsertByExternalId(anyString(), anyString(), anyString(), anyMap());
 
-        assertDoesNotThrow(() -> salesforceSyncService.syncUser(user));
+        assertThrows(SalesforceSyncException.class,
+                () -> salesforceSyncService.syncUser(user));
     }
 
     // --- syncBook() tests ---
@@ -129,12 +131,13 @@ class SalesforceSyncServiceTest {
     }
 
     @Test
-    void syncBook_whenClientThrowsException_handlesGracefully() {
+    void syncBook_whenClientThrowsException_propagatesException() {
         BookSObject book = BookSObject.builder().externalBookUuid(UUID.randomUUID().toString()).title("Design Patterns").build();
-        doThrow(new RuntimeException("Upsert failed"))
+        doThrow(new SalesforceSyncException("Upsert failed"))
                 .when(clientService).upsertByExternalId(anyString(), anyString(), anyString(), anyMap());
 
-        assertDoesNotThrow(() -> salesforceSyncService.syncBook(book));
+        assertThrows(SalesforceSyncException.class,
+                () -> salesforceSyncService.syncBook(book));
     }
 
     // --- syncBorrow() tests ---
@@ -169,7 +172,6 @@ class SalesforceSyncServiceTest {
         verify(clientService).upsertByExternalId(eq(SObject.BORROW.getObjectName()), eq(BorrowFields.EXTERNAL_BORROW_UUID), eq(borrowUuid.toString()), captor.capture());
 
         Map<String, Object> fields = captor.getValue();
-        assertEquals(borrowUuid.toString(), fields.get(BorrowFields.EXTERNAL_BORROW_UUID));
         assertEquals("2026-09-01", fields.get(BorrowFields.BORROW_DATE));
         assertEquals("2026-09-15", fields.get(BorrowFields.DUE_DATE));
         assertEquals("2026-09-10", fields.get(BorrowFields.RETURN_DATE));
@@ -179,12 +181,13 @@ class SalesforceSyncServiceTest {
     }
 
     @Test
-    void syncBorrow_whenClientThrowsException_handlesGracefully() {
+    void syncBorrow_whenClientThrowsException_propagatesException() {
         BorrowSObject borrow = BorrowSObject.builder().externalBorrowUuid(UUID.randomUUID().toString()).build();
-        doThrow(new RuntimeException("Upsert failed"))
+        doThrow(new SalesforceSyncException("Upsert failed"))
                 .when(clientService).upsertByExternalId(anyString(), anyString(), anyString(), anyMap());
 
-        assertDoesNotThrow(() -> salesforceSyncService.syncBorrow(borrow));
+        assertThrows(SalesforceSyncException.class,
+                () -> salesforceSyncService.syncBorrow(borrow));
     }
 
     // --- fetchUsersFromSalesforce() tests ---
@@ -213,6 +216,7 @@ class SalesforceSyncServiceTest {
         record1.put(ContactFields.LAST_NAME, "Smith");
         record1.put(ContactFields.EMAIL, "smith@example.com");
         record1.put(ContactFields.EXTERNAL_USER_UUID, validUuid.toString());
+        record1.put(ContactFields.LEGACY_USER_ID, "100");
 
         when(clientService.query(anyString())).thenReturn(root);
 
@@ -221,6 +225,7 @@ class SalesforceSyncServiceTest {
         assertNotNull(users);
         assertEquals(1, users.size());
         assertEquals(validUuid, users.get(0).uuid());
+        assertEquals(100L, users.get(0).id());
         assertEquals("Smith", users.get(0).name());
     }
 

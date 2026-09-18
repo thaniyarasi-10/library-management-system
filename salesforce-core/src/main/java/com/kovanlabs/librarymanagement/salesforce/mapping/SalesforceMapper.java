@@ -17,7 +17,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Mapper component for converting between User DTOs, JSON payloads, and Salesforce SObjects.
+ * Mapper component for converting between User DTOs, JSON payloads, and
+ * Salesforce SObjects.
  */
 @Component
 @RequiredArgsConstructor
@@ -31,7 +32,8 @@ public class SalesforceMapper {
      * Converts a {@link UserResponse} DTO to a {@link ContactSObject} model.
      *
      * @param user The user response DTO
-     * @return The populated {@link ContactSObject}, or {@code null} if input is null
+     * @return The populated {@link ContactSObject}, or {@code null} if input is
+     *         null
      */
     public ContactSObject toContactSObject(UserResponse user) {
         if (user == null) {
@@ -43,30 +45,35 @@ public class SalesforceMapper {
 
         return ContactSObject.builder()
                 .attributes(SObjectAttributes.builder()
-                    .type(SObject.CONTACT.getObjectName())
-                    .build())
+                        .type(SObject.CONTACT.getObjectName())
+                        .build())
                 .externalUserUuid(user.uuid() != null ? user.uuid().toString() : null)
+                .legacyUserId(user.id())
                 .lastName(lastName)
                 .email(user.email())
                 .build();
     }
 
     /**
-     * Converts a {@link ContactSObject} model from Salesforce to a {@link UserResponse} DTO.
+     * Converts a {@link ContactSObject} model from Salesforce to a
+     * {@link UserResponse} DTO.
      *
      * @param contact The Contact SObject
-     * @return The converted {@link UserResponse} DTO, or {@code null} if input is null
+     * @return The converted {@link UserResponse} DTO, or {@code null} if input is
+     *         null
      */
     public UserResponse toUserResponse(ContactSObject contact) {
         if (contact == null) {
             return null;
         }
         UUID uuid = parseUUID(contact.getExternalUserUuid());
-        return new UserResponse(uuid, null, contact.getLastName(), contact.getEmail(), 0);
+        Long id = contact.getLegacyUserId();
+        return new UserResponse(uuid, id, contact.getLastName(), contact.getEmail(), 0);
     }
 
     /**
-     * Converts a list of {@link ContactSObject} models to a list of {@link UserResponse} DTOs.
+     * Converts a list of {@link ContactSObject} models to a list of
+     * {@link UserResponse} DTOs.
      *
      * @param contacts The list of Contact SObjects
      * @return List of converted {@link UserResponse} DTOs
@@ -83,7 +90,8 @@ public class SalesforceMapper {
     // --- SObject -> Map Payload (Writes) ---
 
     /**
-     * Converts an SObject model into a key-value Map payload suitable for Salesforce REST API requests.
+     * Converts an SObject model into a key-value Map payload suitable for
+     * Salesforce REST API requests.
      *
      * @param sObject The SObject model instance
      * @return Map containing Salesforce field names and values
@@ -92,16 +100,18 @@ public class SalesforceMapper {
         if (sObject == null) {
             return Collections.emptyMap();
         }
-        return objectMapper.convertValue(sObject, new TypeReference<Map<String, Object>>() {});
+        return objectMapper.convertValue(sObject, new TypeReference<Map<String, Object>>() {
+        });
     }
 
     // --- JSON / JsonNode to SObject Deserialization ---
 
     /**
-     * Deserializes a single Jackson {@link JsonNode} record into an SObject instance of the specified class.
+     * Deserializes a single Jackson {@link JsonNode} record into an SObject
+     * instance of the specified class.
      *
-     * @param <T> The target SObject type
-     * @param node The JSON node to deserialize
+     * @param <T>   The target SObject type
+     * @param node  The JSON node to deserialize
      * @param clazz The class of the target SObject
      * @return The deserialized SObject instance, or {@code null} on failure
      */
@@ -117,10 +127,11 @@ public class SalesforceMapper {
     }
 
     /**
-     * Deserializes a root Salesforce query response containing a "records" array into a list of SObjects.
+     * Deserializes a root Salesforce query response containing a "records" array
+     * into a list of SObjects.
      *
-     * @param <T> The target SObject type
-     * @param root The root JSON response node
+     * @param <T>   The target SObject type
+     * @param root  The root JSON response node
      * @param clazz The class of the target SObject
      * @return List of deserialized SObjects
      */
@@ -142,7 +153,8 @@ public class SalesforceMapper {
      * Safely parses a UUID string without throwing exceptions.
      *
      * @param str The UUID string to parse
-     * @return The parsed {@link UUID}, or {@code null} if parsing fails or input is blank
+     * @return The parsed {@link UUID}, or {@code null} if parsing fails or input is
+     *         blank
      */
     private static UUID parseUUID(String str) {
         if (str == null || str.isBlank()) {
@@ -154,4 +166,5 @@ public class SalesforceMapper {
             return null;
         }
     }
+
 }

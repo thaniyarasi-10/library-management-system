@@ -39,6 +39,7 @@ class SalesforceMapperTest {
 
         assertNotNull(sObject);
         assertEquals(uuid.toString(), sObject.getExternalUserUuid());
+        assertEquals(1L, sObject.getLegacyUserId());
         assertEquals("John Doe", sObject.getLastName());
         assertEquals("john@example.com", sObject.getEmail());
 
@@ -46,6 +47,7 @@ class SalesforceMapperTest {
         assertEquals("John Doe", payload.get(ContactFields.LAST_NAME));
         assertEquals("john@example.com", payload.get(ContactFields.EMAIL));
         assertEquals(uuid.toString(), payload.get(ContactFields.EXTERNAL_USER_UUID));
+        assertEquals(1L, ((Number) payload.get(ContactFields.LEGACY_USER_ID)).longValue());
     }
 
     @Test
@@ -80,6 +82,20 @@ class SalesforceMapperTest {
         assertEquals("1234567890", payload.get(BookFields.ISBN));
         assertEquals("http://cover.jpg", payload.get(BookFields.COVER_IMAGE_URL));
         assertEquals(uuid.toString(), payload.get(BookFields.EXTERNAL_BOOK_UUID));
+        assertFalse(payload.containsKey("Id"));
+    }
+
+    @Test
+    void toPayloadMap_withBookSObjectHavingId_excludesIdFromPayload() {
+        BookSObject sObject = BookSObject.builder()
+                .id("a00xx0000001234AAA")
+                .externalBookUuid(UUID.randomUUID().toString())
+                .name("Clean Architecture")
+                .title("Clean Architecture")
+                .build();
+
+        Map<String, Object> payload = mapper.toPayloadMap(sObject);
+        assertFalse(payload.containsKey("Id"));
     }
 
     @Test
@@ -113,6 +129,7 @@ class SalesforceMapperTest {
         UUID uuid = UUID.randomUUID();
         ContactSObject contact = ContactSObject.builder()
                 .externalUserUuid(uuid.toString())
+                .legacyUserId(42L)
                 .lastName("Jane")
                 .email("jane@example.com")
                 .build();
@@ -120,6 +137,7 @@ class SalesforceMapperTest {
         UserResponse res = mapper.toUserResponse(contact);
         assertNotNull(res);
         assertEquals(uuid, res.uuid());
+        assertEquals(42L, res.id());
         assertEquals("Jane", res.name());
         assertEquals("jane@example.com", res.email());
     }

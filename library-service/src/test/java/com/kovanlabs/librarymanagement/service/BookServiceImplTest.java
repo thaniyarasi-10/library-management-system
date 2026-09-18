@@ -75,25 +75,27 @@ class BookServiceImplTest {
     @Test
     void createBook_shouldSaveAndReturnBookResponse() {
         BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "9780132350884");
-        when(bookRepository.save(any(Book.class))).thenReturn(book1);
+        when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
 
         BookResponse response = bookService.createBook(request);
 
         assertNotNull(response);
         assertEquals("Clean Code", response.title());
         verify(salesforceSyncService).syncBook(any(BookSObject.class));
+        verify(bookRepository, times(2)).save(any(Book.class));
     }
 
     @Test
-    void createBook_whenSalesforceFails_shouldStillReturnResponse() {
+    void createBook_whenSalesforceFails_shouldStillReturnResponseAndMarkPending() {
         BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "9780132350884");
-        when(bookRepository.save(any(Book.class))).thenReturn(book1);
+        when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
         doThrow(new RuntimeException("SF Error")).when(salesforceSyncService).syncBook(any(BookSObject.class));
 
         BookResponse response = bookService.createBook(request);
 
         assertNotNull(response);
         assertEquals("Clean Code", response.title());
+        verify(bookRepository, times(2)).save(any(Book.class));
     }
 
     @Test
@@ -168,6 +170,21 @@ class BookServiceImplTest {
         assertEquals("Clean Architecture", response.title());
         assertEquals("9780134494166", response.isbn());
         verify(salesforceSyncService).syncBook(any());
+        assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.SUCCESS, book1.getSalesforceSyncStatus());
+    }
+
+    @Test
+    void updateBook_whenSalesforceFails_shouldStillReturnResponseAndMarkPending() {
+        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166");
+        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doThrow(new RuntimeException("SF update error")).when(salesforceSyncService).syncBook(any());
+
+        BookResponse response = bookService.updateBook(1L, updateRequest);
+
+        assertEquals("Clean Architecture", response.title());
+        assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.PENDING, book1.getSalesforceSyncStatus());
+        assertEquals(1, book1.getSalesforceRetryCount());
     }
 
     @Test

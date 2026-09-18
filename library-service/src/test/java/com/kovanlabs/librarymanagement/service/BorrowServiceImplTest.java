@@ -45,6 +45,9 @@ class BorrowServiceImplTest {
     @Mock
     private MembershipService membershipService;
 
+    @Mock
+    private com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService salesforceSyncService;
+
     @InjectMocks
     private BorrowServiceImpl borrowService;
 
@@ -102,7 +105,41 @@ class BorrowServiceImplTest {
         assertNotNull(response);
         assertEquals(BorrowStatus.BORROWED, response.status());
         verify(userFineChecker, times(1)).hasPendingFines(1L);
-        verify(borrowRepository, times(1)).save(any(Borrow.class));
+        verify(borrowRepository, times(2)).save(any(Borrow.class));
+    }
+
+    @Test
+    @DisplayName("borrowBook should set status SUCCESS when salesforce sync succeeds")
+    void borrowBook_whenSalesforceSyncSucceeds_shouldMarkStatusSuccess() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BorrowResponseDto response = borrowService.borrowBook(request);
+
+        assertNotNull(response);
+        verify(salesforceSyncService).syncBorrow(any());
+        verify(borrowRepository, atLeast(2)).save(any(Borrow.class));
+    }
+
+    @Test
+    @DisplayName("borrowBook should increment retry count when salesforce sync fails")
+    void borrowBook_whenSalesforceSyncFails_shouldIncrementRetryAndKeepPending() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+        doThrow(new RuntimeException("SF Error")).when(salesforceSyncService).syncBorrow(any());
+
+        BorrowResponseDto response = borrowService.borrowBook(request);
+
+        assertNotNull(response);
+        verify(borrowRepository, atLeast(2)).save(any(Borrow.class));
     }
 
     @Test
@@ -118,7 +155,24 @@ class BorrowServiceImplTest {
         assertEquals(BorrowStatus.RETURNED, response.status());
         assertNotNull(response.returnedDate());
         verify(userFineChecker, times(1)).hasPendingFines(1L);
-        verify(borrowRepository, times(1)).save(borrow);
+        verify(borrowRepository, times(2)).save(borrow);
+        assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.SUCCESS, borrow.getSalesforceSyncStatus());
+    }
+
+    @Test
+    @DisplayName("returnBook should increment retry count when salesforce sync fails")
+    void returnBook_whenSalesforceSyncFails_shouldIncrementRetryAndKeepPending() {
+        when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+        doThrow(new RuntimeException("SF Return Error")).when(salesforceSyncService).syncBorrow(any());
+
+        BorrowResponseDto response = borrowService.returnBook(100L);
+
+        assertNotNull(response);
+        assertEquals(BorrowStatus.RETURNED, response.status());
+        assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.PENDING, borrow.getSalesforceSyncStatus());
+        assertEquals(1, borrow.getSalesforceRetryCount());
     }
 
     @Test

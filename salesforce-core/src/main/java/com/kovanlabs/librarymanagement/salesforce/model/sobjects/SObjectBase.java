@@ -26,7 +26,7 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class SObjectBase {
 
-    @JsonProperty("Id")
+    @JsonProperty(value = "Id", access = JsonProperty.Access.WRITE_ONLY)
     private String id;
 
     @JsonProperty("success")

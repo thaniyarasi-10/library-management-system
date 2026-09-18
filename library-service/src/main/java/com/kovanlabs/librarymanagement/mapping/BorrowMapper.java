@@ -24,7 +24,7 @@ import java.util.UUID;
  * MapStruct mapper for Borrow entity conversions, DTO transformations,
  * and Salesforce Borrow SObject mappings using static INSTANCE.
  */
-@Mapper(imports = {LocalDate.class, BorrowStatus.class, SObject.class, SObjectAttributes.class})
+@Mapper(imports = { LocalDate.class, BorrowStatus.class, SObject.class, SObjectAttributes.class })
 public interface BorrowMapper {
 
     BorrowMapper INSTANCE = Mappers.getMapper(BorrowMapper.class);
@@ -32,7 +32,8 @@ public interface BorrowMapper {
     // --- Entity <-> DTO ---
 
     /**
-     * Maps a {@link Borrow} record and its nested relationships to a {@link BorrowResponseDto}.
+     * Maps a {@link Borrow} record and its nested relationships to a
+     * {@link BorrowResponseDto}.
      *
      * @param borrow The borrow entity
      * @return The mapped {@link BorrowResponseDto}
@@ -50,7 +51,8 @@ public interface BorrowMapper {
     BorrowResponseDto mapToResponse(Borrow borrow);
 
     /**
-     * Maps a list of {@link Borrow} entities to a list of {@link BorrowResponseDto}s.
+     * Maps a list of {@link Borrow} entities to a list of
+     * {@link BorrowResponseDto}s.
      *
      * @param borrows List of borrow entities
      * @return List of mapped {@link BorrowResponseDto}s
@@ -61,8 +63,8 @@ public interface BorrowMapper {
      * Constructs a new {@link Borrow} entity associated with a given Book and User.
      *
      * @param request The borrow request DTO
-     * @param book The book being borrowed
-     * @param user The user borrowing the book
+     * @param book    The book being borrowed
+     * @param user    The user borrowing the book
      * @return The populated {@link Borrow} entity
      */
     @Mapping(target = "id", ignore = true)
@@ -74,6 +76,8 @@ public interface BorrowMapper {
     @Mapping(target = "returnedDate", ignore = true)
     @Mapping(target = "status", expression = "java(BorrowStatus.BORROWED)")
     @Mapping(target = "rewardProcessed", ignore = true)
+    @Mapping(target = "salesforceSyncStatus", ignore = true)
+    @Mapping(target = "salesforceRetryCount", ignore = true)
     Borrow mapToEntity(BorrowRequestDto request, Book book, User user);
 
     // --- DTO <-> SObject (Salesforce Models) ---
@@ -96,6 +100,7 @@ public interface BorrowMapper {
      */
     @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.CONTACT.getObjectName()).build())")
     @Mapping(target = "externalUserUuid", source = "userId")
+    @Mapping(target = "legacyUserId", source = "userNumericId")
     @Mapping(target = "lastName", source = "userName")
     @Mapping(target = "email", source = "userEmail")
     ContactSObject toContactSObject(BorrowResponseDto dto);
@@ -131,7 +136,7 @@ public interface BorrowMapper {
     @Mapping(target = "bookTitle", source = "book", qualifiedByName = "resolveBookTitle")
     @Mapping(target = "bookAuthor", source = "book.author")
     @Mapping(target = "bookCoverImageUrl", source = "book.coverImageUrl")
-    @Mapping(target = "userNumericId", ignore = true)
+    @Mapping(target = "userNumericId", source = "contact.legacyUserId")
     @Mapping(target = "borrowDate", source = "borrowDate", qualifiedByName = "parseLocalDate")
     @Mapping(target = "dueDate", source = "dueDate", qualifiedByName = "parseLocalDate")
     @Mapping(target = "returnedDate", source = "returnDate", qualifiedByName = "parseLocalDate")
@@ -139,7 +144,8 @@ public interface BorrowMapper {
     BorrowResponseDto toBorrowResponse(BorrowSObject sObject);
 
     /**
-     * Maps a list of {@link BorrowSObject} records to a list of {@link BorrowResponseDto}s.
+     * Maps a list of {@link BorrowSObject} records to a list of
+     * {@link BorrowResponseDto}s.
      *
      * @param sObjects List of Borrow SObjects
      * @return List of mapped {@link BorrowResponseDto}s
@@ -149,14 +155,16 @@ public interface BorrowMapper {
     // --- Helper Mapping Methods ---
 
     /**
-     * Resolves the title of a book from either the {@code title} or {@code name} field.
+     * Resolves the title of a book from either the {@code title} or {@code name}
+     * field.
      *
      * @param book The Book SObject
      * @return The resolved book title
      */
     @Named("resolveBookTitle")
     default String resolveBookTitle(BookSObject book) {
-        if (book == null) return null;
+        if (book == null)
+            return null;
         return (book.getTitle() != null && !book.getTitle().isBlank()) ? book.getTitle() : book.getName();
     }
 
@@ -168,7 +176,8 @@ public interface BorrowMapper {
      */
     @Named("parseUUID")
     default UUID parseUUID(String str) {
-        if (str == null || str.isBlank()) return null;
+        if (str == null || str.isBlank())
+            return null;
         try {
             return UUID.fromString(str);
         } catch (Exception e) {
@@ -184,7 +193,8 @@ public interface BorrowMapper {
      */
     @Named("parseLocalDate")
     default LocalDate parseLocalDate(String str) {
-        if (str == null || str.isBlank()) return null;
+        if (str == null || str.isBlank())
+            return null;
         try {
             return LocalDate.parse(str);
         } catch (Exception e) {
@@ -200,7 +210,8 @@ public interface BorrowMapper {
      */
     @Named("parseBorrowStatus")
     default BorrowStatus parseBorrowStatus(String statusStr) {
-        if (statusStr == null || statusStr.isBlank()) return null;
+        if (statusStr == null || statusStr.isBlank())
+            return null;
         try {
             return BorrowStatus.valueOf(statusStr);
         } catch (Exception e) {

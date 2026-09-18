@@ -46,6 +46,8 @@ public interface UserMapper {
     @Mapping(target = "role", ignore = true)
     @Mapping(target = "provider", ignore = true)
     @Mapping(target = "providerId", ignore = true)
+    @Mapping(target = "salesforceSyncStatus", ignore = true)
+    @Mapping(target = "salesforceRetryCount", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     User mapToEntity(UserRequest request);

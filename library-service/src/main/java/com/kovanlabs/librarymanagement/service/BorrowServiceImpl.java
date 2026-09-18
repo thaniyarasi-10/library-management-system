@@ -7,6 +7,7 @@ import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
@@ -76,8 +77,15 @@ public class BorrowServiceImpl implements BorrowService {
         if (salesforceSyncService != null) {
             try {
                 salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(response));
+                savedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                borrowRepository.save(savedBorrow);
             } catch (Exception e) {
-                log.error("Salesforce dual-write failed for borrow creation: {}", e.getMessage());
+                int retryCount = savedBorrow.getSalesforceRetryCount() + 1;
+                savedBorrow.setSalesforceRetryCount(retryCount);
+                savedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+                borrowRepository.save(savedBorrow);
+                log.error("Salesforce dual-write failed for borrow creation [Borrow ID: {}, UUID: {}, Operation: BORROW, RetryCount: {}]: {}",
+                        savedBorrow.getId(), savedBorrow.getUuid(), retryCount, e.getMessage());
             }
         }
 
@@ -114,8 +122,15 @@ public class BorrowServiceImpl implements BorrowService {
         if (salesforceSyncService != null) {
             try {
                 salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(response));
+                updatedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                borrowRepository.save(updatedBorrow);
             } catch (Exception e) {
-                log.error("Salesforce dual-write failed for borrow return: {}", e.getMessage());
+                int retryCount = updatedBorrow.getSalesforceRetryCount() + 1;
+                updatedBorrow.setSalesforceRetryCount(retryCount);
+                updatedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+                borrowRepository.save(updatedBorrow);
+                log.error("Salesforce dual-write failed for borrow return [Borrow ID: {}, UUID: {}, Operation: RETURN, RetryCount: {}]: {}",
+                        updatedBorrow.getId(), updatedBorrow.getUuid(), retryCount, e.getMessage());
             }
         }
 

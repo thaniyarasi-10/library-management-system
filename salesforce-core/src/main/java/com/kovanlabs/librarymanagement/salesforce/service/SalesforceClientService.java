@@ -3,6 +3,7 @@ package com.kovanlabs.librarymanagement.salesforce.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kovanlabs.librarymanagement.salesforce.config.SalesforceConfig;
+import com.kovanlabs.librarymanagement.salesforce.exception.SalesforceSyncException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
@@ -18,8 +19,10 @@ import java.util.Map;
 /**
  * Low-level HTTP client service for communicating with Salesforce REST APIs.
  * <p>
- * Handles OAuth2 Client Credentials authentication, caching tokens, executing SOQL queries,
- * and performing upsert operations by External ID using Spring's {@link RestClient}.
+ * Handles OAuth2 Client Credentials authentication, caching tokens, executing
+ * SOQL queries,
+ * and performing upsert operations by External ID using Spring's
+ * {@link RestClient}.
  */
 @Slf4j
 @Service
@@ -34,9 +37,11 @@ public class SalesforceClientService {
     private String instanceUrl;
 
     /**
-     * Checks if Salesforce integration is properly enabled and configured with client credentials.
+     * Checks if Salesforce integration is properly enabled and configured with
+     * client credentials.
      *
-     * @return {@code true} if Salesforce configuration is valid and active, {@code false} otherwise
+     * @return {@code true} if Salesforce configuration is valid and active,
+     *         {@code false} otherwise
      */
     public boolean isConfigured() {
         return salesforceConfig.isEnabled()
@@ -45,9 +50,11 @@ public class SalesforceClientService {
     }
 
     /**
-     * Retrieves the cached OAuth2 access token, or triggers authentication if not present.
+     * Retrieves the cached OAuth2 access token, or triggers authentication if not
+     * present.
      *
-     * @return The OAuth2 Bearer access token, or {@code null} if authentication fails
+     * @return The OAuth2 Bearer access token, or {@code null} if authentication
+     *         fails
      */
     public synchronized String getAccessToken() {
         if (accessToken != null) {
@@ -113,7 +120,8 @@ public class SalesforceClientService {
      * Executes a SOQL query against Salesforce REST Query API.
      *
      * @param soql The SOQL query string to execute
-     * @return The JSON response tree containing records, or {@code null} if the query fails or client is unconfigured
+     * @return The JSON response tree containing records, or {@code null} if the
+     *         query fails or client is unconfigured
      */
     public JsonNode query(String soql) {
         if (!isConfigured()) {
@@ -152,23 +160,27 @@ public class SalesforceClientService {
     }
 
     /**
-     * Upserts an SObject record in Salesforce using an external ID field (PATCH request).
+     * Upserts an SObject record in Salesforce using an external ID field (PATCH
+     * request).
      *
-     * @param sObjectName The API name of the target SObject (e.g. "Contact", "Book__c")
-     * @param externalIdFieldName The API name of the External ID field (e.g. "External_Book_UUID__c")
-     * @param externalIdValue The unique external ID value
-     * @param fields The key-value map representing SObject fields to insert or update
+     * @param sObjectName         The API name of the target SObject (e.g.
+     *                            "Contact", "Book__c")
+     * @param externalIdFieldName The API name of the External ID field (e.g.
+     *                            "External_Book_UUID__c")
+     * @param externalIdValue     The unique external ID value
+     * @param fields              The key-value map representing SObject fields to
+     *                            insert or update
      */
     public void upsertByExternalId(String sObjectName, String externalIdFieldName, String externalIdValue,
             Map<String, Object> fields) {
         if (!isConfigured()) {
-            return;
+            throw new SalesforceSyncException("Salesforce is not configured or disabled");
         }
         try {
             String token = getAccessToken();
             String host = getInstanceUrl();
             if (token == null || host == null) {
-                return;
+                throw new SalesforceSyncException("Unable to obtain Salesforce access token or instance URL");
             }
 
             String uri = host + "/services/data/" + salesforceConfig.getApiVersion()
@@ -187,10 +199,17 @@ public class SalesforceClientService {
                     .toBodilessEntity();
 
             log.info("Successfully synced {} (ExternalId: {}) to Salesforce", sObjectName, externalIdValue);
+        } catch (SalesforceSyncException e) {
+            log.error("Failed to sync {} (ExternalId: {}) to Salesforce: {}", sObjectName, externalIdValue,
+                    e.getMessage());
+            this.accessToken = null;
+            throw e;
         } catch (Exception e) {
             log.error("Failed to sync {} (ExternalId: {}) to Salesforce: {}", sObjectName, externalIdValue,
                     e.getMessage());
             this.accessToken = null;
+            throw new SalesforceSyncException(
+                    "Failed to sync " + sObjectName + " (" + externalIdValue + ") to Salesforce: " + e.getMessage(), e);
         }
     }
 }

@@ -119,6 +119,7 @@ class BorrowMappingTest {
         BorrowResponseDto dto = BorrowResponseDto.builder()
                 .borrowUuid(borrowUuid)
                 .userId(userUuid)
+                .userNumericId(99L)
                 .userName("Alice")
                 .userEmail("alice@example.com")
                 .bookId(bookUuid)
@@ -136,6 +137,7 @@ class BorrowMappingTest {
         assertEquals("BORROWED", sObject.getBorrowStatus());
         assertNotNull(sObject.getContact());
         assertEquals(userUuid.toString(), sObject.getContact().getExternalUserUuid());
+        assertEquals(99L, sObject.getContact().getLegacyUserId());
         assertNotNull(sObject.getBook());
         assertEquals(bookUuid.toString(), sObject.getBook().getExternalBookUuid());
         assertEquals("DDD", sObject.getBook().getTitle());
@@ -144,6 +146,7 @@ class BorrowMappingTest {
         assertNotNull(mappedBack);
         assertEquals(borrowUuid, mappedBack.borrowUuid());
         assertEquals(userUuid, mappedBack.userId());
+        assertEquals(99L, mappedBack.userNumericId());
         assertEquals("Alice", mappedBack.userName());
         assertEquals(bookUuid, mappedBack.bookId());
         assertEquals("DDD", mappedBack.bookTitle());

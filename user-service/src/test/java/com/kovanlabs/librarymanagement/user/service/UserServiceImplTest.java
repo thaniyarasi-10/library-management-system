@@ -4,6 +4,7 @@ import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
@@ -72,17 +73,46 @@ class UserServiceImplTest {
                 .build();
     }
 
+    @Mock
+    private SalesforceUserSyncDelegate salesforceSyncDelegate;
+
     @Test
     void createUser_shouldEncodePasswordAndSave() {
         UserRequest request = new UserRequest("alice@example.com", "Password123!", "Alice Smith");
         when(passwordEncoder.encode("Password123!")).thenReturn("encodedPassword");
-        when(userRepository.save(any(User.class))).thenReturn(user1);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
         UserResponse response = userService.createUser(request);
 
         assertNotNull(response);
         assertEquals("Alice Smith", response.name());
         assertEquals("alice@example.com", response.email());
+    }
+
+    @Test
+    void createUser_whenSalesforceSyncSucceeds_shouldMarkStatusSuccess() {
+        UserRequest request = new UserRequest("alice@example.com", "Password123!", "Alice Smith");
+        when(passwordEncoder.encode("Password123!")).thenReturn("encodedPassword");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UserResponse response = userService.createUser(request);
+
+        assertNotNull(response);
+        verify(salesforceSyncDelegate).syncUser(any(UserResponse.class));
+        verify(userRepository, times(2)).save(any(User.class));
+    }
+
+    @Test
+    void createUser_whenSalesforceSyncFails_shouldIncrementRetryAndKeepPending() {
+        UserRequest request = new UserRequest("alice@example.com", "Password123!", "Alice Smith");
+        when(passwordEncoder.encode("Password123!")).thenReturn("encodedPassword");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        doThrow(new RuntimeException("Salesforce down")).when(salesforceSyncDelegate).syncUser(any(UserResponse.class));
+
+        UserResponse response = userService.createUser(request);
+
+        assertNotNull(response);
+        verify(userRepository, times(2)).save(any(User.class));
     }
 
     @Test
@@ -146,6 +176,22 @@ class UserServiceImplTest {
         UserResponse response = userService.updateUser(1L, request);
 
         assertEquals("updated@example.com", response.email());
+        verify(salesforceSyncDelegate).syncUser(any(UserResponse.class));
+        assertEquals(SalesforceSyncStatus.SUCCESS, user1.getSalesforceSyncStatus());
+    }
+
+    @Test
+    void updateUser_whenSalesforceSyncFails_shouldIncrementRetryAndKeepPending() {
+        UserRequest request = new UserRequest("updated@example.com", null, "Alice Smith");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("Salesforce update error")).when(salesforceSyncDelegate).syncUser(any(UserResponse.class));
+
+        UserResponse response = userService.updateUser(1L, request);
+
+        assertEquals("updated@example.com", response.email());
+        assertEquals(SalesforceSyncStatus.PENDING, user1.getSalesforceSyncStatus());
+        assertEquals(1, user1.getSalesforceRetryCount());
     }
 
     @Test

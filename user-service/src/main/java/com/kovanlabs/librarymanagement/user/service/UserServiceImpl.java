@@ -5,6 +5,7 @@ import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
@@ -137,8 +138,15 @@ public class UserServiceImpl implements UserService {
         if (salesforceSyncDelegate != null) {
             try {
                 salesforceSyncDelegate.syncUser(response);
+                savedUser.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                userRepository.save(savedUser);
             } catch (Exception e) {
-                log.error("Salesforce dual-write failed for user creation: {}", e.getMessage());
+                int retryCount = savedUser.getSalesforceRetryCount() + 1;
+                savedUser.setSalesforceRetryCount(retryCount);
+                savedUser.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+                userRepository.save(savedUser);
+                log.error("Salesforce dual-write failed for user creation [User ID: {}, UUID: {}, Operation: CREATE, RetryCount: {}]: {}",
+                        savedUser.getId(), savedUser.getUuid(), retryCount, e.getMessage());
             }
         }
 
@@ -293,8 +301,15 @@ public class UserServiceImpl implements UserService {
         if (salesforceSyncDelegate != null) {
             try {
                 salesforceSyncDelegate.syncUser(response);
+                updatedUser.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                userRepository.save(updatedUser);
             } catch (Exception e) {
-                log.error("Salesforce dual-write failed for user update: {}", e.getMessage());
+                int retryCount = updatedUser.getSalesforceRetryCount() + 1;
+                updatedUser.setSalesforceRetryCount(retryCount);
+                updatedUser.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+                userRepository.save(updatedUser);
+                log.error("Salesforce dual-write failed for user update [User ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
+                        updatedUser.getId(), updatedUser.getUuid(), retryCount, e.getMessage());
             }
         }
 
