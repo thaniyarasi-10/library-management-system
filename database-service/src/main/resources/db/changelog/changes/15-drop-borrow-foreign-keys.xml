@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="15-drop-borrow-foreign-keys" author="thani">
+        <dropAllForeignKeyConstraints baseTableName="borrow"/>
+        <dropColumn tableName="borrow" columnName="book_id"/>
+        <dropColumn tableName="borrow" columnName="user_id"/>
+        <addForeignKeyConstraint baseTableName="borrow" baseColumnNames="book_uuid"
+                                 constraintName="fk_borrow_book_uuid"
+                                 referencedTableName="book" referencedColumnNames="uuid"
+                                 onDelete="CASCADE"/>
+        <addForeignKeyConstraint baseTableName="borrow" baseColumnNames="user_uuid"
+                                 constraintName="fk_borrow_user_uuid"
+                                 referencedTableName="user" referencedColumnNames="uuid"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+</databaseChangeLog>
