@@ -40,6 +40,11 @@
             <artifactId>aws-service</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.kovanlabs</groupId>
+            <artifactId>salesforce-core</artifactId>
+        </dependency>
+
         <!-- Spring Boot Starter Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -71,6 +76,12 @@
         <dependency>
             <groupId>org.mapstruct</groupId>
             <artifactId>mapstruct</artifactId>
+        </dependency>
+
+        <!-- Apache HttpClient5 for HTTP PATCH support in RestTemplate -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
         </dependency>
 
         <!-- Test Dependencies -->

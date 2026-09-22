@@ -3,7 +3,7 @@ package com.kovanlabs.librarymanagement.config;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
-import com.kovanlabs.librarymanagement.book.dto.BookResponse;
+import com.kovanlabs.librarymanagement.dto.BookResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -36,7 +36,7 @@ class RedisCacheConfigTest {
                 JsonTypeInfo.As.PROPERTY);
         GenericJackson2JsonRedisSerializer serializer = new GenericJackson2JsonRedisSerializer(objectMapper);
         BookResponse original = new BookResponse(UUID.randomUUID(), 5L, "Clean Code", "Robert C. Martin",
-                "9780132350884");
+                "9780132350884", "http://example.com/cover.jpg");
 
         byte[] serialized = serializer.serialize(original);
         assertNotNull(serialized);

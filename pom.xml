@@ -26,6 +26,7 @@
         <module>user-service</module>
         <module>communication-service</module>
         <module>aws-service</module>
+        <module>salesforce-core</module>
         <module>library-service</module>
     </modules>
 
@@ -68,6 +69,12 @@
             <dependency>
                 <groupId>com.kovanlabs</groupId>
                 <artifactId>aws-service</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.kovanlabs</groupId>
+                <artifactId>salesforce-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -147,6 +154,13 @@
                     <groupId>org.liquibase</groupId>
                     <artifactId>liquibase-maven-plugin</artifactId>
                     <version>5.0.1</version>
+                    <configuration>
+                        <url>jdbc:mysql://localhost:3306/library?allowPublicKeyRetrieval=true&amp;useSSL=false&amp;serverTimezone=UTC</url>
+                        <username>root</username>
+                        <password>${env:DB_PASSWORD}</password>
+                        <driver>com.mysql.cj.jdbc.Driver</driver>
+                        <changeLogFile>...</changeLogFile>
+                    </configuration>
                 </plugin>
 
             </plugins>

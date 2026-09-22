@@ -2,6 +2,7 @@ package com.kovanlabs.librarymanagement.database.entity;
 
 import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -46,6 +47,15 @@ public class User {
     @Column(nullable = false)
     @Builder.Default
     private RoleEnum role = RoleEnum.USER;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "salesforce_sync_status", nullable = false)
+    @Builder.Default
+    private SalesforceSyncStatus salesforceSyncStatus = SalesforceSyncStatus.PENDING;
+
+    @Column(name = "salesforce_retry_count", nullable = false)
+    @Builder.Default
+    private int salesforceRetryCount = 0;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

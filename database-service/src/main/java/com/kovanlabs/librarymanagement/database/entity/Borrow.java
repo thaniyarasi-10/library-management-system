@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.database.entity;
 
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -50,5 +51,21 @@ public class Borrow {
     @Column(name = "reward_processed", nullable = false)
     @Builder.Default
     private boolean rewardProcessed = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "salesforce_sync_status", nullable = false)
+    @Builder.Default
+    private SalesforceSyncStatus salesforceSyncStatus = SalesforceSyncStatus.PENDING;
+
+    @Column(name = "salesforce_retry_count", nullable = false)
+    @Builder.Default
+    private int salesforceRetryCount = 0;
+
+    @PrePersist
+    public void prePersist() {
+        if (uuid == null) {
+            uuid = UUID.randomUUID();
+        }
+    }
 
 }

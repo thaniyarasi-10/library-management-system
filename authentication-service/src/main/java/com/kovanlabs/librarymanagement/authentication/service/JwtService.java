@@ -17,6 +17,9 @@ import java.util.function.Function;
 
 import com.kovanlabs.librarymanagement.database.entity.User;
 
+/**
+ * Service for generating, signing, parsing, and validating JSON Web Tokens (JWT).
+ */
 @Service
 public class JwtService {
 
@@ -28,6 +31,9 @@ public class JwtService {
 
     private SecretKey signingKey;
 
+    /**
+     * Initializes the HMAC-SHA signing key from the configured Base64 secret.
+     */
     @PostConstruct
     public void init() {
         signingKey = Keys.hmacShaKeyFor(
@@ -35,6 +41,12 @@ public class JwtService {
         );
     }
 
+    /**
+     * Generates a signed JWT token from a Spring Security {@link Authentication} object.
+     *
+     * @param authentication The authenticated security context
+     * @return Signed JWT compact string
+     */
     public String generateToken(Authentication authentication) {
 
         List<String> roles = authentication.getAuthorities()
@@ -51,6 +63,12 @@ public class JwtService {
                 .compact();
     }
 
+    /**
+     * Generates a signed JWT token for a specific {@link User} entity.
+     *
+     * @param user The user entity
+     * @return Signed JWT compact string
+     */
     public String generateToken(User user) {
         List<String> roles = List.of("ROLE_" + user.getRole().name());
 
@@ -63,10 +81,24 @@ public class JwtService {
                 .compact();
     }
 
+    /**
+     * Extracts the subject (username/email) from the token.
+     *
+     * @param token The JWT string
+     * @return The subject claim
+     */
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
     }
 
+    /**
+     * Extracts a specific claim from a JWT using a resolver function.
+     *
+     * @param <T> The expected claim return type
+     * @param token The JWT string
+     * @param resolver Function to extract the claim from {@link Claims}
+     * @return The extracted claim value
+     */
     public <T> T extractClaim(String token,
                               Function<Claims, T> resolver) {
 
@@ -75,6 +107,12 @@ public class JwtService {
         return resolver.apply(claims);
     }
 
+    /**
+     * Parses and verifies all claims from the JWT string.
+     *
+     * @param token The JWT string
+     * @return The parsed payload {@link Claims}
+     */
     private Claims extractAllClaims(String token) {
 
         return Jwts.parser()
@@ -84,6 +122,13 @@ public class JwtService {
                 .getPayload();
     }
 
+    /**
+     * Validates whether a token belongs to the given username and is not expired.
+     *
+     * @param token The JWT string
+     * @param username The expected username
+     * @return {@code true} if valid, {@code false} otherwise
+     */
     public boolean isTokenValid(String token,
                                 String username) {
 
@@ -93,6 +138,12 @@ public class JwtService {
                 && !isTokenExpired(token);
     }
 
+    /**
+     * Checks if the token has expired.
+     *
+     * @param token The JWT string
+     * @return {@code true} if expired, {@code false} otherwise
+     */
     private boolean isTokenExpired(String token) {
         Date expiry = extractClaim(token, Claims::getExpiration);
         return expiry.before(new Date());
