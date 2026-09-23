@@ -10,6 +10,7 @@ import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
+import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ public class BorrowServiceImpl implements BorrowService {
     private final BorrowRepository borrowRepository;
     private final BookRepository bookRepository;
     private final UserRepository userRepository;
+    private final UserProviderRepository userProviderRepository;
     private final UserFineChecker userFineChecker;
     private final MembershipService membershipService;
     private final SalesforceSyncService salesforceSyncService;
@@ -72,11 +74,11 @@ public class BorrowServiceImpl implements BorrowService {
         Borrow borrow = BorrowMapper.INSTANCE.mapToEntity(borrowRequestDto, book, user);
 
         Borrow savedBorrow = borrowRepository.save(borrow);
-        BorrowResponseDto response = BorrowMapper.INSTANCE.mapToResponse(savedBorrow);
 
+        // Salesforce Sync
         if (salesforceSyncService != null) {
             try {
-                salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(response));
+                salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(BorrowMapper.INSTANCE.mapToResponse(savedBorrow)));
                 savedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
                 borrowRepository.save(savedBorrow);
             } catch (Exception e) {
@@ -84,18 +86,19 @@ public class BorrowServiceImpl implements BorrowService {
                 savedBorrow.setSalesforceRetryCount(retryCount);
                 savedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
                 borrowRepository.save(savedBorrow);
-                log.error("Salesforce dual-write failed for borrow creation [Borrow ID: {}, UUID: {}, Operation: BORROW, RetryCount: {}]: {}",
+                log.error(
+                        "Salesforce dual-write failed for borrow creation [Borrow ID: {}, UUID: {}, Operation: CREATE, RetryCount: {}]: {}",
                         savedBorrow.getId(), savedBorrow.getUuid(), retryCount, e.getMessage());
             }
         }
 
-        return response;
+        return BorrowMapper.INSTANCE.mapToResponse(savedBorrow);
     }
 
     /**
-     * Returns a borrowed book, updates return date and status, and syncs with Salesforce.
+     * Returns a borrowed book, updates return timestamp, and syncs status with Salesforce.
      *
-     * @param borrowId The borrow record ID
+     * @param borrowId ID of the borrow record
      * @return Updated {@link BorrowResponseDto}
      */
     @Override
@@ -107,8 +110,7 @@ public class BorrowServiceImpl implements BorrowService {
         Borrow borrow = borrowRepository.findById(borrowId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Borrow record not found"));
 
-        if (userFineChecker != null && borrow.getUser() != null
-                && userFineChecker.hasPendingFines(borrow.getUser().getId())) {
+        if (userFineChecker != null && borrow.getUser() != null && userFineChecker.hasPendingFines(borrow.getUser().getId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "User has pending fines. Please pay outstanding fines before returning books.");
         }
@@ -117,11 +119,11 @@ public class BorrowServiceImpl implements BorrowService {
         borrow.setStatus(BorrowStatus.RETURNED);
 
         Borrow updatedBorrow = borrowRepository.save(borrow);
-        BorrowResponseDto response = BorrowMapper.INSTANCE.mapToResponse(updatedBorrow);
 
+        // Salesforce Sync
         if (salesforceSyncService != null) {
             try {
-                salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(response));
+                salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(BorrowMapper.INSTANCE.mapToResponse(updatedBorrow)));
                 updatedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
                 borrowRepository.save(updatedBorrow);
             } catch (Exception e) {
@@ -129,39 +131,22 @@ public class BorrowServiceImpl implements BorrowService {
                 updatedBorrow.setSalesforceRetryCount(retryCount);
                 updatedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
                 borrowRepository.save(updatedBorrow);
-                log.error("Salesforce dual-write failed for borrow return [Borrow ID: {}, UUID: {}, Operation: RETURN, RetryCount: {}]: {}",
+                log.error(
+                        "Salesforce dual-write failed for borrow return [Borrow ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
                         updatedBorrow.getId(), updatedBorrow.getUuid(), retryCount, e.getMessage());
             }
         }
 
-        return response;
+        return BorrowMapper.INSTANCE.mapToResponse(updatedBorrow);
     }
 
     /**
-     * Retrieves all borrow records from Salesforce SOQL if available, otherwise from MySQL.
+     * Retrieves all borrow records across the system in descending order of ID.
      *
      * @return List of {@link BorrowResponseDto}s
      */
     @Override
-    public java.util.List<BorrowResponseDto> getAllBorrows() {
-        if (salesforceSyncService != null) {
-            try {
-                var sfBorrowModels = salesforceSyncService.fetchBorrowsFromSalesforce();
-                if (sfBorrowModels != null && !sfBorrowModels.isEmpty()) {
-                    for (var sfBorrow : sfBorrowModels) {
-                        if (sfBorrow != null && sfBorrow.getErrors() != null && !sfBorrow.getErrors().isEmpty()) {
-                            log.warn("Salesforce error for Borrow [UUID: {}]: {}", sfBorrow.getExternalBorrowUuid(), sfBorrow.getErrors());
-                        }
-                    }
-                    List<BorrowResponseDto> sfBorrows = BorrowMapper.INSTANCE.toBorrowResponseList(sfBorrowModels);
-                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} borrow records from Salesforce SOQL", sfBorrows.size());
-                    return sfBorrows;
-                }
-            } catch (Exception e) {
-                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for borrows, falling back to MySQL: {}", e.getMessage());
-            }
-        }
-        log.info("[DATA SOURCE: MYSQL] Fetching borrow records from MySQL database");
+    public List<BorrowResponseDto> getAllBorrows() {
         return borrowRepository.findAllByOrderByIdDesc().stream()
                 .map(BorrowMapper.INSTANCE::mapToResponse)
                 .toList();
@@ -170,11 +155,11 @@ public class BorrowServiceImpl implements BorrowService {
     /**
      * Retrieves all borrow records for a specific user ID.
      *
-     * @param userId The user database ID
+     * @param userId The user's ID
      * @return List of {@link BorrowResponseDto}s
      */
     @Override
-    public java.util.List<BorrowResponseDto> getBorrowsByUserId(Long userId) {
+    public List<BorrowResponseDto> getBorrowsByUserId(Long userId) {
         if (userId == null) {
             return java.util.Collections.emptyList();
         }
@@ -184,9 +169,9 @@ public class BorrowServiceImpl implements BorrowService {
     }
 
     /**
-     * Retrieves all borrow records for a specific user email.
+     * Retrieves all borrow records for a specific user identified by email or providerId.
      *
-     * @param email The user email
+     * @param email The user's email or provider ID
      * @return List of {@link BorrowResponseDto}s
      */
     @Override
@@ -194,7 +179,10 @@ public class BorrowServiceImpl implements BorrowService {
         if (email == null) {
             return java.util.Collections.emptyList();
         }
-        User user = userRepository.findByEmail(email).orElse(null);
+        User user = userProviderRepository.findByProviderId(email)
+                .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
+                .or(() -> userRepository.findByEmail(email))
+                .orElse(null);
         if (user == null || user.getId() == null) {
             return java.util.Collections.emptyList();
         }

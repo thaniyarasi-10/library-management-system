@@ -1,6 +1,5 @@
 package com.kovanlabs.librarymanagement.database.entity;
 
-import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import jakarta.persistence.*;
@@ -76,11 +75,4 @@ public class User {
     public void preUpdate() {
         updatedAt = LocalDateTime.now();
     }
-
-    private String providerId;
-
-    @Enumerated(EnumType.STRING)
-    @Builder.Default
-    private AuthProvider provider = AuthProvider.USERNAME_PASSWORD;
-
 }

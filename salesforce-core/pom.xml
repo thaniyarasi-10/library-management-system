@@ -25,6 +25,11 @@
             <artifactId>user-service</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.kovanlabs</groupId>
+            <artifactId>common</artifactId>
+        </dependency>
+
         <!-- Spring Boot Web for RestTemplate & Spring Context -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

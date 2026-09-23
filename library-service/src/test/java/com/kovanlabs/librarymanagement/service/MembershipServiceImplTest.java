@@ -40,6 +40,9 @@ class MembershipServiceImplTest {
     private UserRepository userRepository;
 
     @Mock
+    private com.kovanlabs.librarymanagement.database.repository.UserProviderRepository userProviderRepository;
+
+    @Mock
     private S3Service s3Service;
 
     @InjectMocks

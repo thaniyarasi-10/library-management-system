@@ -9,6 +9,7 @@ import com.kovanlabs.librarymanagement.database.enums.FineStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.FineRepository;
+import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.dto.FineResponseDto;
 import com.kovanlabs.librarymanagement.dto.FineResult;
@@ -39,6 +40,7 @@ public class FineService implements UserFineChecker {
     private final FineRepository fineRepository;
     private final BookRepository bookRepository;
     private final UserRepository userRepository;
+    private final UserProviderRepository userProviderRepository;
     private final BorrowRepository borrowRepository;
 
     /**
@@ -228,7 +230,10 @@ public class FineService implements UserFineChecker {
         if (email == null) {
             return java.util.Collections.emptyList();
         }
-        User user = userRepository.findByEmail(email).orElse(null);
+        User user = userProviderRepository.findByProviderId(email)
+                .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
+                .or(() -> userRepository.findByEmail(email))
+                .orElse(null);
         if (user == null || user.getId() == null) {
             return java.util.Collections.emptyList();
         }

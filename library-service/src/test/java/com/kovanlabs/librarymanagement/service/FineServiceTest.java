@@ -29,6 +29,7 @@ class FineServiceTest {
     private FineRepository fineRepository;
     private BookRepository bookRepository;
     private UserRepository userRepository;
+    private com.kovanlabs.librarymanagement.database.repository.UserProviderRepository userProviderRepository;
     private BorrowRepository borrowRepository;
     private FineService fineService;
 
@@ -37,8 +38,9 @@ class FineServiceTest {
         fineRepository = mock(FineRepository.class);
         bookRepository = mock(BookRepository.class);
         userRepository = mock(UserRepository.class);
+        userProviderRepository = mock(com.kovanlabs.librarymanagement.database.repository.UserProviderRepository.class);
         borrowRepository = mock(BorrowRepository.class);
-        fineService = new FineService(fineRepository, bookRepository, userRepository, borrowRepository);
+        fineService = new FineService(fineRepository, bookRepository, userRepository, userProviderRepository, borrowRepository);
     }
 
     @Test

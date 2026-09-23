@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw
@@ -9,15 +9,14 @@ export default function App() {
   // Theme state
   const [theme, setTheme] = useState(localStorage.getItem('athenaeum_theme') || 'dark');
 
-  // Auth state
-  const [authToken, setAuthToken] = useState(localStorage.getItem('athenaeum_token') || '');
+  // Server-Side Regular Web App Auth State (Stateless Bearer JWT)
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [accessToken, setAccessToken] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
+
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState('');
-  const [authError, setAuthError] = useState('');
-  const [authLoading, setAuthLoading] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
 
   // Navigation
@@ -59,7 +58,7 @@ export default function App() {
   const [sigPreviewUrl, setSigPreviewUrl] = useState('');
 
   // Modals & Drawers
-  const [activeModal, setActiveModal] = useState(null); // 'createBook', 'editBook', 'uploadCover', 'createUser', 'editUser', 'adminBorrow', 'userBorrow', 'googleToken', 'confirm'
+  const [activeModal, setActiveModal] = useState(null); // 'createBook', 'editBook', 'uploadCover', 'createUser', 'editUser', 'adminBorrow', 'userBorrow', 'confirm'
   const [drawerData, setDrawerData] = useState(null); // { type: 'book'|'member', data: obj }
   const [confirmConfig, setConfirmConfig] = useState({ title: '', message: '', actionBtnText: 'Confirm', onConfirm: null });
 
@@ -71,12 +70,11 @@ export default function App() {
   const [coverPreview, setCoverPreview] = useState('');
   const [adminBorrowSelect, setAdminBorrowSelect] = useState({ memberId: '', bookId: '' });
   const [userBorrowBookId, setUserBorrowBookId] = useState('');
-  const [manualOAuthToken, setManualOAuthToken] = useState('');
 
   // Toasts
   const [toasts, setToasts] = useState([]);
 
-  const baseUrl = 'http://localhost:8080';
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
   const showToast = (message, type = 'info') => {
     const id = Date.now();
@@ -86,38 +84,38 @@ export default function App() {
     }, 4000);
   };
 
-  // Helper JWT Decoder
-  const parseJwt = (token) => {
-    try {
-      const parts = token.split('.');
-      if (parts.length !== 3) return null;
-      const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
-      return JSON.parse(jsonPayload);
-    } catch (e) {
-      return null;
-    }
-  };
-
-  const fetchApi = async (endpoint, options = {}) => {
+  const fetchApi = useCallback(async (endpoint, options = {}) => {
     const headers = {
       ...(options.headers || {})
     };
-    if (authToken && !headers['Authorization']) {
-      headers['Authorization'] = `Bearer ${authToken}`;
-    }
+
     if (!(options.body instanceof FormData) && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
     }
 
+    if (accessToken && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+
     try {
-      const res = await fetch(`${baseUrl}${endpoint}`, { ...options, headers });
+      const res = await fetch(`${baseUrl}${endpoint}`, {
+        ...options,
+        headers,
+        credentials: 'include'
+      });
+
       if (res.status === 401) {
-        handleSignOut();
-        showToast('Session expired, please sign in again', 'error');
+        if (isAuthenticated) {
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          setAccessToken(null);
+          showToast('Session expired. Please sign in again.', 'error');
+        }
         return { ok: false, status: 401 };
+      }
+      if (res.status === 403) {
+        showToast('Access denied: You lack permission for this action.', 'error');
+        return { ok: false, status: 403 };
       }
 
       const contentType = res.headers.get('content-type');
@@ -135,20 +133,7 @@ export default function App() {
       console.error('API Call Error:', err);
       return { ok: false, status: 0, error: err };
     }
-  };
-
-  // Check URL token parameter on mount (fallback redirect from OAuth)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tokenParam = params.get('token');
-    if (tokenParam) {
-      setAuthToken(tokenParam);
-      localStorage.setItem('athenaeum_token', tokenParam);
-      // Clean query string from browser bar
-      window.history.replaceState({}, document.title, window.location.pathname);
-      showToast('Signed in successfully', 'success');
-    }
-  }, []);
+  }, [baseUrl, isAuthenticated, accessToken]);
 
   // Theme Sync
   useEffect(() => {
@@ -156,38 +141,63 @@ export default function App() {
     localStorage.setItem('athenaeum_theme', theme);
   }, [theme]);
 
-  // Auth Initialization
+  // Auth Initialization on Page Load (Regular Web App Bearer JWT Flow)
   useEffect(() => {
-    if (!authToken) return;
-    localStorage.setItem('athenaeum_token', authToken);
-
-    const jwtPayload = parseJwt(authToken);
-    if (!jwtPayload) {
-      handleSignOut();
-      return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const err = urlParams.get('auth_error');
+    if (err) {
+      setAuthError(err);
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    let role = 'USER';
-    if (jwtPayload.role) {
-      role = jwtPayload.role.replace('ROLE_', '');
-    } else if (jwtPayload.roles && jwtPayload.roles.length > 0) {
-      role = jwtPayload.roles[0].replace('ROLE_', '');
-    }
-    setUserRole(role);
+    const initAuth = async () => {
+      try {
+        const tokenRes = await fetch(`${baseUrl}/api/auth/token`, {
+          credentials: 'include'
+        });
 
-    // Load user profile
-    fetchApi('/user/me').then(res => {
-      if (res.ok && res.data) {
-        setCurrentUser(res.data);
-      } else {
-        setCurrentUser({ email: jwtPayload.sub || jwtPayload.username || 'User', name: jwtPayload.name || 'User' });
+        if (tokenRes.ok) {
+          const tokenData = await tokenRes.json();
+          if (tokenData.accessToken) {
+            setAccessToken(tokenData.accessToken);
+            const meRes = await fetch(`${baseUrl}/api/auth/me`, {
+              headers: {
+                'Authorization': `Bearer ${tokenData.accessToken}`
+              }
+            });
+            if (meRes.ok) {
+              const user = await meRes.json();
+              setCurrentUser(user);
+              setIsAuthenticated(true);
+              setUserRole(user.role === 'ADMIN' ? 'ADMIN' : 'USER');
+            } else {
+              setIsAuthenticated(false);
+              setCurrentUser(null);
+              setAccessToken(null);
+            }
+          } else {
+            setIsAuthenticated(false);
+            setCurrentUser(null);
+          }
+        } else {
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+        }
+      } catch (e) {
+        console.error('Auth initialization error:', e);
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+      } finally {
+        setIsLoading(false);
       }
-    });
-  }, [authToken]);
+    };
+
+    initAuth();
+  }, [baseUrl]);
 
   // Load Page Data on Change
   useEffect(() => {
-    if (!authToken) return;
+    if (!isAuthenticated) return;
     if (currentPage === 'dashboard') {
       loadDashboard();
     } else if (currentPage === 'books') {
@@ -201,58 +211,35 @@ export default function App() {
     } else if (currentPage === 'membership') {
       loadMembership();
     }
-  }, [currentPage, authToken, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
+  }, [currentPage, isAuthenticated, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
 
-  // Listen for postMessage from Google OAuth popup
-  useEffect(() => {
-    const handleMessage = (event) => {
-      if (event.data && event.data.type === 'ATHENAEUM_OAUTH_TOKEN' && event.data.token) {
-        setAuthToken(event.data.token);
-        showToast('Signed in with Google successfully', 'success');
-        setActiveModal(null);
+  const handleSignOut = async () => {
+    try {
+      const res = await fetch(`${baseUrl}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      setAccessToken(null);
+      setUserRole('');
+      setCurrentPage('dashboard');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logoutUrl) {
+          window.location.href = data.logoutUrl;
+        }
       }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  const handleLoginSubmit = async (e) => {
-    e.preventDefault();
-    setAuthError('');
-    setAuthLoading(true);
-    const res = await fetchApi('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: loginEmail, password: loginPassword })
-    });
-    setAuthLoading(false);
-
-    if (res.ok && res.data && res.data.token) {
-      setAuthToken(res.data.token);
-      showToast('Successfully signed in', 'success');
-    } else {
-      setAuthError(res.data?.message || 'Invalid email address or password.');
+    } catch (e) {
+      console.error('Logout error:', e);
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      setAccessToken(null);
     }
   };
 
-  const handleGoogleSignIn = () => {
-    const popup = window.open(`${baseUrl}/oauth2/authorization/google`, 'googleOAuth', 'width=500,height=600');
-    setTimeout(() => {
-      try {
-        if (popup && !popup.closed) {
-          setActiveModal('googleToken');
-        }
-      } catch (e) {
-        // Cross-Origin-Opener-Policy can restrict inspecting popup.closed
-      }
-    }, 2500);
-  };
-
-  const handleSignOut = () => {
-    setAuthToken('');
-    localStorage.removeItem('athenaeum_token');
-    setCurrentUser(null);
-    setUserRole('');
-    setCurrentPage('dashboard');
+  const handleSignIn = () => {
+    window.location.href = `${baseUrl}/api/auth/login`;
   };
 
   // Monogram Helper
@@ -325,21 +312,10 @@ export default function App() {
       method: 'POST',
       body: JSON.stringify({ title: bookForm.title, author: bookForm.author, isbn: bookForm.isbn })
     });
-    if (res.ok && res.data) {
-      const createdBook = res.data;
-      if (coverFile && createdBook.id) {
-        const formData = new FormData();
-        formData.append('file', coverFile);
-        await fetchApi(`/books/${createdBook.id}/cover`, {
-          method: 'POST',
-          body: formData
-        });
-      }
+    if (res.ok) {
       showToast('Book created successfully', 'success');
       setActiveModal(null);
       setBookForm({ id: '', title: '', author: '', isbn: '' });
-      setCoverFile(null);
-      setCoverPreview('');
       loadBooks(booksPage, bookSearchQuery);
     } else {
       showToast(res.data?.message || 'Failed to create book', 'error');
@@ -701,8 +677,27 @@ export default function App() {
     setActiveModal('confirm');
   };
 
-  // Render Login Screen if not authenticated
-  if (!authToken) {
+  // Render loading screen while Auth0 verifies session
+  if (isLoading) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card" style={{ textAlign: 'center', padding: '48px 32px' }}>
+          <div className="auth-brand" style={{ justifyContent: 'center', marginBottom: '24px' }}>
+            <div className="brand-icon">
+              <BookOpen size={28} />
+            </div>
+            <h1 className="brand-title">Padips</h1>
+          </div>
+          <RefreshCw className="animate-spin mb-4" size={32} style={{ margin: '0 auto', color: '#6366f1' }} />
+          <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Authenticating session...</h3>
+          <p style={{ color: '#888', fontSize: '14px' }}>Connecting to Auth0 Identity Provider</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Render Auth0 Login Screen if not authenticated
+  if (!isAuthenticated) {
     return (
       <div className="auth-screen">
         <div className="auth-card">
@@ -716,66 +711,23 @@ export default function App() {
 
           <div className="auth-header">
             <h2>Sign in to portal</h2>
-            <p>Enter your credentials to access the library dashboard</p>
           </div>
 
-          {authError && <div className="alert alert-danger">{authError}</div>}
+          {authError && (
+            <div className="alert alert-danger mb-4">
+              {authError === 'access_denied' ? 'Access was denied by Auth0.' : `Authentication error occurred (${authError})`}
+            </div>
+          )}
 
-          <button type="button" className="btn btn-google btn-block btn-lg mb-4" onClick={handleGoogleSignIn}>
-            <svg className="google-icon" width="18" height="18" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-            </svg>
-            <span>Sign in with Google</span>
+          <button
+            type="button"
+            className="btn btn-primary btn-block btn-lg mb-3"
+            onClick={handleSignIn}
+          >
+            <span className="btn-text">Sign In / Register with Auth0</span>
           </button>
 
-          <div className="auth-divider mb-4">
-            <span>OR</span>
-          </div>
-
-          <form onSubmit={handleLoginSubmit}>
-            <div className="form-group">
-              <label htmlFor="loginEmail" className="form-label">Email address</label>
-              <div className="input-wrapper">
-                <input
-                  type="email"
-                  id="loginEmail"
-                  className="form-input"
-                  placeholder="staff@athenaeum.org"
-                  required
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="loginPassword" className="form-label">Password</label>
-              <div className="input-wrapper password-input-wrapper">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  id="loginPassword"
-                  className="form-input"
-                  placeholder="••••••••"
-                  required
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                />
-                <button type="button" className="btn-toggle-password" onClick={() => setShowPassword(!showPassword)}>
-                  <Shield size={18} />
-                </button>
-              </div>
-            </div>
-
-            <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={authLoading}>
-              <span className="btn-text">{authLoading ? 'Signing in...' : 'Sign in'}</span>
-            </button>
-          </form>
-
-          <div className="auth-footer">
-            <span>Library Portal</span>
+          <div className="auth-footer" style={{ marginTop: '24px', textAlign: 'center' }}>
           </div>
         </div>
       </div>
@@ -1103,6 +1055,7 @@ export default function App() {
                           <td className="text-right">
                             {userRole === 'ADMIN' ? (
                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                <button className="btn btn-secondary btn-sm" title="Upload Cover" onClick={() => { setSelectedBookForCover({ id: b.id, title: b.title }); setActiveModal('uploadCover'); }}>Cover</button>
                                 <button className="btn btn-secondary btn-sm" onClick={() => { setBookForm(b); setActiveModal('editBook'); }}>Edit</button>
                                 <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBook(b.id, b.title)}>Del</button>
                               </div>
@@ -1599,7 +1552,7 @@ export default function App() {
           <div className="modal-card">
             <div className="modal-header">
               <h3>Add Book to Inventory</h3>
-              <button className="btn-close" onClick={() => { setActiveModal(null); setCoverFile(null); setCoverPreview(''); }}>&times;</button>
+              <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
             </div>
             <form onSubmit={handleCreateBookSubmit}>
               <div className="modal-body">
@@ -1615,28 +1568,9 @@ export default function App() {
                   <label className="form-label">ISBN Number</label>
                   <input type="text" className="form-input" required value={bookForm.isbn} onChange={e => setBookForm({ ...bookForm, isbn: e.target.value })} />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Cover Image (Optional)</label>
-                  <input
-                    type="file"
-                    className="form-input"
-                    accept="image/*"
-                    onChange={e => {
-                      if (e.target.files && e.target.files[0]) {
-                        setCoverFile(e.target.files[0]);
-                        setCoverPreview(URL.createObjectURL(e.target.files[0]));
-                      }
-                    }}
-                  />
-                  {coverPreview && (
-                    <div style={{ marginTop: '10px', textAlign: 'center' }}>
-                      <img src={coverPreview} alt="Cover Preview" style={{ maxHeight: '100px', borderRadius: '6px', border: '1px solid var(--border-color)' }} />
-                    </div>
-                  )}
-                </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-ghost" onClick={() => { setActiveModal(null); setCoverFile(null); setCoverPreview(''); }}>Cancel</button>
+                <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)}>Cancel</button>
                 <button type="submit" className="btn btn-primary">Save Book</button>
               </div>
             </form>
@@ -1875,51 +1809,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 9. Google OAuth Manual Token Entry Modal */}
-      {activeModal === 'googleToken' && (
-        <div className="modal-backdrop open">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>Complete Google Sign In</h3>
-              <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
-            </div>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              try {
-                const parsed = JSON.parse(manualOAuthToken);
-                if (parsed.token) {
-                  setAuthToken(parsed.token);
-                  showToast('Signed in with Google successfully', 'success');
-                  setActiveModal(null);
-                } else {
-                  showToast('Invalid token format', 'error');
-                }
-              } catch (err) {
-                showToast('Invalid JSON token format', 'error');
-              }
-            }}>
-              <div className="modal-body">
-                <p className="text-subtle mb-4">Paste your token response payload below to enter the dashboard:</p>
-                <div className="form-group">
-                  <label className="form-label">Authentication Token Payload</label>
-                  <textarea
-                    className="form-input"
-                    rows={4}
-                    placeholder='{"token": "eyJhbGci..."}'
-                    required
-                    value={manualOAuthToken}
-                    onChange={e => setManualOAuthToken(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Sign In to Dashboard</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* TOAST NOTIFICATIONS */}
       <div className="toast-container">

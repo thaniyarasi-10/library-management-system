@@ -6,6 +6,7 @@ import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
+import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
@@ -37,6 +38,9 @@ class UserServiceImplTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private UserProviderRepository userProviderRepository;
 
     @Mock
     private RewardRepository rewardRepository;
@@ -75,6 +79,9 @@ class UserServiceImplTest {
 
     @Mock
     private SalesforceUserSyncDelegate salesforceSyncDelegate;
+
+    @Mock
+    private Auth0RoleSyncDelegate auth0RoleSyncDelegate;
 
     @Test
     void createUser_shouldEncodePasswordAndSave() {
@@ -203,25 +210,128 @@ class UserServiceImplTest {
     }
 
     @Test
-    void findOrCreateGoogleUser_whenExistingUserWithoutProvider_shouldUpdateProvider() {
-        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user1));
-        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+    void syncAuth0User_whenExistingProviderId_shouldReturnExistingUserWithoutCallingAuth0Sync() {
+        user1.setRole(RoleEnum.USER);
+        com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
+                .userUuid(user1.getUuid())
+                .provider(AuthProvider.AUTH0)
+                .providerId("auth0|12345")
+                .build();
+        when(userProviderRepository.findByProviderId("auth0|12345")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid(user1.getUuid())).thenReturn(Optional.of(user1));
 
-        User result = userService.findOrCreateGoogleUser("google-123", "alice@example.com", "Alice Smith");
+        User result = userService.syncAuth0User("auth0|12345", "alice@example.com", "Alice Smith");
 
-        assertEquals("google-123", result.getProviderId());
-        assertEquals(AuthProvider.GOOGLE_OAUTH, result.getProvider());
+        assertNotNull(result);
+        assertEquals(user1.getUuid(), result.getUuid());
+        assertEquals(RoleEnum.USER, result.getRole());
+        verify(userRepository, never()).findByEmail(anyString());
+        verify(auth0RoleSyncDelegate, never()).syncUserRole(anyString(), any());
     }
 
     @Test
-    void findOrCreateGoogleUser_whenNewUser_shouldCreateUser() {
-        when(userRepository.findByEmail("new@example.com")).thenReturn(Optional.empty());
+    void syncAuth0User_whenExistingEmailWithoutProviderId_shouldLinkProviderIdAndSyncExistingRole() {
+        user1.setRole(RoleEnum.ADMIN);
+        when(userProviderRepository.findByProviderId("auth0|new-sub")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user1));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.findByUserUuidAndProvider(user1.getUuid(), AuthProvider.AUTH0)).thenReturn(Optional.empty());
+
+        User result = userService.syncAuth0User("auth0|new-sub", "alice@example.com", "Alice Smith");
+
+        assertNotNull(result);
+        assertEquals(RoleEnum.ADMIN, result.getRole());
+        verify(userRepository, times(1)).save(user1);
+        verify(userProviderRepository, times(1)).save(any(com.kovanlabs.librarymanagement.database.entity.UserProvider.class));
+        verify(auth0RoleSyncDelegate, times(1)).syncUserRole("auth0|new-sub", RoleEnum.ADMIN);
+    }
+
+    @Test
+    void syncAuth0User_whenNoExistingUser_shouldCreateNewUserWithRoleUserAndSyncAuth0() {
+        when(userProviderRepository.findByProviderId("auth0|brand-new")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("brandnew@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setUuid(UUID.randomUUID());
+            return u;
+        });
+
+        User result = userService.syncAuth0User("auth0|brand-new", "brandnew@example.com", "Brand New");
+
+        assertEquals("brandnew@example.com", result.getEmail());
+        assertEquals(RoleEnum.USER, result.getRole());
+        verify(userRepository, times(1)).save(any(User.class));
+        verify(userProviderRepository, times(1)).save(any(com.kovanlabs.librarymanagement.database.entity.UserProvider.class));
+        verify(auth0RoleSyncDelegate, times(1)).syncUserRole("auth0|brand-new", RoleEnum.USER);
+    }
+
+    @Test
+    void syncAuth0User_whenSameSubUsedAgain_shouldNotCreateDuplicateUser() {
+        com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
+                .userUuid(user1.getUuid())
+                .provider(AuthProvider.AUTH0)
+                .providerId("auth0|existing")
+                .build();
+        when(userProviderRepository.findByProviderId("auth0|existing")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid(user1.getUuid())).thenReturn(Optional.of(user1));
+
+        User result1 = userService.syncAuth0User("auth0|existing", "alice@example.com", "Alice Smith");
+        User result2 = userService.syncAuth0User("auth0|existing", "alice@example.com", "Alice Smith");
+
+        assertEquals(result1, result2);
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void updateUserRole_whenUserExists_shouldUpdateRoleAndSyncToAuth0() {
+        user1.setRole(RoleEnum.USER);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
 
-        User result = userService.findOrCreateGoogleUser("google-456", "new@example.com", "New User");
+        com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
+                .userUuid(user1.getUuid())
+                .provider(AuthProvider.AUTH0)
+                .providerId("auth0|user1-sub")
+                .build();
+        when(userProviderRepository.findByUserUuid(user1.getUuid()))
+                .thenReturn(List.of(up));
 
-        assertEquals("new@example.com", result.getEmail());
-        assertEquals("google-456", result.getProviderId());
-        assertEquals(RoleEnum.USER, result.getRole());
+        UserResponse response = userService.updateUserRole(1L, RoleEnum.ADMIN);
+
+        assertNotNull(response);
+        assertEquals(RoleEnum.ADMIN, user1.getRole());
+        verify(userRepository, times(1)).save(user1);
+        verify(auth0RoleSyncDelegate, times(1)).syncUserRole("auth0|user1-sub", RoleEnum.ADMIN);
+    }
+
+    @Test
+    void updateUserRole_whenUserNotFound_shouldThrowNotFound() {
+        when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> userService.updateUserRole(99L, RoleEnum.ADMIN));
+    }
+
+    @Test
+    void getUserByIdentifier_whenFoundByProviderId_shouldReturnUser() {
+        com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
+                .userUuid(user1.getUuid())
+                .provider(AuthProvider.AUTH0)
+                .providerId("auth0|alice")
+                .build();
+        when(userProviderRepository.findByProviderId("auth0|alice")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid(user1.getUuid())).thenReturn(Optional.of(user1));
+        when(rewardRepository.findByUserUuid(user1.getUuid())).thenReturn(Optional.empty());
+
+        UserResponse response = userService.getUserByIdentifier("auth0|alice");
+
+        assertEquals("alice@example.com", response.email());
+    }
+
+    @Test
+    void getUserByIdentifier_whenNotFound_shouldThrowNotFound() {
+        when(userProviderRepository.findByProviderId("unknown")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("unknown")).thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> userService.getUserByIdentifier("unknown"));
     }
 }

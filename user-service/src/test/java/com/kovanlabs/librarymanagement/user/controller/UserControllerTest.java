@@ -164,11 +164,59 @@ class UserControllerTest {
         UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
         java.security.Principal mockPrincipal = mock(java.security.Principal.class);
         when(mockPrincipal.getName()).thenReturn("alice@example.com");
-        when(userService.getUserByEmail("alice@example.com")).thenReturn(response);
+        when(userService.getUserByIdentifier("alice@example.com")).thenReturn(response);
 
         mockMvc.perform(get("/user/me").principal(mockPrincipal))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Alice"))
                 .andExpect(jsonPath("$.email").value("alice@example.com"));
+    }
+
+    @Test
+    @DisplayName("GET /user/me with Jwt authentication should sync and return profile")
+    void getCurrentUser_withJwt_ShouldSyncAndReturnProfile() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
+        com.kovanlabs.librarymanagement.database.entity.User syncedUser = com.kovanlabs.librarymanagement.database.entity.User.builder()
+                .uuid(uuid1)
+                .email("alice@example.com")
+                .name("Alice")
+                .build();
+
+        org.springframework.security.oauth2.jwt.Jwt jwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("mock-token")
+                .header("alg", "none")
+                .claim("sub", "auth0|12345")
+                .claim("email", "alice@example.com")
+                .claim("name", "Alice")
+                .build();
+
+        org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken jwtAuth =
+                new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(
+                        jwt, List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+                );
+
+        when(userService.syncAuth0User(eq("auth0|12345"), eq("alice@example.com"), eq("Alice")))
+                .thenReturn(syncedUser);
+        when(userService.getUserByIdentifier("auth0|12345")).thenReturn(response);
+
+        mockMvc.perform(get("/user/me").principal(jwtAuth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"))
+                .andExpect(jsonPath("$.email").value("alice@example.com"));
+    }
+
+    @Test
+    @DisplayName("PATCH /user/{id}/role should update and return user profile")
+    void updateUserRole_ShouldReturnUpdatedProfile() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
+        when(userService.updateUserRole(eq(id1), eq(com.kovanlabs.librarymanagement.database.enums.RoleEnum.ADMIN)))
+                .thenReturn(response);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/user/" + id1 + "/role")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\": \"ADMIN\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"));
+
+        verify(userService).updateUserRole(id1, com.kovanlabs.librarymanagement.database.enums.RoleEnum.ADMIN);
     }
 }

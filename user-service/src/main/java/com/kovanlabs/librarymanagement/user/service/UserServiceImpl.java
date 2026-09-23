@@ -3,10 +3,12 @@ package com.kovanlabs.librarymanagement.user.service;
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.entity.UserProvider;
 import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
+import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
@@ -32,39 +34,43 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/**
- * Implementation of {@link UserService} providing cached database access,
- * password hashing, reward points calculation, and optional Salesforce dual-write synchronization.
- */
 @Service
 @Transactional(readOnly = true)
 @Slf4j
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
+    private final UserProviderRepository userProviderRepository;
     private final RewardRepository rewardRepository;
     private final PasswordEncoder passwordEncoder;
     private final SalesforceUserSyncDelegate salesforceSyncDelegate;
+    private final Auth0RoleSyncDelegate auth0RoleSyncDelegate;
 
     /**
      * Constructs a new {@link UserServiceImpl} with injected dependencies.
      *
      * @param userRepository Repository for User database operations
+     * @param userProviderRepository Repository for UserProvider database operations
      * @param rewardRepository Repository for calculating user reward points
      * @param passwordEncoder Password hashing encoder
      * @param salesforceSyncDelegate Optional delegate for synchronizing changes to Salesforce
+     * @param auth0RoleSyncDelegate Optional delegate for synchronizing user roles to Auth0
      */
     @Autowired
     public UserServiceImpl(
             UserRepository userRepository,
+            UserProviderRepository userProviderRepository,
             RewardRepository rewardRepository,
             @Lazy PasswordEncoder passwordEncoder,
-            @Autowired(required = false) SalesforceUserSyncDelegate salesforceSyncDelegate) {
+            @Autowired(required = false) SalesforceUserSyncDelegate salesforceSyncDelegate,
+            @Autowired(required = false) Auth0RoleSyncDelegate auth0RoleSyncDelegate) {
 
         this.userRepository = userRepository;
+        this.userProviderRepository = userProviderRepository;
         this.rewardRepository = rewardRepository;
         this.passwordEncoder = passwordEncoder;
         this.salesforceSyncDelegate = salesforceSyncDelegate;
+        this.auth0RoleSyncDelegate = auth0RoleSyncDelegate;
     }
 
     /**
@@ -129,8 +135,11 @@ public class UserServiceImpl implements UserService {
     @CacheEvict(value = "users", allEntries = true)
     public UserResponse createUser(UserRequest request) {
         User user = UserMapper.INSTANCE.mapToEntity(request);
-        if (user != null && request.password() != null) {
-            user.setPassword(passwordEncoder.encode(request.password()));
+        if (user != null) {
+            user.setRole(RoleEnum.USER);
+            if (request.password() != null) {
+                user.setPassword(passwordEncoder.encode(request.password()));
+            }
         }
         User savedUser = userRepository.save(user);
         UserResponse response = mapToUserResponseWithRewards(savedUser);
@@ -338,40 +347,156 @@ public class UserServiceImpl implements UserService {
      */
     @Override
     public UserResponse getUserByEmail(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(
-                        () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with email: " + email));
+        return getUserByIdentifier(email);
+    }
+
+    @Override
+    public UserResponse getUserByIdentifier(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User identifier must not be empty");
+        }
+        User user = userProviderRepository.findByProviderId(identifier)
+                .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
+                .or(() -> userRepository.findByEmail(identifier))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with identifier: " + identifier));
         return mapToUserResponseWithRewards(user);
     }
 
     /**
-     * Looks up an existing user by email or creates a new Google OAuth-authenticated user.
+     * Updates an existing user's role administratively in MySQL and synchronizes the change to Auth0 app_metadata.
      *
-     * @param googleId The Google OAuth provider ID
+     * @param id The user ID to update
+     * @param newRole The new authoritative role
+     * @return The updated {@link UserResponse} DTO
+     */
+    @Override
+    @Transactional
+    @CacheEvict(value = "users", key = "#p0")
+    public UserResponse updateUserRole(Long id, RoleEnum newRole) {
+        if (newRole == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Role must not be null");
+        }
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
+
+        user.setRole(newRole);
+        User updatedUser = userRepository.save(user);
+        UserResponse response = mapToUserResponseWithRewards(updatedUser);
+
+        // Sync new role to all Auth0 identities linked to this user
+        if (auth0RoleSyncDelegate != null && updatedUser.getUuid() != null) {
+            List<UserProvider> providers = userProviderRepository.findByUserUuid(updatedUser.getUuid());
+            for (UserProvider provider : providers) {
+                if (provider.getProvider() == AuthProvider.AUTH0 && provider.getProviderId() != null) {
+                    try {
+                        auth0RoleSyncDelegate.syncUserRole(provider.getProviderId(), newRole);
+                    } catch (Exception e) {
+                        log.error("Failed to sync role update to Auth0 for user {}: {}", provider.getProviderId(), e.getMessage());
+                    }
+                }
+            }
+        }
+
+        return response;
+    }
+
+    /**
+     * Looks up an existing user by Auth0 provider ID (sub) or email, creates/updates user and links provider.
+     * MySQL user.role is the source of truth; incoming token claims never overwrite user.role.
+     * Synchronizes authoritative MySQL role to Auth0 app_metadata.role on user creation or identity linking.
+     *
+     * @param sub The Auth0 subject identifier
      * @param email The user's email
      * @param name The user's full name
      * @return The persisted {@link User} entity
      */
     @Override
     @Transactional
-    public User findOrCreateGoogleUser(String googleId, String email, String name) {
-        return userRepository.findByEmail(email)
-                .map(existingUser -> {
-                    if (existingUser.getProviderId() == null) {
-                        existingUser.setProviderId(googleId);
-                        existingUser.setProvider(AuthProvider.GOOGLE_OAUTH);
-                    }
-                    return userRepository.save(existingUser);
-                })
-                .orElseGet(() -> {
-                    User newUser = User.builder()
-                            .email(email)
-                            .name(name)
-                            .providerId(googleId)
-                            .provider(AuthProvider.GOOGLE_OAUTH)
-                            .role(RoleEnum.USER)
+    public User syncAuth0User(String sub, String email, String name) {
+        if (sub == null || sub.isBlank()) {
+            throw new IllegalArgumentException("Auth0 sub claim must not be empty");
+        }
+
+        // 1. Primary lookup by providerId in user_provider table
+        var userProviderOpt = userProviderRepository.findByProviderId(sub);
+        if (userProviderOpt.isPresent()) {
+            UserProvider userProvider = userProviderOpt.get();
+            User existing = userRepository.findByUuid(userProvider.getUserUuid())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found for providerId: " + sub));
+            boolean changed = false;
+            if (email != null && !email.isBlank() && !email.equals(existing.getEmail())) {
+                existing.setEmail(email);
+                changed = true;
+            }
+            if (name != null && !name.isBlank() && (existing.getName() == null || !name.equals(existing.getName()))) {
+                existing.setName(name);
+                changed = true;
+            }
+            // Do NOT modify existing.getRole() based on incoming claims
+            return changed ? userRepository.save(existing) : existing;
+        }
+
+        // 2. Fallback lookup by email for linking existing accounts
+        if (email != null && !email.isBlank()) {
+            var userByEmail = userRepository.findByEmail(email);
+            if (userByEmail.isPresent()) {
+                User existing = userByEmail.get();
+                if (name != null && !name.isBlank() && (existing.getName() == null || existing.getName().isBlank())) {
+                    existing.setName(name);
+                }
+                User saved = userRepository.save(existing);
+
+                // Create user_provider link if not already present
+                if (userProviderRepository.findByUserUuidAndProvider(saved.getUuid(), AuthProvider.AUTH0).isEmpty()) {
+                    UserProvider newProvider = UserProvider.builder()
+                            .userUuid(saved.getUuid())
+                            .provider(AuthProvider.AUTH0)
+                            .providerId(sub)
                             .build();
-                    return userRepository.save(newUser);
-                });
+                    userProviderRepository.save(newProvider);
+                }
+
+                // Sync existing MySQL role to Auth0 app_metadata
+                if (auth0RoleSyncDelegate != null) {
+                    try {
+                        auth0RoleSyncDelegate.syncUserRole(sub, saved.getRole());
+                    } catch (Exception e) {
+                        log.error("Failed to sync role to Auth0 during account linking for user {}: {}", sub, e.getMessage());
+                    }
+                }
+
+                return saved;
+            }
+        }
+
+        // 3. No existing user -> create new User with USER role and UserProvider link
+        String effectiveEmail = (email != null && !email.isBlank()) ? email : sub + "@auth0.user";
+        String effectiveName = (name != null && !name.isBlank()) ? name : "User";
+
+        User newUser = User.builder()
+                .email(effectiveEmail)
+                .name(effectiveName)
+                .role(RoleEnum.USER)
+                .build();
+
+        User savedUser = userRepository.save(newUser);
+
+        UserProvider newProvider = UserProvider.builder()
+                .userUuid(savedUser.getUuid())
+                .provider(AuthProvider.AUTH0)
+                .providerId(sub)
+                .build();
+        userProviderRepository.save(newProvider);
+
+        // Sync default USER role to Auth0 app_metadata
+        if (auth0RoleSyncDelegate != null) {
+            try {
+                auth0RoleSyncDelegate.syncUserRole(sub, RoleEnum.USER);
+            } catch (Exception e) {
+                log.error("Failed to sync initial role to Auth0 for new user {}: {}", sub, e.getMessage());
+            }
+        }
+
+        return savedUser;
     }
 }

@@ -6,7 +6,7 @@
             http://www.liquibase.org/xml/ns/dbchangelog
             https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
 
-    <changeSet id="17-add-salesforce-sync-status" author="thani">
+    <changeSet id="17" author="thani">
         <addColumn tableName="user">
             <column name="salesforce_sync_status" type="varchar(20)" defaultValue="PENDING">
                 <constraints nullable="false"/>

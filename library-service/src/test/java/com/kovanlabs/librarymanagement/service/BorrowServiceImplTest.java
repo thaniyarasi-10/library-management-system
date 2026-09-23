@@ -40,6 +40,9 @@ class BorrowServiceImplTest {
     private UserRepository userRepository;
 
     @Mock
+    private com.kovanlabs.librarymanagement.database.repository.UserProviderRepository userProviderRepository;
+
+    @Mock
     private UserFineChecker userFineChecker;
 
     @Mock
@@ -240,6 +243,7 @@ class BorrowServiceImplTest {
                         borrowRepository,
                         bookRepository,
                         userRepository,
+                        userProviderRepository,
                         null,
                         membershipService,
                         null

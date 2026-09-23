@@ -5,10 +5,12 @@ import com.kovanlabs.librarymanagement.database.entity.Membership;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.MembershipStatus;
 import com.kovanlabs.librarymanagement.database.repository.MembershipRepository;
+import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.dto.MembershipApplicationResponse;
 import com.kovanlabs.librarymanagement.dto.MembershipResponseDto;
 import com.kovanlabs.librarymanagement.mapping.MembershipMapper;
+import com.kovanlabs.librarymanagement.service.MembershipService;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,6 +45,7 @@ public class MembershipServiceImpl implements MembershipService {
 
     private final MembershipRepository membershipRepository;
     private final UserRepository userRepository;
+    private final UserProviderRepository userProviderRepository;
     private final S3Service s3Service;
 
     @Value("${aws.s3.membership.bucket-name}")
@@ -66,6 +69,13 @@ public class MembershipServiceImpl implements MembershipService {
         return s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
     }
 
+    private User findUserByIdentifier(String identifier) {
+        return userProviderRepository.findByProviderId(identifier)
+                .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
+                .or(() -> userRepository.findByEmail(identifier))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + identifier));
+    }
+
     /**
      * Submits a membership application in PENDING status and returns the populated agreement HTML.
      *
@@ -75,8 +85,7 @@ public class MembershipServiceImpl implements MembershipService {
     @Override
     @Transactional
     public MembershipApplicationResponse applyForMembership(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+        User user = findUserByIdentifier(email);
 
         boolean exists = membershipRepository.existsByUserUuidAndStatusIn(
                 user.getUuid(),
@@ -138,8 +147,7 @@ public class MembershipServiceImpl implements MembershipService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Signature file size must not exceed 50KB");
         }
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+        User user = findUserByIdentifier(email);
 
         Membership membership = membershipRepository.findByUuid(membershipUuid)
                 .orElseThrow(
@@ -220,8 +228,7 @@ public class MembershipServiceImpl implements MembershipService {
      */
     @Override
     public MembershipResponseDto getMyMembership(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+        User user = findUserByIdentifier(email);
 
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
@@ -242,8 +249,7 @@ public class MembershipServiceImpl implements MembershipService {
     @Override
     @Transactional
     public MembershipResponseDto cancelMembership(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+        User user = findUserByIdentifier(email);
 
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
@@ -274,8 +280,7 @@ public class MembershipServiceImpl implements MembershipService {
      */
     @Override
     public String getAgreementHtmlByUuid(UUID membershipUuid, String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+        User user = findUserByIdentifier(email);
 
         Membership membership = membershipRepository.findByUuid(membershipUuid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership not found"));
@@ -312,8 +317,7 @@ public class MembershipServiceImpl implements MembershipService {
      */
     @Override
     public byte[] downloadAgreementPdf(Long membershipId, String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+        User user = findUserByIdentifier(email);
 
         Membership membership = membershipRepository.findByMembershipId(membershipId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership not found"));

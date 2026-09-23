@@ -24,5 +24,6 @@
     <include file="db/changelog/changes/15-create-rewards-table.xml"/>
     <include file="db/changelog/changes/16-update-rewards.xml"/>
     <include file="db/changelog/changes/17-add-salesforce-sync-status.xml"/>
+    <include file="db/changelog/changes/18-create-user-provider-table.xml"/>
 
 </databaseChangeLog>
