@@ -6,71 +6,44 @@ import com.kovanlabs.librarymanagement.salesforce.constant.fields.BookFields;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
 import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
-import com.kovanlabs.librarymanagement.salesforce.mapping.SalesforceMapper;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
-import com.kovanlabs.librarymanagement.user.dto.UserResponse;
-import com.kovanlabs.librarymanagement.user.service.SalesforceUserSyncDelegate;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Service for synchronizing User, Book, and Borrow entities with Salesforce SObjects.
  * <p>
- * Implements {@link SalesforceUserSyncDelegate} to integrate with user module workflows,
+ * Implements {@link SalesforceSync} to integrate with user module workflows,
  * and provides methods to push and pull SObjects to/from Salesforce via SOQL queries and REST APIs.
  */
+@Slf4j
 @Service
-public class SalesforceSyncService implements SalesforceUserSyncDelegate {
-
-    private static final Logger log = LoggerFactory.getLogger(SalesforceSyncService.class);
+@RequiredArgsConstructor
+public class SalesforceSyncImpl implements SalesforceSync {
 
     private final SalesforceClientService clientService;
-    private final SalesforceMapper salesforceMapper;
-
-    /**
-     * Constructs a new {@link SalesforceSyncService} with required dependencies.
-     *
-     * @param clientService The Salesforce REST client service
-     * @param salesforceMapper The mapper for converting entities/DTOs to/from SObjects
-     */
-    public SalesforceSyncService(SalesforceClientService clientService, SalesforceMapper salesforceMapper) {
-        this.clientService = clientService;
-        this.salesforceMapper = salesforceMapper;
-    }
 
     // --- WRITE OPERATIONS (SObject -> Map payload -> Salesforce) ---
-
-    /**
-     * Synchronizes a User record to Salesforce Contact.
-     *
-     * @param user The user response DTO to sync
-     */
-    @Override
-    public void syncUser(UserResponse user) {
-        if (user == null || user.uuid() == null) {
-            return;
-        }
-        ContactSObject contact = salesforceMapper.toContactSObject(user);
-        syncContact(contact);
-    }
 
     /**
      * Synchronizes a {@link ContactSObject} to Salesforce via upsert on External ID.
      *
      * @param contact The Contact SObject to upsert
      */
+    @Override
     public void syncContact(ContactSObject contact) {
         if (contact == null || contact.getExternalUserUuid() == null) {
             return;
         }
-        Map<String, Object> fields = salesforceMapper.toPayloadMap(contact);
+        Map<String, Object> fields = toPayloadMap(contact);
         fields.remove(ContactSObject.EXTERNAL_ID_FIELD);
         clientService.upsertByExternalId(
                 SObject.CONTACT.getObjectName(),
@@ -81,15 +54,33 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
     }
 
     /**
+     * Deletes a User record from Salesforce Contact by external UUID.
+     *
+     * @param userUuid The user UUID
+     */
+    @Override
+    public void deleteUser(UUID userUuid) {
+        if (userUuid == null) {
+            return;
+        }
+        clientService.deleteByExternalId(
+                SObject.CONTACT.getObjectName(),
+                ContactSObject.EXTERNAL_ID_FIELD,
+                userUuid.toString()
+        );
+    }
+
+    /**
      * Synchronizes a {@link BookSObject} to Salesforce via upsert on External ID.
      *
      * @param book The Book SObject to upsert
      */
+    @Override
     public void syncBook(BookSObject book) {
         if (book == null || book.getExternalBookUuid() == null) {
             return;
         }
-        Map<String, Object> fields = salesforceMapper.toPayloadMap(book);
+        Map<String, Object> fields = toPayloadMap(book);
         fields.remove(BookSObject.EXTERNAL_ID_FIELD);
         clientService.upsertByExternalId(
                 SObject.BOOK.getObjectName(),
@@ -104,62 +95,53 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
      *
      * @param borrow The Borrow SObject to upsert
      */
+    @Override
     public void syncBorrow(BorrowSObject borrow) {
-            if (borrow == null || borrow.getExternalBorrowUuid() == null) {
-                return;
-            }
+        if (borrow == null || borrow.getExternalBorrowUuid() == null) {
+            return;
+        }
 
-            Map<String, Object> fields = salesforceMapper.toPayloadMap(borrow);
+        Map<String, Object> fields = toPayloadMap(borrow);
 
-            fields.remove(BorrowSObject.EXTERNAL_ID_FIELD);
+        fields.remove(BorrowSObject.EXTERNAL_ID_FIELD);
 
-            if (borrow.getBook() != null) {
-                Map<String, Object> bookReference = Map.of(
-                        BookSObject.EXTERNAL_ID_FIELD,
-                        borrow.getBook().getExternalBookUuid()
-                );
-
-                fields.put(BorrowFields.BOOK_RELATION, bookReference);
-            }
-
-            if (borrow.getContact() != null) {
-                Map<String, Object> contactReference = Map.of(
-                        ContactSObject.EXTERNAL_ID_FIELD,
-                        borrow.getContact().getExternalUserUuid()
-                );
-
-                fields.put(BorrowFields.CONTACT_RELATION, contactReference);
-            }
-
-            clientService.upsertByExternalId(
-                    SObject.BORROW.getObjectName(),
-                    BorrowSObject.EXTERNAL_ID_FIELD,
-                    borrow.getExternalBorrowUuid(),
-                    fields
+        if (borrow.getBook() != null) {
+            Map<String, Object> bookReference = Map.of(
+                    BookSObject.EXTERNAL_ID_FIELD,
+                    borrow.getBook().getExternalBookUuid()
             );
+
+            fields.put(BorrowFields.BOOK_RELATION, bookReference);
+        }
+
+        if (borrow.getContact() != null) {
+            Map<String, Object> contactReference = Map.of(
+                    ContactSObject.EXTERNAL_ID_FIELD,
+                    borrow.getContact().getExternalUserUuid()
+            );
+
+            fields.put(BorrowFields.CONTACT_RELATION, contactReference);
+        }
+
+        clientService.upsertByExternalId(
+                SObject.BORROW.getObjectName(),
+                BorrowSObject.EXTERNAL_ID_FIELD,
+                borrow.getExternalBorrowUuid(),
+                fields
+        );
     }
 
     // --- READ OPERATIONS (SOQL -> SObjects) ---
-
-    /**
-     * Fetches all synced users from Salesforce Contact records and converts them to {@link UserResponse} DTOs.
-     *
-     * @return List of {@link UserResponse} records from Salesforce
-     */
-    @Override
-    public List<UserResponse> fetchUsersFromSalesforce() {
-        List<ContactSObject> contacts = fetchContactsFromSalesforce();
-        return salesforceMapper.toUserResponseList(contacts);
-    }
 
     /**
      * Queries and fetches all {@link ContactSObject} records from Salesforce that have an external UUID.
      *
      * @return List of {@link ContactSObject} instances
      */
+    @Override
     public List<ContactSObject> fetchContactsFromSalesforce() {
         String soql = new SOQLBuilder<>()
-                .select(ContactFields.EXTERNAL_USER_UUID, ContactFields.LEGACY_USER_ID, ContactFields.LAST_NAME, ContactFields.EMAIL)
+                .select(ContactFields.EXTERNAL_USER_UUID, ContactFields.LEGACY_USER_ID, ContactFields.LAST_NAME, ContactFields.EMAIL, ContactFields.ROLE)
                 .from(SObject.CONTACT)
                 .whereNotNull(ContactSObject.EXTERNAL_ID_FIELD)
                 .build();
@@ -169,9 +151,9 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
             return Collections.emptyList();
         }
 
-        List<ContactSObject> contacts = salesforceMapper.toSObjectList(json, ContactSObject.class);
+        List<ContactSObject> contacts = toSObjectList(json, ContactSObject.class);
         for (ContactSObject contact : contacts) {
-            if (contact != null) {
+            if (contact != null && contact.getErrors() != null && !contact.getErrors().isEmpty()) {
                 log.warn("Salesforce error for Contact [UUID: {}]: {}", contact.getExternalUserUuid(), contact.getErrors());
             }
         }
@@ -183,6 +165,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
      *
      * @return The total count of book records in Salesforce
      */
+    @Override
     public long getTotalBooksFromSalesforce() {
         String soql = new SOQLBuilder<>()
                 .count()
@@ -204,6 +187,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
      * @param offset Number of records to skip (OFFSET)
      * @return List of {@link BookSObject} instances
      */
+    @Override
     public List<BookSObject> fetchBooksFromSalesforce(int size, int offset) {
         String soql = new SOQLBuilder<>()
                 .select(BookFields.EXTERNAL_BOOK_UUID, BookFields.NAME, BookFields.TITLE, BookFields.AUTHOR, BookFields.ISBN, BookFields.COVER_IMAGE_URL)
@@ -218,9 +202,9 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
             return Collections.emptyList();
         }
 
-        List<BookSObject> books = salesforceMapper.toSObjectList(json, BookSObject.class);
+        List<BookSObject> books = toSObjectList(json, BookSObject.class);
         for (BookSObject book : books) {
-            if (book != null) {
+            if (book != null && book.getErrors() != null && !book.getErrors().isEmpty()) {
                 log.warn("Salesforce error for Book [UUID: {}]: {}", book.getExternalBookUuid(), book.getErrors());
             }
         }
@@ -232,6 +216,7 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
      *
      * @return List of {@link BorrowSObject} instances
      */
+    @Override
     public List<BorrowSObject> fetchBorrowsFromSalesforce() {
         String soql = new SOQLBuilder<>()
                 .select(BorrowFields.EXTERNAL_BORROW_UUID, BorrowFields.BORROW_DATE, BorrowFields.DUE_DATE, BorrowFields.RETURN_DATE, BorrowFields.BORROW_STATUS)
@@ -244,9 +229,9 @@ public class SalesforceSyncService implements SalesforceUserSyncDelegate {
             return Collections.emptyList();
         }
 
-        List<BorrowSObject> borrows = salesforceMapper.toSObjectList(json, BorrowSObject.class);
+        List<BorrowSObject> borrows = toSObjectList(json, BorrowSObject.class);
         for (BorrowSObject borrow : borrows) {
-            if (borrow != null ) {
+            if (borrow != null && borrow.getErrors() != null && !borrow.getErrors().isEmpty()) {
                 log.warn("Salesforce error for Borrow [UUID: {}]: {}", borrow.getExternalBorrowUuid(), borrow.getErrors());
             }
         }

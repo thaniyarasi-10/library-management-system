@@ -7,6 +7,7 @@ import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 
 import java.util.List;
+import java.security.Principal;
 
 public interface UserService {
     UserResponse createUser(UserRequest request);
@@ -19,6 +20,8 @@ public interface UserService {
     UserResponse updateUser(Long id, UserRequest request);
     UserResponse updateUserRole(Long id, RoleEnum newRole);
     void deleteUser(Long id);
-    User syncAuth0User(String sub, String email, String name);
+    User syncAuth0User(String sub, String email, String name, RoleEnum role);
+    UserResponse getCurrentUser(Principal principal);
+    UserResponse updateCurrentUser(Principal principal, UserRequest request);
 }
 

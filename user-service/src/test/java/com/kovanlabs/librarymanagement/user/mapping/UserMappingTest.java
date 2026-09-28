@@ -22,6 +22,7 @@ class UserMapperTest {
     }
 
 
+    @Test
     void testMapToResponse_SingleUser() {
         UUID uuid = UUID.randomUUID();
         User user = User.builder()
@@ -66,7 +67,7 @@ class UserMapperTest {
 
     @Test
     void testMapToEntity() {
-        UserRequest request = new UserRequest("test@example.com", "password123", "Test User");
+        UserRequest request = new UserRequest("test@example.com", "Test User");
 
         User entity = userMapper.mapToEntity(request);
 
@@ -78,5 +79,67 @@ class UserMapperTest {
     @Test
     void testMapToEntity_NullRequest() {
         assertNull(userMapper.mapToEntity(null));
+    }
+
+    @Test
+    void testToContactSObject_withUserEntity() {
+        UUID uuid = UUID.randomUUID();
+        User user = User.builder()
+                .uuid(uuid)
+                .id(1L)
+                .name("Alice")
+                .email("alice@example.com")
+                .role(com.kovanlabs.librarymanagement.database.enums.RoleEnum.ADMIN)
+                .build();
+
+        var sObject = userMapper.toContactSObject(user);
+        assertNotNull(sObject);
+        assertEquals(uuid.toString(), sObject.getExternalUserUuid());
+        assertEquals(1L, sObject.getLegacyUserId());
+        assertEquals("Alice", sObject.getLastName());
+        assertEquals("alice@example.com", sObject.getEmail());
+        assertEquals("ADMIN", sObject.getRole());
+
+        assertNull(userMapper.toContactSObject((User) null));
+    }
+
+    @Test
+    void testToContactSObject_withUserResponse() {
+        UUID uuid = UUID.randomUUID();
+        UserResponse dto = new UserResponse(uuid, 2L, "Bob", "bob@example.com", "USER", 10);
+
+        var sObject = userMapper.toContactSObject(dto);
+        assertNotNull(sObject);
+        assertEquals(uuid.toString(), sObject.getExternalUserUuid());
+        assertEquals(2L, sObject.getLegacyUserId());
+        assertEquals("Bob", sObject.getLastName());
+        assertEquals("bob@example.com", sObject.getEmail());
+        assertEquals("USER", sObject.getRole());
+
+        assertNull(userMapper.toContactSObject((UserResponse) null));
+    }
+
+    @Test
+    void testToUserResponse_and_toUserResponseList() {
+        UUID uuid = UUID.randomUUID();
+        var contact = com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject.builder()
+                .externalUserUuid(uuid.toString())
+                .legacyUserId(42L)
+                .lastName("Charlie")
+                .email("charlie@example.com")
+                .role("ADMIN")
+                .build();
+
+        UserResponse res = userMapper.toUserResponse(contact);
+        assertNotNull(res);
+        assertEquals(uuid, res.uuid());
+        assertEquals(42L, res.id());
+        assertEquals("Charlie", res.name());
+        assertEquals("charlie@example.com", res.email());
+        assertEquals("ADMIN", res.role());
+
+        List<UserResponse> list = userMapper.toUserResponseList(List.of(contact));
+        assertEquals(1, list.size());
+        assertNull(userMapper.toUserResponseList(null));
     }
 }

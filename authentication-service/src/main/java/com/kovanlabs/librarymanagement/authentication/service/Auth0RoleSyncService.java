@@ -1,11 +1,11 @@
-package com.kovanlabs.librarymanagement.user.service;
+package com.kovanlabs.librarymanagement.authentication.service;
 
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 
 /**
- * Delegate interface for synchronizing user roles to Auth0 Management API app_metadata.
+ * Service interface for synchronizing user roles to Auth0 Management API app_metadata.
  */
-public interface Auth0RoleSyncDelegate {
+public interface Auth0RoleSyncService {
 
     /**
      * Synchronizes a user's role in MySQL to Auth0 user app_metadata.role.

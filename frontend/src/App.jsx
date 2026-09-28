@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useAuth0 } from '@auth0/auth0-react';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
-  Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw
+  Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
+  User as UserIcon, Edit2
 } from 'lucide-react';
 import './styles.css';
 
@@ -9,15 +11,24 @@ export default function App() {
   // Theme state
   const [theme, setTheme] = useState(localStorage.getItem('athenaeum_theme') || 'dark');
 
-  // Server-Side Regular Web App Auth State (Stateless Bearer JWT)
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [accessToken, setAccessToken] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [authError, setAuthError] = useState(null);
+  // Auth0 state
+  const {
+    isAuthenticated,
+    isLoading,
+    user: auth0User,
+    loginWithRedirect,
+    logout,
+    getAccessTokenSilently,
+    error: auth0Error
+  } = useAuth0();
 
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState('');
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [authMode, setAuthMode] = useState('signin');
+  const [signupUsername, setSignupUsername] = useState('');
+  const [signupError, setSignupError] = useState('');
+  const userFetchedRef = useRef(false);
 
   // Navigation
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -65,6 +76,7 @@ export default function App() {
   // Form models
   const [bookForm, setBookForm] = useState({ id: '', title: '', author: '', isbn: '' });
   const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '' });
+  const [profileForm, setProfileForm] = useState({ name: '', email: '' });
   const [selectedBookForCover, setSelectedBookForCover] = useState({ id: '', title: '' });
   const [coverFile, setCoverFile] = useState(null);
   const [coverPreview, setCoverPreview] = useState('');
@@ -74,7 +86,7 @@ export default function App() {
   // Toasts
   const [toasts, setToasts] = useState([]);
 
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+  const baseUrl = 'http://localhost:8080';
 
   const showToast = (message, type = 'info') => {
     const id = Date.now();
@@ -89,28 +101,23 @@ export default function App() {
       ...(options.headers || {})
     };
 
+    if (isAuthenticated && !headers['Authorization']) {
+      try {
+        const token = await getAccessTokenSilently();
+        headers['Authorization'] = `Bearer ${token}`;
+      } catch (err) {
+        console.warn('Could not retrieve access token silently:', err);
+      }
+    }
+
     if (!(options.body instanceof FormData) && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
     }
 
-    if (accessToken && !headers['Authorization']) {
-      headers['Authorization'] = `Bearer ${accessToken}`;
-    }
-
     try {
-      const res = await fetch(`${baseUrl}${endpoint}`, {
-        ...options,
-        headers,
-        credentials: 'include'
-      });
-
+      const res = await fetch(`${baseUrl}${endpoint}`, { ...options, headers });
       if (res.status === 401) {
-        if (isAuthenticated) {
-          setIsAuthenticated(false);
-          setCurrentUser(null);
-          setAccessToken(null);
-          showToast('Session expired. Please sign in again.', 'error');
-        }
+        showToast('Session expired or unauthenticated. Please sign in again.', 'error');
         return { ok: false, status: 401 };
       }
       if (res.status === 403) {
@@ -133,7 +140,7 @@ export default function App() {
       console.error('API Call Error:', err);
       return { ok: false, status: 0, error: err };
     }
-  }, [baseUrl, isAuthenticated, accessToken]);
+  }, [isAuthenticated, getAccessTokenSilently]);
 
   // Theme Sync
   useEffect(() => {
@@ -141,59 +148,95 @@ export default function App() {
     localStorage.setItem('athenaeum_theme', theme);
   }, [theme]);
 
-  // Auth Initialization on Page Load (Regular Web App Bearer JWT Flow)
+  // Auth Initialization and User Sync
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const err = urlParams.get('auth_error');
-    if (err) {
-      setAuthError(err);
-      window.history.replaceState({}, document.title, window.location.pathname);
+    if (!isAuthenticated) {
+      userFetchedRef.current = false;
+      return;
     }
 
-    const initAuth = async () => {
-      try {
-        const tokenRes = await fetch(`${baseUrl}/api/auth/token`, {
-          credentials: 'include'
-        });
+    if (userFetchedRef.current) return;
+    userFetchedRef.current = true;
 
-        if (tokenRes.ok) {
-          const tokenData = await tokenRes.json();
-          if (tokenData.accessToken) {
-            setAccessToken(tokenData.accessToken);
-            const meRes = await fetch(`${baseUrl}/api/auth/me`, {
-              headers: {
-                'Authorization': `Bearer ${tokenData.accessToken}`
-              }
-            });
-            if (meRes.ok) {
-              const user = await meRes.json();
-              setCurrentUser(user);
-              setIsAuthenticated(true);
-              setUserRole(user.role === 'ADMIN' ? 'ADMIN' : 'USER');
-            } else {
-              setIsAuthenticated(false);
-              setCurrentUser(null);
-              setAccessToken(null);
+    // Helper to test if a value indicates ADMIN
+    const checkIsAdmin = (claim) => {
+      if (!claim) return false;
+      if (typeof claim === 'string') {
+        const c = claim.toUpperCase().trim();
+        return c === 'ADMIN' || c === 'ROLE_ADMIN' || c.includes('ADMIN');
+      }
+      if (Array.isArray(claim)) {
+        return claim.some(r => typeof r === 'string' && (
+          r.toUpperCase().trim() === 'ADMIN' ||
+          r.toUpperCase().trim() === 'ROLE_ADMIN' ||
+          r.toLowerCase().includes('admin') ||
+          r === 'books:write'
+        ));
+      }
+      return false;
+    };
+
+    // Determine role from all standard Auth0 claim formats
+    const findRoleFromUser = (userObj) => {
+      if (!userObj) return false;
+      const candidates = [
+        userObj['https://library.kovanlabs.com/roles'],
+        userObj['https://library.kovanlabs.com/role'],
+        userObj['roles'],
+        userObj['role'],
+        userObj['permissions'],
+        userObj['user_metadata']?.role,
+        userObj['user_metadata']?.roles,
+        userObj['app_metadata']?.role,
+        userObj['app_metadata']?.roles
+      ];
+      return candidates.some(checkIsAdmin);
+    };
+
+    let isAdmin = findRoleFromUser(auth0User);
+    setUserRole(isAdmin ? 'ADMIN' : 'USER');
+
+    // Also inspect Access Token payload & sync user profile with backend MySQL via GET /user/me
+    const syncUser = async () => {
+      // Check Access Token JWT for roles if ID token didn't have it
+      if (!isAdmin && getAccessTokenSilently) {
+        try {
+          const token = await getAccessTokenSilently();
+          if (token && token.includes('.')) {
+            const payloadBase64 = token.split('.')[1];
+            const decoded = JSON.parse(atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/')));
+            if (findRoleFromUser(decoded)) {
+              isAdmin = true;
+              setUserRole('ADMIN');
             }
-          } else {
-            setIsAuthenticated(false);
-            setCurrentUser(null);
           }
-        } else {
-          setIsAuthenticated(false);
-          setCurrentUser(null);
+        } catch (tokErr) {
+          console.warn('Access token decoding error:', tokErr);
         }
-      } catch (e) {
-        console.error('Auth initialization error:', e);
-        setIsAuthenticated(false);
-        setCurrentUser(null);
-      } finally {
-        setIsLoading(false);
+      }
+
+      let reqHeaders = {};
+      const pendingUsername = sessionStorage.getItem('auth0_pending_username');
+      if (pendingUsername && pendingUsername.trim()) {
+        reqHeaders['X-User-Username'] = pendingUsername.trim();
+        reqHeaders['X-User-Name'] = pendingUsername.trim();
+      }
+
+      const res = await fetchApi('/user/me', { headers: reqHeaders });
+      if (res.ok && res.data) {
+        setCurrentUser(res.data);
+        sessionStorage.removeItem('auth0_pending_username');
+      } else if (auth0User) {
+        setCurrentUser({
+          email: auth0User.email || '',
+          name: auth0User.name || auth0User.nickname || pendingUsername || 'User'
+        });
+        sessionStorage.removeItem('auth0_pending_username');
       }
     };
 
-    initAuth();
-  }, [baseUrl]);
+    syncUser();
+  }, [isAuthenticated, auth0User, fetchApi, getAccessTokenSilently]);
 
   // Load Page Data on Change
   useEffect(() => {
@@ -213,33 +256,12 @@ export default function App() {
     }
   }, [currentPage, isAuthenticated, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
 
-  const handleSignOut = async () => {
-    try {
-      const res = await fetch(`${baseUrl}/api/auth/logout`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-      setIsAuthenticated(false);
-      setCurrentUser(null);
-      setAccessToken(null);
-      setUserRole('');
-      setCurrentPage('dashboard');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.logoutUrl) {
-          window.location.href = data.logoutUrl;
-        }
-      }
-    } catch (e) {
-      console.error('Logout error:', e);
-      setIsAuthenticated(false);
-      setCurrentUser(null);
-      setAccessToken(null);
-    }
-  };
-
-  const handleSignIn = () => {
-    window.location.href = `${baseUrl}/api/auth/login`;
+  const handleSignOut = () => {
+    userFetchedRef.current = false;
+    setCurrentUser(null);
+    setUserRole('');
+    setCurrentPage('dashboard');
+    logout({ logoutParams: { returnTo: window.location.origin } });
   };
 
   // Monogram Helper
@@ -677,6 +699,45 @@ export default function App() {
     setActiveModal('confirm');
   };
 
+  const handleOpenEditProfile = () => {
+    if (currentUser) {
+      setProfileForm({
+        name: currentUser.name || '',
+        email: currentUser.email || ''
+      });
+      setShowUserDropdown(false);
+      setActiveModal('editProfile');
+    }
+  };
+
+  const handleEditProfileSubmit = async (e) => {
+    e.preventDefault();
+    if (!profileForm.name.trim()) {
+      showToast('Username / Name is required', 'error');
+      return;
+    }
+
+    const payload = {
+      name: profileForm.name.trim(),
+      email: profileForm.email.trim() || (currentUser ? currentUser.email : '')
+    };
+
+    const endpoint = (currentUser && currentUser.id) ? `/user/${currentUser.id}` : '/user/me';
+
+    const res = await fetchApi(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok && res.data) {
+      setCurrentUser(res.data);
+      showToast('Profile updated successfully', 'success');
+      setActiveModal(null);
+    } else {
+      showToast(res.data?.message || 'Failed to update profile', 'error');
+    }
+  };
+
   // Render loading screen while Auth0 verifies session
   if (isLoading) {
     return (
@@ -696,8 +757,23 @@ export default function App() {
     );
   }
 
-  // Render Auth0 Login Screen if not authenticated
+  // Render Auth0 Login / Signup Screen if not authenticated
   if (!isAuthenticated) {
+    const handleSignupSubmit = (e) => {
+      if (e) e.preventDefault();
+      if (!signupUsername.trim()) {
+        setSignupError('Please enter a username');
+        return;
+      }
+      setSignupError('');
+      sessionStorage.setItem('auth0_pending_username', signupUsername.trim());
+      loginWithRedirect({
+        authorizationParams: {
+          screen_hint: 'signup'
+        }
+      });
+    };
+
     return (
       <div className="auth-screen">
         <div className="auth-card">
@@ -709,23 +785,133 @@ export default function App() {
             <p className="brand-subtitle">Library Management System</p>
           </div>
 
-          <div className="auth-header">
-            <h2>Sign in to portal</h2>
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', marginBottom: '20px' }}>
+            <button
+              type="button"
+              style={{
+                flex: 1,
+                padding: '10px',
+                background: 'none',
+                border: 'none',
+                borderBottom: authMode === 'signin' ? '2px solid var(--accent-primary)' : '2px solid transparent',
+                color: authMode === 'signin' ? 'var(--text-main)' : 'var(--text-muted)',
+                fontWeight: authMode === 'signin' ? 600 : 500,
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+              onClick={() => { setAuthMode('signin'); setSignupError(''); }}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              style={{
+                flex: 1,
+                padding: '10px',
+                background: 'none',
+                border: 'none',
+                borderBottom: authMode === 'signup' ? '2px solid var(--accent-primary)' : '2px solid transparent',
+                color: authMode === 'signup' ? 'var(--text-main)' : 'var(--text-muted)',
+                fontWeight: authMode === 'signup' ? 600 : 500,
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+              onClick={() => { setAuthMode('signup'); setSignupError(''); }}
+            >
+              Register (Sign Up)
+            </button>
           </div>
 
-          {authError && (
+          <div className="auth-header">
+            <h2>{authMode === 'signin' ? 'Sign in to portal' : 'Create your account'}</h2>
+            <p className="text-muted" style={{ fontSize: '13px' }}>
+              {authMode === 'signin'
+                ? 'Access your library cards, book catalog, and more'
+                : 'Choose a username and register'}
+            </p>
+          </div>
+
+          {auth0Error && (
             <div className="alert alert-danger mb-4">
-              {authError === 'access_denied' ? 'Access was denied by Auth0.' : `Authentication error occurred (${authError})`}
+              {auth0Error.message || 'Authentication error occurred'}
             </div>
           )}
 
-          <button
-            type="button"
-            className="btn btn-primary btn-block btn-lg mb-3"
-            onClick={handleSignIn}
-          >
-            <span className="btn-text">Sign In / Register with Auth0</span>
-          </button>
+          {signupError && (
+            <div className="alert alert-danger mb-4" style={{ padding: '8px 12px', fontSize: '13px' }}>
+              {signupError}
+            </div>
+          )}
+
+          {authMode === 'signin' ? (
+            <div>
+              <button
+                type="button"
+                className="btn btn-primary btn-block btn-lg mb-3"
+                onClick={() => loginWithRedirect()}
+              >
+                <span className="btn-text">Sign In</span>
+              </button>
+              <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                  Don't have an account?{' '}
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                    onClick={() => { setAuthMode('signup'); setSignupError(''); }}
+                  >
+                    Register
+                  </button>
+                </span>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSignupSubmit}>
+              <div className="form-group mb-4" style={{ textAlign: 'left' }}>
+                <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                  Username <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-medium)',
+                    background: 'var(--bg-input)',
+                    color: 'var(--text-main)',
+                    fontSize: '14px'
+                  }}
+                  placeholder="e.g. thani"
+                  value={signupUsername}
+                  onChange={(e) => setSignupUsername(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary btn-block btn-lg mb-3"
+              >
+                <span className="btn-text">Continue to Sign Up</span>
+              </button>
+
+              <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                    onClick={() => { setAuthMode('signin'); setSignupError(''); }}
+                  >
+                    Sign In
+                  </button>
+                </span>
+              </div>
+            </form>
+          )}
 
           <div className="auth-footer" style={{ marginTop: '24px', textAlign: 'center' }}>
           </div>
@@ -808,11 +994,16 @@ export default function App() {
         </nav>
 
         <div className="sidebar-profile">
-          <div className="user-avatar">{monogram}</div>
-          <div className="user-details">
+          <div className="user-avatar" style={{ cursor: 'pointer' }} onClick={handleOpenEditProfile} title="Edit Profile">
+            {monogram}
+          </div>
+          <div className="user-details" style={{ cursor: 'pointer' }} onClick={handleOpenEditProfile} title="Edit Profile">
             <span className="user-name">{userName}</span>
             <span className="user-role">{userRole === 'ADMIN' ? 'Librarian (Admin)' : 'Member'}</span>
           </div>
+          <button className="btn-signout-icon" onClick={handleOpenEditProfile} title="Edit Profile" style={{ marginRight: '4px' }}>
+            <Edit2 size={16} />
+          </button>
           <button className="btn-signout-icon" onClick={handleSignOut} title="Sign Out">
             <LogOut size={18} />
           </button>
@@ -858,6 +1049,11 @@ export default function App() {
                     <span className="dropdown-user-name">{userName}</span>
                     <span className="dropdown-user-email">{userEmail}</span>
                   </div>
+                  <div className="dropdown-divider"></div>
+                  <button className="dropdown-item" onClick={handleOpenEditProfile} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <UserIcon size={14} />
+                    <span>Edit Profile</span>
+                  </button>
                   <div className="dropdown-divider"></div>
                   <button className="dropdown-item danger" onClick={handleSignOut}>Sign Out</button>
                 </div>
@@ -976,8 +1172,8 @@ export default function App() {
                 </div>
 
                 <div className="book-card-grid mt-4">
-                  {recentBooks.map((b) => (
-                    <div className="book-card" key={b.id}>
+                  {recentBooks.map((b, idx) => (
+                    <div className="book-card" key={b.id ?? b.uuid ?? b.isbn ?? `recent-${idx}`}>
                       <div className="book-cover-wrap">
                         {b.coverImageUrl ? (
                           <img src={getCoverUrl(b.coverImageUrl)} alt={b.title} className="book-cover-img" />
@@ -1040,8 +1236,8 @@ export default function App() {
                     {books.length === 0 ? (
                       <tr><td colSpan="5" className="empty-cell">No books found in catalog.</td></tr>
                     ) : (
-                      books.map((b) => (
-                        <tr key={b.id}>
+                      books.map((b, idx) => (
+                        <tr key={b.id ?? b.uuid ?? b.isbn ?? `book-${idx}`}>
                           <td>
                             {b.coverImageUrl ? (
                               <img src={getCoverUrl(b.coverImageUrl)} alt={b.title} className="table-thumb-img" />
@@ -1143,9 +1339,9 @@ export default function App() {
                     {members.length === 0 ? (
                       <tr><td colSpan="5" className="empty-cell">No members found.</td></tr>
                     ) : (
-                      members.map((m) => (
-                        <tr key={m.id}>
-                          <td>#{m.id}</td>
+                      members.map((m, idx) => (
+                        <tr key={m.id ?? m.uuid ?? m.email ?? `member-${idx}`}>
+                          <td>#{m.id || '—'}</td>
                           <td><strong>{m.name || m.username}</strong></td>
                           <td>{m.email}</td>
                           <td>
@@ -1200,14 +1396,14 @@ export default function App() {
                         {adminBorrows.length === 0 ? (
                           <tr><td colSpan="7" className="empty-cell">No active borrows log found.</td></tr>
                         ) : (
-                          adminBorrows.map((b) => {
+                          adminBorrows.map((b, idx) => {
                             const title = b.bookTitle || b.book?.title || 'Untitled Book';
                             const author = b.bookAuthor || b.book?.author || 'Unknown Author';
                             const cover = b.bookCoverImageUrl || b.book?.coverImageUrl;
                             const borrowerName = b.userName || b.userEmail || b.user?.name || b.user?.email || `User #${b.userId || b.userNumericId}`;
                             const isReturned = b.status === 'RETURNED' || !!b.returnedDate || !!b.returnDate;
                             return (
-                              <tr key={b.id}>
+                              <tr key={b.id ?? b.uuid ?? `borrow-admin-${idx}`}>
                                 <td>
                                   {cover ? (
                                     <img src={getCoverUrl(cover)} alt="Cover" className="table-thumb-img" />
@@ -1267,13 +1463,13 @@ export default function App() {
                         {userBorrows.length === 0 ? (
                           <tr><td colSpan="7" className="empty-cell">You have no borrowed books currently.</td></tr>
                         ) : (
-                          userBorrows.map((b) => {
+                          userBorrows.map((b, idx) => {
                             const title = b.bookTitle || b.book?.title || 'Untitled Book';
                             const author = b.bookAuthor || b.book?.author || 'Unknown Author';
                             const cover = b.bookCoverImageUrl || b.book?.coverImageUrl;
                             const isReturned = b.status === 'RETURNED' || !!b.returnedDate || !!b.returnDate;
                             return (
-                              <tr key={b.id}>
+                              <tr key={b.id ?? b.uuid ?? `borrow-user-${idx}`}>
                                 <td>
                                   {cover ? (
                                     <img src={getCoverUrl(cover)} alt="Cover" className="table-thumb-img" />
@@ -1332,8 +1528,8 @@ export default function App() {
                         onChange={(e) => { setSelectedFineMemberId(e.target.value); loadFines(); }}
                       >
                         <option value="">-- All Library Members (All Fines) --</option>
-                        {allMembersForFines.map(m => (
-                          <option key={m.id} value={m.id}>{m.name || m.email} (#{m.id})</option>
+                        {allMembersForFines.map((m, idx) => (
+                          <option key={m.id ?? m.uuid ?? m.email ?? `fine-m-${idx}`} value={m.id || ''}>{m.name || m.email} (#{m.id || '—'})</option>
                         ))}
                       </select>
                     </div>
@@ -1367,13 +1563,13 @@ export default function App() {
                       {fines.length === 0 ? (
                         <tr><td colSpan={userRole === 'ADMIN' ? 6 : 5} className="empty-cell">No fine records found.</td></tr>
                       ) : (
-                        fines.map(f => {
+                        fines.map((f, idx) => {
                           const fineUser = f.userName || f.userEmail || f.user?.name || f.user?.email || `User #${f.userId || f.userNumericId}`;
                           const fineTitle = f.bookTitle || f.borrow?.book?.title || 'Library Title';
                           const fineAuthor = f.bookAuthor || f.borrow?.book?.author || '';
                           return (
-                            <tr key={f.id}>
-                              <td>#{f.id}</td>
+                            <tr key={f.id ?? f.uuid ?? `fine-row-${idx}`}>
+                              <td>#{f.id || '—'}</td>
                               {userRole === 'ADMIN' && <td>{fineUser}</td>}
                               <td><strong>{fineTitle}</strong>{fineAuthor ? <><br /><span className="text-muted">{fineAuthor}</span></> : null}</td>
                               <td><strong>${(f.amount || f.pendingFineAmount || 0).toFixed(2)}</strong></td>
@@ -1546,6 +1742,63 @@ export default function App() {
       </div>
 
       {/* MODALS */}
+      {/* 0. Edit Profile Modal */}
+      {activeModal === 'editProfile' && (
+        <div className="modal-backdrop open">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3>Edit Profile</h3>
+              <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
+            </div>
+            <form onSubmit={handleEditProfileSubmit}>
+              <div className="modal-body">
+                <div className="form-group mb-4">
+                  <label className="form-label">Username / Name <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    required
+                    value={profileForm.name}
+                    onChange={e => setProfileForm({ ...profileForm, name: e.target.value })}
+                    placeholder="Enter your username"
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Email Address</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    value={profileForm.email}
+                    onChange={e => setProfileForm({ ...profileForm, email: e.target.value })}
+                    placeholder="user@example.com"
+                  />
+                  <small className="text-muted" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                    Primary email address for notifications and account identifier.
+                  </small>
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Account Role & Points</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                    <span className="badge badge-primary" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                      {currentUser?.role || userRole}
+                    </span>
+                    {currentUser?.rewardPoints !== undefined && (
+                      <span className="badge badge-warning" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                        🏆 {currentUser.rewardPoints} Reward Points
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* 1. Create Book Modal */}
       {activeModal === 'createBook' && (
         <div className="modal-backdrop open">
@@ -1729,8 +1982,8 @@ export default function App() {
                   <label className="form-label">Select Library Member</label>
                   <select className="form-select" required value={adminBorrowSelect.memberId} onChange={e => setAdminBorrowSelect({ ...adminBorrowSelect, memberId: e.target.value })}>
                     <option value="">-- Choose Member --</option>
-                    {allMembersForFines.map(m => (
-                      <option key={m.id} value={m.id}>{m.name || m.email}</option>
+                    {allMembersForFines.map((m, idx) => (
+                      <option key={m.id ?? m.uuid ?? m.email ?? `admin-b-m-${idx}`} value={m.id || ''}>{m.name || m.email}</option>
                     ))}
                   </select>
                 </div>
@@ -1738,8 +1991,8 @@ export default function App() {
                   <label className="form-label">Select Book Title</label>
                   <select className="form-select" required value={adminBorrowSelect.bookId} onChange={e => setAdminBorrowSelect({ ...adminBorrowSelect, bookId: e.target.value })}>
                     <option value="">-- Choose Book --</option>
-                    {books.map(b => (
-                      <option key={b.id} value={b.id}>{b.title}</option>
+                    {books.map((b, idx) => (
+                      <option key={b.id ?? b.uuid ?? b.isbn ?? `admin-b-b-${idx}`} value={b.id || ''}>{b.title}</option>
                     ))}
                   </select>
                 </div>
@@ -1767,8 +2020,8 @@ export default function App() {
                   <label className="form-label">Select Book from Catalog</label>
                   <select className="form-select" required value={userBorrowBookId} onChange={e => setUserBorrowBookId(e.target.value)}>
                     <option value="">-- Choose Book --</option>
-                    {books.map(b => (
-                      <option key={b.id} value={b.id}>{b.title} (by {b.author})</option>
+                    {books.map((b, idx) => (
+                      <option key={b.id ?? b.uuid ?? b.isbn ?? `user-b-${idx}`} value={b.id || ''}>{b.title} (by {b.author})</option>
                     ))}
                   </select>
                 </div>

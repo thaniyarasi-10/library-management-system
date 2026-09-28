@@ -154,6 +154,37 @@ class BorrowMappingTest {
     }
 
     @Test
+    void testToBorrowSObject_withEntity() {
+        UUID borrowUuid = UUID.randomUUID();
+        UUID userUuid = UUID.randomUUID();
+        UUID bookUuid = UUID.randomUUID();
+
+        User user = User.builder().uuid(userUuid).id(1L).name("Alice").email("alice@example.com").build();
+        Book book = Book.builder().uuid(bookUuid).id(10L).title("Clean Code").build();
+        Borrow borrow = Borrow.builder()
+                .uuid(borrowUuid)
+                .user(user)
+                .book(book)
+                .borrowDate(LocalDate.of(2026, 9, 1))
+                .dueDate(LocalDate.of(2026, 9, 15))
+                .status(BorrowStatus.BORROWED)
+                .build();
+
+        BorrowSObject sObject = borrowMapper.toBorrowSObject(borrow);
+        assertNotNull(sObject);
+        assertEquals(borrowUuid.toString(), sObject.getExternalBorrowUuid());
+        assertEquals("2026-09-01", sObject.getBorrowDate());
+        assertEquals("2026-09-15", sObject.getDueDate());
+        assertEquals("BORROWED", sObject.getBorrowStatus());
+        assertNotNull(sObject.getContact());
+        assertEquals(userUuid.toString(), sObject.getContact().getExternalUserUuid());
+        assertNotNull(sObject.getBook());
+        assertEquals(bookUuid.toString(), sObject.getBook().getExternalBookUuid());
+
+        assertNull(borrowMapper.toBorrowSObject((Borrow) null));
+    }
+
+    @Test
     void testToBorrowResponseList() {
         BorrowSObject s1 = BorrowSObject.builder()
                 .externalBorrowUuid(UUID.randomUUID().toString())

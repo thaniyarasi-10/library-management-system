@@ -8,8 +8,8 @@ public record UserResponse(
         Long id,
         String name,
         String email,
-        Integer rewardPoints) implements Serializable {
-    public UserResponse(UUID uuid, Long id, String name, String email) {
-        this(uuid, id, name, email, 0);
-    }
+        String role,
+        Integer rewardPoints
+) implements Serializable {
+
 }

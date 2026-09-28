@@ -73,6 +73,23 @@ public interface BookMapper {
     BookSObject toBookSObject(BookResponse dto);
 
     /**
+     * Converts a {@link Book} entity to a {@link BookSObject} model.
+     *
+     * @param book The Book entity
+     * @return The mapped {@link BookSObject}
+     */
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.BOOK.getObjectName()).build())")
+    @Mapping(target = "externalBookUuid", source = "uuid")
+    @Mapping(target = "name", expression = "java((book.getTitle() != null && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "title", expression = "java((book.getTitle() != null && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "author", source = "author")
+    @Mapping(target = "isbn", source = "isbn")
+    @Mapping(target = "coverImageUrl", source = "coverImageUrl")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "errors", ignore = true)
+    BookSObject toBookSObject(Book book);
+
+    /**
      * Maps a Salesforce {@link BookSObject} to a {@link BookResponse} DTO.
      *
      * @param sObject The book SObject from Salesforce

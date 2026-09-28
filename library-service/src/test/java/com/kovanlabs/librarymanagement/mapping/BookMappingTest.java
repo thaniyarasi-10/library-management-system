@@ -102,6 +102,29 @@ class BookMapperTest {
     }
 
     @Test
+    void testToBookSObject_withBookEntity() {
+        UUID uuid = UUID.randomUUID();
+        Book book = Book.builder()
+                .uuid(uuid)
+                .title("Clean Architecture")
+                .author("Uncle Bob")
+                .isbn("1234567890")
+                .coverImageUrl("http://img.png")
+                .build();
+
+        var sObject = bookMapper.toBookSObject(book);
+        assertNotNull(sObject);
+        assertEquals(uuid.toString(), sObject.getExternalBookUuid());
+        assertEquals("Clean Architecture", sObject.getTitle());
+        assertEquals("Clean Architecture", sObject.getName());
+        assertEquals("Uncle Bob", sObject.getAuthor());
+        assertEquals("1234567890", sObject.getIsbn());
+        assertEquals("http://img.png", sObject.getCoverImageUrl());
+
+        assertNull(bookMapper.toBookSObject((Book) null));
+    }
+
+    @Test
     void testToBookResponseList() {
         var s1 = com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject.builder()
                 .externalBookUuid(UUID.randomUUID().toString())

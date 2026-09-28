@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.authentication.service;
 
 import com.kovanlabs.librarymanagement.authentication.config.Auth0ManagementProperties;
+import com.kovanlabs.librarymanagement.authentication.config.Auth0Properties;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,25 +14,38 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
 
-class Auth0ManagementServiceTest {
+class Auth0RoleSyncServiceImplTest {
 
-    private Auth0ManagementProperties properties;
-    private RestClient.Builder restClientBuilder;
+    private Auth0Properties auth0Properties;
+    private Auth0ManagementProperties managementProperties;
+    private RestClient restClient;
     private MockRestServiceServer mockServer;
-    private Auth0ManagementService auth0ManagementService;
+    private Auth0UrlHelper urlHelper;
+    private Auth0TokenService tokenService;
+    private Auth0RoleSyncServiceImpl auth0RoleSyncServiceImpl;
 
     @BeforeEach
     void setUp() {
-        properties = new Auth0ManagementProperties();
-        properties.setDomain("dev-test.auth0.com");
-        properties.setClientId("test-client-id");
-        properties.setClientSecret("test-client-secret");
-        properties.setAudience("https://dev-test.auth0.com/api/v2/");
+        auth0Properties = new Auth0Properties();
+        auth0Properties.setDomain("dev-test.auth0.com");
+        auth0Properties.setAudience("https://library-api.kovanlabs.com");
+        auth0Properties.setRolesClaim("https://library.kovanlabs.com/roles");
 
-        restClientBuilder = RestClient.builder();
+        managementProperties = new Auth0ManagementProperties();
+        managementProperties.setClientId("test-client-id");
+        managementProperties.setClientSecret("test-client-secret");
+        managementProperties.setAudience("https://dev-test.auth0.com/api/v2/");
+
+        RestClient.Builder restClientBuilder = RestClient.builder();
         mockServer = MockRestServiceServer.bindTo(restClientBuilder).build();
+        restClient = restClientBuilder.build();
 
-        auth0ManagementService = new Auth0ManagementService(properties, restClientBuilder, "dev-test.auth0.com");
+        urlHelper = new Auth0UrlHelper();
+        tokenService = new Auth0TokenService(auth0Properties, managementProperties, restClient, urlHelper);
+
+        auth0RoleSyncServiceImpl = new Auth0RoleSyncServiceImpl(
+                auth0Properties, managementProperties, tokenService, urlHelper, restClient
+        );
     }
 
     @Test
@@ -55,7 +69,7 @@ class Auth0ManagementServiceTest {
                 .andExpect(content().json("{\"app_metadata\":{\"role\":\"ADMIN\"}}"))
                 .andRespond(withSuccess());
 
-        auth0ManagementService.syncUserRole("auth0|123456", RoleEnum.ADMIN);
+        auth0RoleSyncServiceImpl.syncUserRole("auth0|123456", RoleEnum.ADMIN);
 
         mockServer.verify();
     }
@@ -84,24 +98,24 @@ class Auth0ManagementServiceTest {
                 .andExpect(header("Authorization", "Bearer mock-cached-token"))
                 .andRespond(withSuccess());
 
-        auth0ManagementService.syncUserRole("auth0|user1", RoleEnum.USER);
-        auth0ManagementService.syncUserRole("auth0|user2", RoleEnum.USER);
+        auth0RoleSyncServiceImpl.syncUserRole("auth0|user1", RoleEnum.USER);
+        auth0RoleSyncServiceImpl.syncUserRole("auth0|user2", RoleEnum.USER);
 
         mockServer.verify();
     }
 
     @Test
     void syncUserRole_whenNotConfigured_shouldSkipGracefully() {
-        properties.setClientId(null);
-        properties.setClientSecret(null);
+        managementProperties.setClientId(null);
+        managementProperties.setClientSecret(null);
 
-        assertDoesNotThrow(() -> auth0ManagementService.syncUserRole("auth0|user1", RoleEnum.USER));
+        assertDoesNotThrow(() -> auth0RoleSyncServiceImpl.syncUserRole("auth0|user1", RoleEnum.USER));
     }
 
     @Test
     void syncUserRole_whenSubOrRoleNull_shouldSkipGracefully() {
-        assertDoesNotThrow(() -> auth0ManagementService.syncUserRole(null, RoleEnum.USER));
-        assertDoesNotThrow(() -> auth0ManagementService.syncUserRole("auth0|user1", null));
+        assertDoesNotThrow(() -> auth0RoleSyncServiceImpl.syncUserRole(null, RoleEnum.USER));
+        assertDoesNotThrow(() -> auth0RoleSyncServiceImpl.syncUserRole("auth0|user1", null));
     }
 
     @Test
@@ -116,13 +130,14 @@ class Auth0ManagementServiceTest {
 
         mockServer.expect(requestTo("https://dev-test.auth0.com/oauth/token"))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andRespond(withSuccess(tokenResponseBody, MediaType.APPLICATION_JSON));
 
         mockServer.expect(requestTo("https://dev-test.auth0.com/api/v2/users/auth0%7Cfail"))
                 .andExpect(method(HttpMethod.PATCH))
                 .andRespond(withServerError());
 
-        assertDoesNotThrow(() -> auth0ManagementService.syncUserRole("auth0|fail", RoleEnum.USER));
+        assertDoesNotThrow(() -> auth0RoleSyncServiceImpl.syncUserRole("auth0|fail", RoleEnum.USER));
         mockServer.verify();
     }
 }

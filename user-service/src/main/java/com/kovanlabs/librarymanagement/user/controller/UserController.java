@@ -3,15 +3,14 @@ package com.kovanlabs.librarymanagement.user.controller;
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
+import com.kovanlabs.librarymanagement.user.dto.UserRoleUpdateRequest;
 import com.kovanlabs.librarymanagement.user.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
-import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.jwt.Jwt;
-import com.kovanlabs.librarymanagement.database.entity.User;
+import java.security.Principal;
 
 @RestController
 @RequestMapping("/user")
@@ -47,28 +46,13 @@ public class UserController {
     }
 
     @GetMapping("/me")
-    public UserResponse getCurrentUser(java.security.Principal principal) {
-        if (principal == null) {
-            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
-        }
+    public UserResponse getCurrentUser(Principal principal) {
+        return userService.getCurrentUser(principal);
+    }
 
-        if (principal instanceof Authentication auth
-                && auth.getPrincipal() instanceof Jwt jwt) {
-            String sub = jwt.getSubject();
-            String email = jwt.getClaimAsString("email");
-            if (email == null) {
-                email = jwt.getClaimAsString("https://library.kovanlabs.com/email");
-            }
-            String name = jwt.getClaimAsString("name");
-            if (name == null) {
-                name = jwt.getClaimAsString("nickname");
-            }
-
-            User syncedUser = userService.syncAuth0User(sub, email, name);
-            return userService.getUserByIdentifier(sub);
-        }
-
-        return userService.getUserByIdentifier(principal.getName());
+    @PutMapping("/me")
+    public UserResponse updateCurrentUser(Principal principal, @Valid @RequestBody UserRequest request) {
+        return userService.updateCurrentUser(principal, request);
     }
 
     @GetMapping("/{id}")
@@ -84,7 +68,7 @@ public class UserController {
     @PatchMapping("/{id}/role")
     public UserResponse updateUserRole(
             @PathVariable("id") Long id,
-            @Valid @RequestBody com.kovanlabs.librarymanagement.user.dto.UserRoleUpdateRequest request) {
+            @Valid @RequestBody UserRoleUpdateRequest request) {
         return userService.updateUserRole(id, request.role());
     }
 

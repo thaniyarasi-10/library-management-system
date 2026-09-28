@@ -8,11 +8,9 @@ import com.kovanlabs.librarymanagement.salesforce.constant.fields.BorrowFields;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
 import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import com.kovanlabs.librarymanagement.salesforce.exception.SalesforceSyncException;
-import com.kovanlabs.librarymanagement.salesforce.mapping.SalesforceMapper;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
-import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,11 +34,8 @@ class SalesforceSyncServiceTest {
     @Mock
     private SalesforceClientService clientService;
 
-    @Spy
-    private SalesforceMapper salesforceMapper = new SalesforceMapper(new ObjectMapper());
-
     @InjectMocks
-    private SalesforceSyncService salesforceSyncService;
+    private SalesforceSyncImpl salesforceSyncService;
 
     private ObjectMapper objectMapper;
 
@@ -49,53 +44,67 @@ class SalesforceSyncServiceTest {
         objectMapper = new ObjectMapper();
     }
 
-    // --- syncUser() tests ---
+    // --- syncContact() tests ---
 
     @Test
-    void syncUser_whenValidUserResponse_shouldSync() {
-        UserResponse user = new UserResponse(UUID.randomUUID(), 1L, "Jane Doe", "jane@example.com", 0);
+    void syncContact_whenValidContact_shouldSync() {
+        UUID uuid = UUID.randomUUID();
+        ContactSObject contact = ContactSObject.builder()
+                .externalUserUuid(uuid.toString())
+                .legacyUserId(1L)
+                .lastName("Jane Doe")
+                .email("jane@example.com")
+                .role("USER")
+                .build();
 
-        salesforceSyncService.syncUser(user);
+        salesforceSyncService.syncContact(contact);
 
-        verify(clientService).upsertByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFields.EXTERNAL_USER_UUID), eq(user.uuid().toString()), anyMap());
+        verify(clientService).upsertByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFields.EXTERNAL_USER_UUID), eq(uuid.toString()), anyMap());
     }
 
     @Test
-    void syncUser_whenUserOrUuidNull_shouldReturnEarly() {
-        salesforceSyncService.syncUser((UserResponse) null);
-        salesforceSyncService.syncUser(new UserResponse(null, 1L, "No UUID", "a@b.com", 0));
+    void syncContact_whenContactOrUuidNull_shouldReturnEarly() {
+        salesforceSyncService.syncContact((ContactSObject) null);
+        salesforceSyncService.syncContact(ContactSObject.builder().externalUserUuid(null).build());
 
         verifyNoInteractions(clientService);
     }
 
     @Test
-    void syncUser_whenNameBlankOrNull_usesEmailAsLastName() {
+    void syncContact_whenClientThrowsException_propagatesException() {
         UUID uuid = UUID.randomUUID();
-        UserResponse userWithNullName = new UserResponse(uuid, 1L, null, "nullname@example.com", 0);
-        UserResponse userWithBlankName = new UserResponse(uuid, 1L, "   ", "blankname@example.com", 0);
+        ContactSObject contact = ContactSObject.builder()
+                .externalUserUuid(uuid.toString())
+                .legacyUserId(1L)
+                .lastName("John")
+                .email("john@example.com")
+                .role("USER")
+                .build();
 
-        salesforceSyncService.syncUser(userWithNullName);
-        salesforceSyncService.syncUser(userWithBlankName);
-
-        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
-        verify(clientService, times(2)).upsertByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFields.EXTERNAL_USER_UUID), eq(uuid.toString()), captor.capture());
-
-        List<Map<String, Object>> capturedMaps = captor.getAllValues();
-        assertEquals("nullname@example.com", capturedMaps.get(0).get(ContactFields.LAST_NAME));
-        assertEquals("blankname@example.com", capturedMaps.get(1).get(ContactFields.LAST_NAME));
-    }
-
-    @Test
-    void syncUser_whenClientThrowsException_propagatesException() {
-        UserResponse user = new UserResponse(UUID.randomUUID(), 1L, "John", "john@example.com", 0);
         doThrow(new SalesforceSyncException("Salesforce connection error"))
                 .when(clientService).upsertByExternalId(anyString(), anyString(), anyString(), anyMap());
 
         assertThrows(SalesforceSyncException.class,
-                () -> salesforceSyncService.syncUser(user));
+                () -> salesforceSyncService.syncContact(contact));
     }
 
-    // --- syncBook() tests ---
+    // --- deleteUser() tests ---
+
+    @Test
+    void deleteUser_whenValidUuid_shouldCallDelete() {
+        UUID uuid = UUID.randomUUID();
+
+        salesforceSyncService.deleteUser(uuid);
+
+        verify(clientService).deleteByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFields.EXTERNAL_USER_UUID), eq(uuid.toString()));
+    }
+
+    @Test
+    void deleteUser_whenNullUuid_shouldReturnEarly() {
+        salesforceSyncService.deleteUser(null);
+
+        verifyNoInteractions(clientService);
+    }
 
     @Test
     void syncBook_whenBookOrUuidNull_shouldReturnEarly() {
@@ -190,24 +199,24 @@ class SalesforceSyncServiceTest {
                 () -> salesforceSyncService.syncBorrow(borrow));
     }
 
-    // --- fetchUsersFromSalesforce() tests ---
+    // --- fetchContactsFromSalesforce() tests ---
 
     @Test
-    void fetchUsersFromSalesforce_whenQueryNullOrNoRecords_returnsEmptyList() {
+    void fetchContactsFromSalesforce_whenQueryNullOrNoRecords_returnsEmptyList() {
         when(clientService.query(anyString())).thenReturn(null);
-        List<UserResponse> res1 = salesforceSyncService.fetchUsersFromSalesforce();
+        List<ContactSObject> res1 = salesforceSyncService.fetchContactsFromSalesforce();
         assertNotNull(res1);
         assertTrue(res1.isEmpty());
 
         ObjectNode nodeWithoutRecords = objectMapper.createObjectNode();
         when(clientService.query(anyString())).thenReturn(nodeWithoutRecords);
-        List<UserResponse> res2 = salesforceSyncService.fetchUsersFromSalesforce();
+        List<ContactSObject> res2 = salesforceSyncService.fetchContactsFromSalesforce();
         assertNotNull(res2);
         assertTrue(res2.isEmpty());
     }
 
     @Test
-    void fetchUsersFromSalesforce_withRecords_returnsMappedList() {
+    void fetchContactsFromSalesforce_withRecords_returnsMappedList() {
         UUID validUuid = UUID.randomUUID();
         ObjectNode root = objectMapper.createObjectNode();
         ArrayNode records = root.putArray("records");
@@ -220,13 +229,13 @@ class SalesforceSyncServiceTest {
 
         when(clientService.query(anyString())).thenReturn(root);
 
-        List<UserResponse> users = salesforceSyncService.fetchUsersFromSalesforce();
+        List<ContactSObject> contacts = salesforceSyncService.fetchContactsFromSalesforce();
 
-        assertNotNull(users);
-        assertEquals(1, users.size());
-        assertEquals(validUuid, users.get(0).uuid());
-        assertEquals(100L, users.get(0).id());
-        assertEquals("Smith", users.get(0).name());
+        assertNotNull(contacts);
+        assertEquals(1, contacts.size());
+        assertEquals(validUuid.toString(), contacts.get(0).getExternalUserUuid());
+        assertEquals(100L, contacts.get(0).getLegacyUserId());
+        assertEquals("Smith", contacts.get(0).getLastName());
     }
 
     // --- getTotalBooksFromSalesforce() tests ---

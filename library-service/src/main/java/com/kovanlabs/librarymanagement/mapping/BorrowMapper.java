@@ -91,6 +91,24 @@ public interface BorrowMapper {
     BorrowSObject toBorrowSObject(BorrowResponseDto dto);
 
     /**
+     * Converts a {@link Borrow} entity to a {@link BorrowSObject} model.
+     *
+     * @param borrow The Borrow entity
+     * @return The mapped {@link BorrowSObject}
+     */
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.BORROW.getObjectName()).build())")
+    @Mapping(target = "externalBorrowUuid", source = "uuid")
+    @Mapping(target = "borrowDate", source = "borrowDate")
+    @Mapping(target = "dueDate", source = "dueDate")
+    @Mapping(target = "returnDate", source = "returnedDate")
+    @Mapping(target = "borrowStatus", source = "status")
+    @Mapping(target = "contact", source = "user")
+    @Mapping(target = "book", source = "book")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "errors", ignore = true)
+    BorrowSObject toBorrowSObject(Borrow borrow);
+
+    /**
      * Maps a {@link BorrowResponseDto} to a nested {@link ContactSObject}.
      *
      * @param dto The borrow response DTO
@@ -102,6 +120,22 @@ public interface BorrowMapper {
     @Mapping(target = "lastName", source = "userName")
     @Mapping(target = "email", source = "userEmail")
     ContactSObject toContactSObject(BorrowResponseDto dto);
+
+    /**
+     * Maps a {@link User} entity to a nested {@link ContactSObject}.
+     *
+     * @param user The user entity
+     * @return The mapped {@link ContactSObject}
+     */
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.CONTACT.getObjectName()).build())")
+    @Mapping(target = "externalUserUuid", source = "uuid")
+    @Mapping(target = "legacyUserId", source = "id")
+    @Mapping(target = "lastName", expression = "java((user.getName() != null && !user.getName().isBlank()) ? user.getName() : \"User\")")
+    @Mapping(target = "email", source = "email")
+    @Mapping(target = "role", expression = "java(user.getRole() != null ? user.getRole().name() : null)")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "errors", ignore = true)
+    ContactSObject toContactSObject(User user);
 
     /**
      * Maps a {@link BorrowResponseDto} to a nested {@link BookSObject}.
@@ -117,6 +151,23 @@ public interface BorrowMapper {
     @Mapping(target = "coverImageUrl", source = "bookCoverImageUrl")
     @Mapping(target = "isbn", ignore = true)
     BookSObject toBookSObject(BorrowResponseDto dto);
+
+    /**
+     * Maps a {@link Book} entity to a nested {@link BookSObject}.
+     *
+     * @param book The book entity
+     * @return The mapped {@link BookSObject}
+     */
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.BOOK.getObjectName()).build())")
+    @Mapping(target = "externalBookUuid", source = "uuid")
+    @Mapping(target = "name", expression = "java((book.getTitle() != null && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "title", expression = "java((book.getTitle() != null && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "author", source = "author")
+    @Mapping(target = "isbn", source = "isbn")
+    @Mapping(target = "coverImageUrl", source = "coverImageUrl")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "errors", ignore = true)
+    BookSObject toBookSObject(Book book);
 
     /**
      * Maps a Salesforce {@link BorrowSObject} to a {@link BorrowResponseDto}.

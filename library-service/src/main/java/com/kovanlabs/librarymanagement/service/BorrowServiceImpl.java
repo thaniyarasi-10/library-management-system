@@ -19,7 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDate;
 import java.util.UUID;
 import java.util.List;
-import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl;
 import com.kovanlabs.librarymanagement.service.MembershipService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,7 +39,7 @@ public class BorrowServiceImpl implements BorrowService {
     private final UserProviderRepository userProviderRepository;
     private final UserFineChecker userFineChecker;
     private final MembershipService membershipService;
-    private final SalesforceSyncService salesforceSyncService;
+    private final SalesforceSyncImpl salesforceSyncService;
 
     /**
      * Validates membership status and pending fines, persists borrow record, and syncs with Salesforce.

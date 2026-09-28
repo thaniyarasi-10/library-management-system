@@ -19,12 +19,14 @@ public class Reward {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "uuid", updatable = false, nullable = false, columnDefinition = "CHAR(36)")
     private UUID uuid;
 
     @Column(name = "id", insertable = false, updatable = false, unique = true)
     private Long id;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "user_uuid", nullable = false, unique = true, columnDefinition = "CHAR(36)")
     private UUID userUuid;
 

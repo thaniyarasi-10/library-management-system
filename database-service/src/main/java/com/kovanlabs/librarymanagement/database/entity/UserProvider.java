@@ -20,6 +20,7 @@ public class UserProvider {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "uuid", updatable = false, nullable = false, columnDefinition = "CHAR(36)")
     private UUID uuid;
 

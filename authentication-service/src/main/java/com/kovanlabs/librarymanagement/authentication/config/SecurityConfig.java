@@ -6,7 +6,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -19,7 +18,6 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -30,14 +28,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    @Value("${auth0.domain:dev-default.us.auth0.com}")
-    private String auth0Domain;
-
-    @Value("${auth0.audience:https://library-api.kovanlabs.com}")
-    private String auth0Audience;
-
-    @Value("${auth0.roles-claim:https://library.kovanlabs.com/roles}")
-    private String rolesClaim;
+    private final Auth0Properties auth0Properties;
 
     @Value("${app.cors.allowed-origins:http://localhost:8080,http://localhost:3000,http://localhost:5173,http://127.0.0.1:8080,http://127.0.0.1:5173,http://127.0.0.1:5500}")
     private List<String> allowedOrigins;
@@ -60,15 +51,9 @@ public class SecurityConfig {
     }
 
     @Bean
-    @ConditionalOnMissingBean(Auth0AuthoritiesConverter.class)
-    public Auth0AuthoritiesConverter auth0AuthoritiesConverter() {
-        return new Auth0AuthoritiesConverter(rolesClaim);
-    }
-
-    @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(auth0AuthoritiesConverter());
+        converter.setJwtGrantedAuthoritiesConverter(new Auth0AuthoritiesConverter(auth0Properties.getRolesClaim()));
         converter.setPrincipalClaimName("sub");
         return converter;
     }
@@ -76,13 +61,13 @@ public class SecurityConfig {
     @Bean
     @ConditionalOnMissingBean(JwtDecoder.class)
     public JwtDecoder jwtDecoder() {
-        String issuerUri = normalizeIssuer(auth0Domain);
+        String issuerUri = normalizeIssuer(auth0Properties.getDomain());
         String jwkSetUri = issuerUri + ".well-known/jwks.json";
         NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder
-                .withJwkSetUri(jwkSetUri)
-                .build();
+            .withJwkSetUri(jwkSetUri)
+            .build();
 
-        OAuth2TokenValidator<Jwt> audienceValidator = new AudienceValidator(auth0Audience);
+        OAuth2TokenValidator<Jwt> audienceValidator = new AudienceValidator(auth0Properties.getAudience());
         OAuth2TokenValidator<Jwt> withIssuer = JwtValidators.createDefaultWithIssuer(issuerUri);
         OAuth2TokenValidator<Jwt> withAudience = new DelegatingOAuth2TokenValidator<>(withIssuer, audienceValidator);
 
@@ -109,13 +94,9 @@ public class SecurityConfig {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Public Auth Endpoints
-                        .requestMatchers("/api/auth/**").permitAll()
-
                         // Static and Public Endpoints
                         .requestMatchers("/", "/index.html", "/*.css", "/*.js", "/*.html", "/favicon.ico", "/static/**")
                         .permitAll()
@@ -136,16 +117,18 @@ public class SecurityConfig {
                         // User Me Endpoint (Authenticated User/Admin)
                         .requestMatchers(HttpMethod.GET, "/user/me")
                         .authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/user/me")
+                        .authenticated()
 
                         // User Registration (Public)
                         .requestMatchers(HttpMethod.POST, "/user")
                         .permitAll()
 
-                        // User Admin Endpoints (Permission or Admin Role)
+                        // User Admin / Profile Update Endpoints (Permission or Role)
                         .requestMatchers(HttpMethod.GET, "/user", "/user/**")
                         .hasAnyAuthority("users:read", "ROLE_ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/user", "/user/**")
-                        .hasAnyAuthority("users:write", "ROLE_ADMIN")
+                        .hasAnyAuthority("users:write", "ROLE_ADMIN", "ROLE_USER")
                         .requestMatchers(HttpMethod.PATCH, "/user", "/user/**")
                         .hasAnyAuthority("users:write", "ROLE_ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/user", "/user/**")
@@ -153,8 +136,7 @@ public class SecurityConfig {
 
                         // Borrow Endpoints (Permission or Role)
                         .requestMatchers("/borrow", "/borrow/**")
-                        .hasAnyAuthority("borrow:read", "borrow:create", "borrow:update", "borrow:write", "ROLE_USER",
-                                "ROLE_ADMIN")
+                        .hasAnyAuthority("borrow:read", "borrow:create", "borrow:update", "borrow:write", "ROLE_USER", "ROLE_ADMIN")
 
                         // Membership Endpoints (Permission or Role)
                         .requestMatchers("/memberships", "/memberships/**")
@@ -165,10 +147,13 @@ public class SecurityConfig {
                         .hasAnyAuthority("fines:read", "fines:write", "fines:pay", "ROLE_USER", "ROLE_ADMIN")
 
                         // All other endpoints require authentication
-                        .anyRequest().authenticated())
+                        .anyRequest().authenticated()
+                )
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt
-                                .jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                                .jwtAuthenticationConverter(jwtAuthenticationConverter())
+                        )
+                );
 
         return http.build();
     }

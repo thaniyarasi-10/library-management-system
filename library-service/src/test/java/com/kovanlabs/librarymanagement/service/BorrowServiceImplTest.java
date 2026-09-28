@@ -49,7 +49,7 @@ class BorrowServiceImplTest {
     private MembershipService membershipService;
 
     @Mock
-    private com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService salesforceSyncService;
+    private com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl salesforceSyncService;
 
     @InjectMocks
     private BorrowServiceImpl borrowService;

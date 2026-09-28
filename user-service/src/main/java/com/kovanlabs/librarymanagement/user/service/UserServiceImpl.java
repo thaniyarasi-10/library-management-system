@@ -10,71 +10,52 @@ import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import com.kovanlabs.librarymanagement.user.mapping.UserMapper;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.security.Principal;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
 @Slf4j
+@RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final UserProviderRepository userProviderRepository;
     private final RewardRepository rewardRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final SalesforceUserSyncDelegate salesforceSyncDelegate;
-    private final Auth0RoleSyncDelegate auth0RoleSyncDelegate;
+    private final SalesforceSync salesforceSyncDelegate;
 
     /**
-     * Constructs a new {@link UserServiceImpl} with injected dependencies.
-     *
-     * @param userRepository Repository for User database operations
-     * @param userProviderRepository Repository for UserProvider database operations
-     * @param rewardRepository Repository for calculating user reward points
-     * @param passwordEncoder Password hashing encoder
-     * @param salesforceSyncDelegate Optional delegate for synchronizing changes to Salesforce
-     * @param auth0RoleSyncDelegate Optional delegate for synchronizing user roles to Auth0
-     */
-    @Autowired
-    public UserServiceImpl(
-            UserRepository userRepository,
-            UserProviderRepository userProviderRepository,
-            RewardRepository rewardRepository,
-            @Lazy PasswordEncoder passwordEncoder,
-            @Autowired(required = false) SalesforceUserSyncDelegate salesforceSyncDelegate,
-            @Autowired(required = false) Auth0RoleSyncDelegate auth0RoleSyncDelegate) {
-
-        this.userRepository = userRepository;
-        this.userProviderRepository = userProviderRepository;
-        this.rewardRepository = rewardRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.salesforceSyncDelegate = salesforceSyncDelegate;
-        this.auth0RoleSyncDelegate = auth0RoleSyncDelegate;
-    }
-
-    /**
-     * Helper method to map a single User entity to {@link UserResponse} along with their calculated reward points.
+     * Helper method to map a single User entity to {@link UserResponse} along with
+     * their calculated reward points.
      *
      * @param user The user entity
      * @return The populated {@link UserResponse}
@@ -93,11 +74,13 @@ public class UserServiceImpl implements UserService {
                 user.getId(),
                 user.getName(),
                 user.getEmail(),
+                user.getRole().name(),
                 points);
     }
 
     /**
-     * Helper method to batch map a list of User entities to {@link UserResponse} DTOs with reward points.
+     * Helper method to batch map a list of User entities to {@link UserResponse}
+     * DTOs with reward points.
      *
      * @param users List of user entities
      * @return List of mapped {@link UserResponse} DTOs
@@ -121,11 +104,13 @@ public class UserServiceImpl implements UserService {
                 user.getId(),
                 user.getName(),
                 user.getEmail(),
-                user.getUuid() != null ? rewardMap.getOrDefault(user.getUuid(), 0) : 0)).collect(Collectors.toList());
+                user.getRole().name(),
+                user.getUuid() != null ? rewardMap.getOrDefault(user.getUuid(), 0) : 0)).toList();
     }
 
     /**
-     * Creates a new user, encodes their password, saves to MySQL, and triggers dual-write sync with Salesforce if configured.
+     * Creates a new user, saves to MySQL, and triggers dual-write sync with
+     * Salesforce if configured.
      *
      * @param request The user creation request payload
      * @return The created {@link UserResponse} DTO
@@ -137,16 +122,13 @@ public class UserServiceImpl implements UserService {
         User user = UserMapper.INSTANCE.mapToEntity(request);
         if (user != null) {
             user.setRole(RoleEnum.USER);
-            if (request.password() != null) {
-                user.setPassword(passwordEncoder.encode(request.password()));
-            }
         }
         User savedUser = userRepository.save(user);
         UserResponse response = mapToUserResponseWithRewards(savedUser);
 
         if (salesforceSyncDelegate != null) {
             try {
-                salesforceSyncDelegate.syncUser(response);
+                salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(savedUser));
                 savedUser.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
                 userRepository.save(savedUser);
             } catch (Exception e) {
@@ -163,7 +145,8 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * Fetches all users from Salesforce if delegate is active and records exist, otherwise falls back to MySQL.
+     * Fetches all users from Salesforce if delegate is active and records exist,
+     * otherwise falls back to MySQL.
      *
      * @return List of {@link UserResponse} DTOs
      */
@@ -171,11 +154,11 @@ public class UserServiceImpl implements UserService {
     public List<UserResponse> getAllUsers() {
         if (salesforceSyncDelegate != null) {
             try {
-                List<UserResponse> sfUsers = salesforceSyncDelegate.fetchUsersFromSalesforce();
-                if (sfUsers != null && !sfUsers.isEmpty()) {
+                var sfContacts = salesforceSyncDelegate.fetchContactsFromSalesforce();
+                if (sfContacts != null && !sfContacts.isEmpty()) {
                     log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} users from Salesforce SOQL",
-                            sfUsers.size());
-                    return sfUsers;
+                            sfContacts.size());
+                    return UserMapper.INSTANCE.toUserResponseList(sfContacts);
                 }
             } catch (Exception e) {
                 log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for users, falling back to MySQL: {}",
@@ -187,11 +170,12 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * Fetches a paginated list of users from Salesforce (with in-memory paging) or MySQL database.
+     * Fetches a paginated list of users from Salesforce (with in-memory paging) or
+     * MySQL database.
      *
-     * @param page Zero-based page number
-     * @param size Number of items per page
-     * @param sortBy Field to sort by
+     * @param page    Zero-based page number
+     * @param size    Number of items per page
+     * @param sortBy  Field to sort by
      * @param sortDir Sort direction ("asc" or "desc")
      * @return {@link PagedResponse} of {@link UserResponse}
      */
@@ -199,8 +183,9 @@ public class UserServiceImpl implements UserService {
     public PagedResponse<UserResponse> getAllUsers(int page, int size, String sortBy, String sortDir) {
         if (salesforceSyncDelegate != null) {
             try {
-                List<UserResponse> sfUsers = salesforceSyncDelegate.fetchUsersFromSalesforce();
-                if (sfUsers != null && !sfUsers.isEmpty()) {
+                var sfContacts = salesforceSyncDelegate.fetchContactsFromSalesforce();
+                if (sfContacts != null && !sfContacts.isEmpty()) {
+                    List<UserResponse> sfUsers = UserMapper.INSTANCE.toUserResponseList(sfContacts);
                     log.info(
                             "[DATA SOURCE: SALESFORCE] Successfully fetched {} users from Salesforce SOQL (paging in memory)",
                             sfUsers.size());
@@ -241,10 +226,10 @@ public class UserServiceImpl implements UserService {
     /**
      * Searches users across name and email matching the query string.
      *
-     * @param query Search query string
-     * @param page Page index
-     * @param size Page size
-     * @param sortBy Sort field
+     * @param query   Search query string
+     * @param page    Page index
+     * @param size    Page size
+     * @param sortBy  Sort field
      * @param sortDir Sort direction
      * @return {@link PagedResponse} containing matching user records
      */
@@ -283,7 +268,7 @@ public class UserServiceImpl implements UserService {
     /**
      * Updates an existing user and syncs changes to Salesforce.
      *
-     * @param id The user ID to update
+     * @param id      The user ID to update
      * @param request The updated user payload
      * @return The updated {@link UserResponse} DTO
      */
@@ -300,16 +285,13 @@ public class UserServiceImpl implements UserService {
         if (request.email() != null && !request.email().isBlank()) {
             user.setEmail(request.email());
         }
-        if (request.password() != null && !request.password().isBlank()) {
-            user.setPassword(passwordEncoder.encode(request.password()));
-        }
 
         User updatedUser = userRepository.save(user);
         UserResponse response = mapToUserResponseWithRewards(updatedUser);
 
         if (salesforceSyncDelegate != null) {
             try {
-                salesforceSyncDelegate.syncUser(response);
+                salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(updatedUser));
                 updatedUser.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
                 userRepository.save(updatedUser);
             } catch (Exception e) {
@@ -336,7 +318,17 @@ public class UserServiceImpl implements UserService {
     public void deleteUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
+        UUID userUuid = user.getUuid();
         userRepository.delete(user);
+
+        if (salesforceSyncDelegate != null && userUuid != null) {
+            try {
+                salesforceSyncDelegate.deleteUser(userUuid);
+            } catch (Exception e) {
+                log.error("Failed to delete user from Salesforce [User ID: {}, UUID: {}]: {}", id, userUuid,
+                        e.getMessage());
+            }
+        }
     }
 
     /**
@@ -357,16 +349,38 @@ public class UserServiceImpl implements UserService {
         }
         User user = userProviderRepository.findByProviderId(identifier)
                 .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
+                .or(() -> {
+                    if (identifier.contains("|")) {
+                        String rawId = identifier.substring(identifier.indexOf('|') + 1);
+                        if (!rawId.isBlank()) {
+                            return userProviderRepository.findByProviderId(rawId)
+                                    .flatMap(up -> userRepository.findByUuid(up.getUserUuid()));
+                        }
+                    }
+                    return Optional.empty();
+                })
                 .or(() -> userRepository.findByEmail(identifier))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with identifier: " + identifier));
+                .or(() -> {
+                    try {
+                        UUID uuid = UUID.fromString(identifier);
+                        return userRepository.findByUuid(uuid);
+                    } catch (IllegalArgumentException ignored) {
+                        return Optional.empty();
+                    }
+                })
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "User not found with identifier: " + identifier));
         return mapToUserResponseWithRewards(user);
     }
 
     /**
-     * Updates an existing user's role administratively in MySQL and synchronizes the change to Auth0 app_metadata.
+     * Updates an existing user's role administratively in MySQL and syncs changes
+     * to Salesforce.
+     * Note: Auth0 is the source of truth for authentication/authorization; MySQL to
+     * Auth0 role sync is removed/disabled.
      *
-     * @param id The user ID to update
-     * @param newRole The new authoritative role
+     * @param id      The user ID to update
+     * @param newRole The new role
      * @return The updated {@link UserResponse} DTO
      */
     @Override
@@ -383,17 +397,19 @@ public class UserServiceImpl implements UserService {
         User updatedUser = userRepository.save(user);
         UserResponse response = mapToUserResponseWithRewards(updatedUser);
 
-        // Sync new role to all Auth0 identities linked to this user
-        if (auth0RoleSyncDelegate != null && updatedUser.getUuid() != null) {
-            List<UserProvider> providers = userProviderRepository.findByUserUuid(updatedUser.getUuid());
-            for (UserProvider provider : providers) {
-                if (provider.getProvider() == AuthProvider.AUTH0 && provider.getProviderId() != null) {
-                    try {
-                        auth0RoleSyncDelegate.syncUserRole(provider.getProviderId(), newRole);
-                    } catch (Exception e) {
-                        log.error("Failed to sync role update to Auth0 for user {}: {}", provider.getProviderId(), e.getMessage());
-                    }
-                }
+        if (salesforceSyncDelegate != null) {
+            try {
+                salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(updatedUser));
+                updatedUser.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                userRepository.save(updatedUser);
+            } catch (Exception e) {
+                int retryCount = updatedUser.getSalesforceRetryCount() + 1;
+                updatedUser.setSalesforceRetryCount(retryCount);
+                updatedUser.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+                userRepository.save(updatedUser);
+                log.error(
+                        "Salesforce dual-write failed for user role update [User ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
+                        updatedUser.getId(), updatedUser.getUuid(), retryCount, e.getMessage());
             }
         }
 
@@ -401,82 +417,105 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * Looks up an existing user by Auth0 provider ID (sub) or email, creates/updates user and links provider.
-     * MySQL user.role is the source of truth; incoming token claims never overwrite user.role.
-     * Synchronizes authoritative MySQL role to Auth0 app_metadata.role on user creation or identity linking.
+     * Synchronizes a user after Auth0 login to both MySQL and Salesforce.
+     * External identity mapping is handled exclusively via user_provider
+     * (provider=AUTH0, provider_id=sub).
+     * Application user details (uuid, email, name, role) are stored in user table.
+     * Existing user id, uuid, name, email, and role are NEVER overwritten on login.
      *
-     * @param sub The Auth0 subject identifier
-     * @param email The user's email
-     * @param name The user's full name
+     * @param sub       The Auth0 subject identifier
+     * @param email     The user's email
+     * @param name      The user's full name
+     * @param tokenRole The role extracted from Auth0 JWT for new user creation
      * @return The persisted {@link User} entity
      */
     @Override
     @Transactional
-    public User syncAuth0User(String sub, String email, String name) {
+    public User syncAuth0User(String sub, String email, String name, RoleEnum tokenRole) {
         if (sub == null || sub.isBlank()) {
             throw new IllegalArgumentException("Auth0 sub claim must not be empty");
         }
 
-        // 1. Primary lookup by providerId in user_provider table
+        // 1. Primary lookup by providerId in user_provider table (exact sub)
         var userProviderOpt = userProviderRepository.findByProviderId(sub);
         if (userProviderOpt.isPresent()) {
             UserProvider userProvider = userProviderOpt.get();
-            User existing = userRepository.findByUuid(userProvider.getUserUuid())
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found for providerId: " + sub));
-            boolean changed = false;
-            if (email != null && !email.isBlank() && !email.equals(existing.getEmail())) {
-                existing.setEmail(email);
-                changed = true;
-            }
-            if (name != null && !name.isBlank() && (existing.getName() == null || !name.equals(existing.getName()))) {
-                existing.setName(name);
-                changed = true;
-            }
-            // Do NOT modify existing.getRole() based on incoming claims
-            return changed ? userRepository.save(existing) : existing;
+            return userRepository.findByUuid(userProvider.getUserUuid())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "User not found for providerId: " + sub));
         }
 
-        // 2. Fallback lookup by email for linking existing accounts
+        // 2. Lookup by raw provider ID if sub has a provider prefix (e.g. sub =
+        // "google-oauth2|115993863360458947065", raw = "115993863360458947065")
+        if (sub.contains("|")) {
+            String rawId = sub.substring(sub.indexOf('|') + 1);
+            if (!rawId.isBlank()) {
+                var rawProviderOpt = userProviderRepository.findByProviderId(rawId);
+                if (rawProviderOpt.isEmpty() && sub.lastIndexOf('|') != sub.indexOf('|')) {
+                    String lastRawId = sub.substring(sub.lastIndexOf('|') + 1);
+                    if (!lastRawId.isBlank()) {
+                        rawProviderOpt = userProviderRepository.findByProviderId(lastRawId);
+                    }
+                }
+                if (rawProviderOpt.isPresent()) {
+                    UserProvider rawProvider = rawProviderOpt.get();
+                    User existing = userRepository.findByUuid(rawProvider.getUserUuid())
+                            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                    "User not found for raw providerId: " + rawProvider.getProviderId()));
+
+                    // Insert the new provider mapping for this existing user if not already present
+                    var existingSubMapping = userProviderRepository.findByProviderId(sub);
+                    if (existingSubMapping.isEmpty()) {
+                        UserProvider newProvider = UserProvider.builder()
+                                .userUuid(existing.getUuid())
+                                .provider(AuthProvider.AUTH0)
+                                .providerId(sub)
+                                .build();
+                        userProviderRepository.save(newProvider);
+                    }
+
+                    return existing;
+                }
+            }
+        }
+
+        // 3. Fallback lookup by email for linking existing accounts
         if (email != null && !email.isBlank()) {
             var userByEmail = userRepository.findByEmail(email);
             if (userByEmail.isPresent()) {
                 User existing = userByEmail.get();
-                if (name != null && !name.isBlank() && (existing.getName() == null || existing.getName().isBlank())) {
-                    existing.setName(name);
-                }
-                User saved = userRepository.save(existing);
 
-                // Create user_provider link if not already present
-                if (userProviderRepository.findByUserUuidAndProvider(saved.getUuid(), AuthProvider.AUTH0).isEmpty()) {
+                // Create a new user_provider mapping for this providerId if not already present.
+                // Multiple provider IDs for the same user are preserved as separate records.
+                // Do NOT modify user fields (name, email, role, etc.).
+                // Do NOT update or sync Salesforce.
+                var existingMapping = userProviderRepository.findByProviderId(sub);
+                if (existingMapping.isEmpty()) {
                     UserProvider newProvider = UserProvider.builder()
-                            .userUuid(saved.getUuid())
+                            .userUuid(existing.getUuid())
                             .provider(AuthProvider.AUTH0)
                             .providerId(sub)
                             .build();
                     userProviderRepository.save(newProvider);
                 }
 
-                // Sync existing MySQL role to Auth0 app_metadata
-                if (auth0RoleSyncDelegate != null) {
-                    try {
-                        auth0RoleSyncDelegate.syncUserRole(sub, saved.getRole());
-                    } catch (Exception e) {
-                        log.error("Failed to sync role to Auth0 during account linking for user {}: {}", sub, e.getMessage());
-                    }
-                }
-
-                return saved;
+                return existing;
             }
         }
 
-        // 3. No existing user -> create new User with USER role and UserProvider link
-        String effectiveEmail = (email != null && !email.isBlank()) ? email : sub + "@auth0.user";
+        // 4. No existing user -> create new User with role from Auth0 (or default USER)
+        // and UserProvider link
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Email is required to create a new user");
+        }
+
+        RoleEnum initialRole = (tokenRole != null) ? tokenRole : RoleEnum.USER;
         String effectiveName = (name != null && !name.isBlank()) ? name : "User";
 
         User newUser = User.builder()
-                .email(effectiveEmail)
+                .email(email)
                 .name(effectiveName)
-                .role(RoleEnum.USER)
+                .role(initialRole)
                 .build();
 
         User savedUser = userRepository.save(newUser);
@@ -488,15 +527,138 @@ public class UserServiceImpl implements UserService {
                 .build();
         userProviderRepository.save(newProvider);
 
-        // Sync default USER role to Auth0 app_metadata
-        if (auth0RoleSyncDelegate != null) {
-            try {
-                auth0RoleSyncDelegate.syncUserRole(sub, RoleEnum.USER);
-            } catch (Exception e) {
-                log.error("Failed to sync initial role to Auth0 for new user {}: {}", sub, e.getMessage());
-            }
+        syncUserToSalesforce(savedUser);
+        return savedUser;
+    }
+
+    @Override
+    @Transactional
+    public UserResponse getCurrentUser(Principal principal) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
         }
 
-        return savedUser;
+        if (principal instanceof Authentication auth
+                && auth.getPrincipal() instanceof Jwt jwt) {
+            String sub = jwt.getSubject();
+            String email = jwt.getClaimAsString("email");
+            if (email == null || email.isBlank()) {
+                email = jwt.getClaimAsString("https://library.kovanlabs.com/email");
+            }
+            if (email == null || email.isBlank()) {
+                email = jwt.getClaimAsString("https://library-management.com/email");
+            }
+
+            String customUsername = getHeaderFromRequestContext("X-User-Username");
+            if (customUsername == null || customUsername.isBlank()) {
+                customUsername = getHeaderFromRequestContext("X-User-Name");
+            }
+
+            String name = (customUsername != null && !customUsername.isBlank()) ? customUsername.trim() : null;
+            if (name == null || name.isBlank()) {
+                name = jwt.getClaimAsString("name");
+            }
+            if (name == null || name.isBlank()) {
+                name = jwt.getClaimAsString("nickname");
+            }
+            if (name == null || name.isBlank()) {
+                name = jwt.getClaimAsString("https://library.kovanlabs.com/name");
+            }
+
+            RoleEnum role = extractRoleFromJwt(jwt);
+
+            User syncedUser = syncAuth0User(sub, email, name, role);
+            return mapToUserResponseWithRewards(syncedUser);
+        }
+
+        return getUserByIdentifier(principal.getName());
+    }
+
+    @Override
+    @Transactional
+    public UserResponse updateCurrentUser(Principal principal, UserRequest request) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+        UserResponse currentUser = getCurrentUser(principal);
+        if (currentUser == null || currentUser.id() == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile not found");
+        }
+        return updateUser(currentUser.id(), request);
+    }
+
+    private RoleEnum extractRoleFromJwt(Jwt jwt) {
+        List<String> candidates = new ArrayList<>();
+        candidates.addAll(extractRolesList(jwt.getClaims().get("https://library.kovanlabs.com/roles")));
+        candidates.addAll(extractRolesList(jwt.getClaims().get("https://library.kovanlabs.com/role")));
+        candidates.addAll(extractRolesList(jwt.getClaims().get("roles")));
+        candidates.addAll(extractRolesList(jwt.getClaims().get("role")));
+        candidates.addAll(extractRolesList(jwt.getClaims().get("permissions")));
+
+        if (jwt.getClaims().get("app_metadata") instanceof Map<?, ?> appMeta) {
+            candidates.addAll(extractRolesList(appMeta.get("role")));
+            candidates.addAll(extractRolesList(appMeta.get("roles")));
+        }
+
+        // Check ADMIN
+        for (String r : candidates) {
+            String clean = r.toUpperCase().replace("ROLE_", "").trim();
+            if (clean.equals("ADMIN") || clean.contains("ADMIN") || clean.equals("BOOKS:WRITE")) {
+                return RoleEnum.ADMIN;
+            }
+        }
+        // Then check USER
+        for (String r : candidates) {
+            String clean = r.toUpperCase().replace("ROLE_", "").trim();
+            if (clean.equals("USER") || clean.contains("USER")) {
+                return RoleEnum.USER;
+            }
+        }
+        return null;
+    }
+
+    private List<String> extractRolesList(Object claim) {
+        if (claim instanceof List<?> list) {
+            return list.stream()
+                    .filter(item -> item instanceof String)
+                    .map(item -> (String) item)
+                    .toList();
+        } else if (claim instanceof String s && !s.isBlank()) {
+            return List.of(s);
+        }
+        return Collections.emptyList();
+    }
+
+    private void syncUserToSalesforce(User user) {
+        if (salesforceSyncDelegate != null && user != null && user.getUuid() != null) {
+            try {
+                salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(user));
+                user.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                userRepository.save(user);
+            } catch (Exception e) {
+                int retryCount = user.getSalesforceRetryCount() + 1;
+                user.setSalesforceRetryCount(retryCount);
+                user.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+                userRepository.save(user);
+                log.error(
+                        "Salesforce dual-write failed for user sync [User ID: {}, UUID: {}, Operation: SYNC, RetryCount: {}]: {}",
+                        user.getId(), user.getUuid(), retryCount, e.getMessage());
+            }
+        }
+    }
+
+    private String getHeaderFromRequestContext(String headerName) {
+        try {
+            var requestAttributes = RequestContextHolder.getRequestAttributes();
+            if (requestAttributes instanceof ServletRequestAttributes servletAttributes) {
+                HttpServletRequest request = servletAttributes.getRequest();
+                if (request != null) {
+                    return request.getHeader(headerName);
+                }
+            }
+        } catch (Exception ignored) {
+            // Ignored outside web request context
+        }
+        return null;
     }
 }

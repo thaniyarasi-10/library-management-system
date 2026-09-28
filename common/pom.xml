@@ -10,34 +10,24 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>salesforce-core</artifactId>
-    <name>salesforce-core</name>
-    <description>Salesforce Integration Core Module</description>
+    <artifactId>common</artifactId>
+    <name>common</name>
+    <description>Library Management Common Shared Configurations and Utilities Module</description>
 
     <dependencies>
-        <dependency>
-            <groupId>com.kovanlabs</groupId>
-            <artifactId>database-service</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.kovanlabs</groupId>
-            <artifactId>common</artifactId>
-        </dependency>
-
-        <!-- Spring Boot Web for RestTemplate & Spring Context -->
+        <!-- Spring Boot Starter Web (RestClient, HttpComponentsClientHttpRequestFactory, etc.) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- Apache HttpClient5 for HTTP PATCH support in RestTemplate -->
+        <!-- Apache HttpClient5 for HTTP PATCH support in RestClient -->
         <dependency>
             <groupId>org.apache.httpcomponents.client5</groupId>
             <artifactId>httpclient5</artifactId>
         </dependency>
 
-        <!-- Jackson Databind -->
+        <!-- Jackson Databind and JavaTimeModule -->
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
@@ -48,12 +38,6 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
-        </dependency>
-
-        <!-- MapStruct -->
-        <dependency>
-            <groupId>org.mapstruct</groupId>
-            <artifactId>mapstruct</artifactId>
         </dependency>
 
         <!-- Test Dependencies -->
@@ -80,16 +64,6 @@
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
                             <version>${lombok.version}</version>
-                        </path>
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok-mapstruct-binding</artifactId>
-                            <version>${lombok-mapstruct-binding.version}</version>
-                        </path>
-                        <path>
-                            <groupId>org.mapstruct</groupId>
-                            <artifactId>mapstruct-processor</artifactId>
-                            <version>${mapstruct.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>

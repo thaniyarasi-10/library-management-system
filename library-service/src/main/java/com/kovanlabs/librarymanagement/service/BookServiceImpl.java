@@ -9,7 +9,7 @@ import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
-import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -42,7 +42,7 @@ public class BookServiceImpl implements BookService {
 
     private final BookRepository bookRepository;
     private final S3Service s3Service;
-    private final SalesforceSyncService salesforceSyncService;
+    private final SalesforceSyncImpl salesforceSyncService;
 
     /**
      * Creates a new book record, saves it to the database, and synchronizes with Salesforce.

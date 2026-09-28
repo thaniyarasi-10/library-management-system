@@ -1,4 +1,4 @@
-package com.kovanlabs.librarymanagement.scheduler;
+package com.kovanlabs.librarymanagement.salesforce.service;
 
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
@@ -10,9 +10,7 @@ import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.salesforce.config.SalesforceConfig;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
-import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncService;
-import com.kovanlabs.librarymanagement.user.dto.UserResponse;
-import com.kovanlabs.librarymanagement.user.service.SalesforceUserSyncDelegate;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,7 +40,7 @@ class SalesforceSyncRetrySchedulerTest {
     private BorrowRepository borrowRepository;
 
     @Mock
-    private SalesforceSyncService salesforceSyncService;
+    private SalesforceSyncImpl salesforceSyncService;
 
     @Mock
     private SalesforceConfig salesforceConfig;
@@ -110,7 +108,7 @@ class SalesforceSyncRetrySchedulerTest {
 
         scheduler.retryPendingSyncs();
 
-        verify(salesforceSyncService).syncUser(any(UserResponse.class));
+        verify(salesforceSyncService).syncContact(any(ContactSObject.class));
         verify(userRepository).save(pendingUser);
         assertEquals(SalesforceSyncStatus.SUCCESS, pendingUser.getSalesforceSyncStatus());
         assertEquals(1, pendingUser.getSalesforceRetryCount());
@@ -122,7 +120,7 @@ class SalesforceSyncRetrySchedulerTest {
         when(userRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(List.of(pendingUser));
         when(bookRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
         when(borrowRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
-        doThrow(new RuntimeException("SF timeout")).when(salesforceSyncService).syncUser(any());
+        doThrow(new RuntimeException("SF timeout")).when(salesforceSyncService).syncContact(any());
 
         scheduler.retryPendingSyncs();
 
@@ -138,7 +136,7 @@ class SalesforceSyncRetrySchedulerTest {
         when(userRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(List.of(pendingUser));
         when(bookRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
         when(borrowRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
-        doThrow(new RuntimeException("SF persistent error")).when(salesforceSyncService).syncUser(any());
+        doThrow(new RuntimeException("SF persistent error")).when(salesforceSyncService).syncContact(any());
 
         scheduler.retryPendingSyncs();
 

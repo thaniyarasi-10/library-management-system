@@ -25,5 +25,7 @@
     <include file="db/changelog/changes/16-update-rewards.xml"/>
     <include file="db/changelog/changes/17-add-salesforce-sync-status.xml"/>
     <include file="db/changelog/changes/18-create-user-provider-table.xml"/>
+    <include file="db/changelog/changes/19-change-provider-datatype.xml"/>
+    <include file="db/changelog/changes/20-drop-password-from-user.xml"/>
 
 </databaseChangeLog>

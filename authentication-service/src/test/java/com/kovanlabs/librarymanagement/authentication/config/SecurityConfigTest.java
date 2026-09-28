@@ -74,7 +74,7 @@ class SecurityConfigTest {
     @Configuration
     @EnableWebSecurity
     @EnableWebMvc
-    @Import(SecurityConfig.class)
+    @Import({SecurityConfig.class, Auth0Properties.class})
     static class TestSecurityConfig {
         @Bean
         public TestSecurityController testSecurityController() {
@@ -95,8 +95,7 @@ class SecurityConfigTest {
         context.register(TestSecurityConfig.class);
         context.refresh();
 
-        FilterChainProxy springSecurityFilterChain = context.getBean("springSecurityFilterChain",
-                FilterChainProxy.class);
+        FilterChainProxy springSecurityFilterChain = context.getBean("springSecurityFilterChain", FilterChainProxy.class);
         mockMvc = MockMvcBuilders.webAppContextSetup(context)
                 .addFilters(springSecurityFilterChain)
                 .build();
@@ -126,7 +125,7 @@ class SecurityConfigTest {
         when(mockJwtDecoder.decode(anyString())).thenThrow(new BadJwtException("Invalid token signature"));
 
         mockMvc.perform(post("/books")
-                .header("Authorization", "Bearer invalid-token"))
+                        .header("Authorization", "Bearer invalid-token"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -136,7 +135,7 @@ class SecurityConfigTest {
         when(mockJwtDecoder.decode(anyString())).thenThrow(new JwtValidationException("Expired token", List.of(error)));
 
         mockMvc.perform(post("/books")
-                .header("Authorization", "Bearer expired-token"))
+                        .header("Authorization", "Bearer expired-token"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -146,40 +145,41 @@ class SecurityConfigTest {
         when(mockJwtDecoder.decode(anyString())).thenThrow(new JwtValidationException("Wrong issuer", List.of(error)));
 
         mockMvc.perform(post("/books")
-                .header("Authorization", "Bearer wrong-issuer-token"))
+                        .header("Authorization", "Bearer wrong-issuer-token"))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void protectedEndpoint_whenWrongAudience_shouldReturn401() throws Exception {
         OAuth2Error error = new OAuth2Error("invalid_token", "The required audience is missing", null);
-        when(mockJwtDecoder.decode(anyString()))
-                .thenThrow(new JwtValidationException("Wrong audience", List.of(error)));
+        when(mockJwtDecoder.decode(anyString())).thenThrow(new JwtValidationException("Wrong audience", List.of(error)));
 
         mockMvc.perform(post("/books")
-                .header("Authorization", "Bearer wrong-audience-token"))
+                        .header("Authorization", "Bearer wrong-audience-token"))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void protectedEndpoint_whenValidTokenWithRequiredPermission_shouldBeAllowed() throws Exception {
         Jwt jwt = createJwtWithClaims(Map.of(
-                "permissions", List.of("books:write")));
+                "permissions", List.of("books:write")
+        ));
         when(mockJwtDecoder.decode("valid-token")).thenReturn(jwt);
 
         mockMvc.perform(post("/books")
-                .header("Authorization", "Bearer valid-token"))
+                        .header("Authorization", "Bearer valid-token"))
                 .andExpect(status().isOk());
     }
 
     @Test
     void protectedEndpoint_whenValidTokenWithRoleAdmin_shouldBeAllowed() throws Exception {
         Jwt jwt = createJwtWithClaims(Map.of(
-                "https://library.kovanlabs.com/roles", List.of("admin")));
+                "https://library.kovanlabs.com/roles", List.of("admin")
+        ));
         when(mockJwtDecoder.decode("admin-token")).thenReturn(jwt);
 
         mockMvc.perform(post("/books")
-                .header("Authorization", "Bearer admin-token"))
+                        .header("Authorization", "Bearer admin-token"))
                 .andExpect(status().isOk());
     }
 
@@ -187,44 +187,48 @@ class SecurityConfigTest {
     void protectedEndpoint_whenValidTokenLacksRequiredPermission_shouldReturn403() throws Exception {
         Jwt jwt = createJwtWithClaims(Map.of(
                 "permissions", List.of("books:read"),
-                "https://library.kovanlabs.com/roles", List.of("user")));
+                "https://library.kovanlabs.com/roles", List.of("user")
+        ));
         when(mockJwtDecoder.decode("user-token")).thenReturn(jwt);
 
         mockMvc.perform(post("/books")
-                .header("Authorization", "Bearer user-token"))
+                        .header("Authorization", "Bearer user-token"))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     void userMeEndpoint_whenValidToken_shouldBeAllowed() throws Exception {
         Jwt jwt = createJwtWithClaims(Map.of(
-                "sub", "auth0|12345"));
+                "sub", "auth0|12345"
+        ));
         when(mockJwtDecoder.decode("me-token")).thenReturn(jwt);
 
         mockMvc.perform(get("/user/me")
-                .header("Authorization", "Bearer me-token"))
+                        .header("Authorization", "Bearer me-token"))
                 .andExpect(status().isOk());
     }
 
     @Test
     void deleteBookEndpoint_whenMissingDeletePermission_shouldReturn403() throws Exception {
         Jwt jwt = createJwtWithClaims(Map.of(
-                "permissions", List.of("books:write")));
+                "permissions", List.of("books:write")
+        ));
         when(mockJwtDecoder.decode("token-no-delete")).thenReturn(jwt);
 
         mockMvc.perform(delete("/books/1")
-                .header("Authorization", "Bearer token-no-delete"))
+                        .header("Authorization", "Bearer token-no-delete"))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     void deleteBookEndpoint_whenHasDeletePermission_shouldBeAllowed() throws Exception {
         Jwt jwt = createJwtWithClaims(Map.of(
-                "permissions", List.of("books:delete")));
+                "permissions", List.of("books:delete")
+        ));
         when(mockJwtDecoder.decode("token-delete")).thenReturn(jwt);
 
         mockMvc.perform(delete("/books/1")
-                .header("Authorization", "Bearer token-delete"))
+                        .header("Authorization", "Bearer token-delete"))
                 .andExpect(status().isOk());
     }
 
