@@ -9,6 +9,7 @@ import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -53,7 +54,7 @@ public class Fine {
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();
-        if (createdAt == null) {
+        if (Objects.isNull(createdAt)) {
             createdAt = now;
         }
         updatedAt = now;

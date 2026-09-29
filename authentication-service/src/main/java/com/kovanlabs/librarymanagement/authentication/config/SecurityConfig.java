@@ -23,6 +23,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
+import java.util.Objects;
 
 @Configuration
 @RequiredArgsConstructor
@@ -76,17 +77,14 @@ public class SecurityConfig {
     }
 
     private String normalizeIssuer(String domain) {
-        if (domain == null || domain.isBlank()) {
+        if (Objects.isNull(domain) || domain.isBlank()) {
             return "https://auth0.local/";
         }
-        String normalized = domain.trim();
-        if (!normalized.startsWith("http://") && !normalized.startsWith("https://")) {
-            normalized = "https://" + normalized;
-        }
-        if (!normalized.endsWith("/")) {
-            normalized = normalized + "/";
-        }
-        return normalized;
+        String trimmed = domain.trim();
+        String withProtocol = (!trimmed.startsWith("http://") && !trimmed.startsWith("https://"))
+                ? "https://" + trimmed
+                : trimmed;
+        return withProtocol.endsWith("/") ? withProtocol : withProtocol + "/";
     }
 
     @Bean

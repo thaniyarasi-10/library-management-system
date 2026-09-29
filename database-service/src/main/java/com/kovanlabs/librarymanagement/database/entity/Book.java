@@ -11,6 +11,7 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -52,7 +53,7 @@ public class Book {
 
     @PrePersist
     public void prePersist() {
-        if (uuid == null) {
+        if (Objects.isNull(uuid)) {
             uuid = UUID.randomUUID();
         }
     }

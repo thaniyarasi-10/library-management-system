@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import java.net.URI;
+import java.util.Objects;
 
 /**
  * Service implementing {@link Auth0UserInfoService} to retrieve user profile data
@@ -29,9 +30,9 @@ public class Auth0UserInfoServiceImpl implements Auth0UserInfoService {
             Auth0UrlHelper auth0UrlHelper,
             @Value("${auth0.userinfo-url:}") String explicitUserInfoUrl,
             @Value("${auth0.domain:dev-etrfpmdm1sjiuggl.us.auth0.com}") String auth0Domain) {
-        this.restClient = (restClientBuilder != null ? restClientBuilder : RestClient.builder()).build();
-        this.auth0UrlHelper = auth0UrlHelper != null ? auth0UrlHelper : new Auth0UrlHelper();
-        this.explicitUserInfoUrl = (explicitUserInfoUrl != null && !explicitUserInfoUrl.isBlank())
+        this.restClient = (Objects.nonNull(restClientBuilder) ? restClientBuilder : RestClient.builder()).build();
+        this.auth0UrlHelper = Objects.nonNull(auth0UrlHelper) ? auth0UrlHelper : new Auth0UrlHelper();
+        this.explicitUserInfoUrl = (Objects.nonNull(explicitUserInfoUrl) && !explicitUserInfoUrl.isBlank())
                 ? explicitUserInfoUrl.trim()
                 : null;
         this.defaultDomain = this.auth0UrlHelper.normalizeDomain(auth0Domain);
@@ -46,7 +47,7 @@ public class Auth0UserInfoServiceImpl implements Auth0UserInfoService {
      */
     @Override
     public Auth0UserProfile fetchUserProfile(String accessToken, String issuerUrl) {
-        if (accessToken == null || accessToken.isBlank()) {
+        if (Objects.isNull(accessToken) || accessToken.isBlank()) {
             log.warn("Cannot fetch Auth0 user profile: accessToken is null or blank");
             return null;
         }

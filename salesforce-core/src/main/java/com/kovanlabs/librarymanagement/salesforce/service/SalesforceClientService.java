@@ -15,6 +15,7 @@ import org.springframework.web.client.RestClient;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Low-level HTTP client service for communicating with Salesforce REST APIs.
@@ -45,8 +46,8 @@ public class SalesforceClientService {
      */
     public boolean isConfigured() {
         return salesforceConfig.isEnabled()
-                && salesforceConfig.getClientId() != null && !salesforceConfig.getClientId().isBlank()
-                && salesforceConfig.getClientSecret() != null && !salesforceConfig.getClientSecret().isBlank();
+                && Objects.nonNull(salesforceConfig.getClientId()) && !salesforceConfig.getClientId().isBlank()
+                && Objects.nonNull(salesforceConfig.getClientSecret()) && !salesforceConfig.getClientSecret().isBlank();
     }
 
     /**
@@ -57,7 +58,7 @@ public class SalesforceClientService {
      *         fails
      */
     public synchronized String getAccessToken() {
-        if (accessToken != null) {
+        if (Objects.nonNull(accessToken)) {
             return accessToken;
         }
         authenticate();
@@ -70,7 +71,7 @@ public class SalesforceClientService {
      * @return The Salesforce base instance URL, or {@code null} if unauthenticated
      */
     public synchronized String getInstanceUrl() {
-        if (instanceUrl != null) {
+        if (Objects.nonNull(instanceUrl)) {
             return instanceUrl;
         }
         authenticate();
@@ -103,7 +104,7 @@ public class SalesforceClientService {
                     })
                     .body(String.class);
 
-            if (responseBody != null && !responseBody.isBlank()) {
+            if (Objects.nonNull(responseBody) && !responseBody.isBlank()) {
                 JsonNode root = objectMapper.readTree(responseBody);
                 this.accessToken = root.path("access_token").asText(null);
                 this.instanceUrl = root.path("instance_url").asText(null);
@@ -132,20 +133,20 @@ public class SalesforceClientService {
      * @return {@code true} if unauthorized/expired, {@code false} otherwise
      */
     public static boolean isUnauthorizedOrExpired(Throwable t) {
-        if (t == null) return false;
+        if (Objects.isNull(t)) return false;
         if (t instanceof org.springframework.web.client.HttpStatusCodeException httpEx) {
             if (httpEx.getStatusCode().value() == 401) {
                 return true;
             }
         }
         String msg = t.getMessage();
-        if (msg != null) {
+        if (Objects.nonNull(msg)) {
             String lower = msg.toLowerCase();
             if (lower.contains("401") || lower.contains("unauthorized") || lower.contains("invalid_session_id") || lower.contains("session expired")) {
                 return true;
             }
         }
-        if (t.getCause() != null && t.getCause() != t) {
+        if (Objects.nonNull(t.getCause()) && t.getCause() != t) {
             return isUnauthorizedOrExpired(t.getCause());
         }
         return false;
@@ -187,7 +188,7 @@ public class SalesforceClientService {
     private JsonNode executeQuery(String soql) throws Exception {
         String token = getAccessToken();
         String host = getInstanceUrl();
-        if (token == null || host == null) {
+        if (Objects.isNull(token) || Objects.isNull(host)) {
             log.warn("[SALESFORCE QUERY] Failed to obtain access token or instance URL for SOQL: {}", soql);
             return null;
         }
@@ -204,7 +205,7 @@ public class SalesforceClientService {
                 .retrieve()
                 .body(String.class);
 
-        if (responseBody != null) {
+        if (Objects.nonNull(responseBody)) {
             return objectMapper.readTree(responseBody);
         }
         return null;
@@ -265,7 +266,7 @@ public class SalesforceClientService {
             Map<String, Object> fields) throws Exception {
         String token = getAccessToken();
         String host = getInstanceUrl();
-        if (token == null || host == null) {
+        if (Objects.isNull(token) || Objects.isNull(host)) {
             throw new SalesforceSyncException("Unable to obtain Salesforce access token or instance URL");
         }
 
@@ -333,7 +334,7 @@ public class SalesforceClientService {
     private void executeDelete(String sObjectName, String externalIdFieldName, String externalIdValue) {
         String token = getAccessToken();
         String host = getInstanceUrl();
-        if (token == null || host == null) {
+        if (Objects.isNull(token) || Objects.isNull(host)) {
             throw new SalesforceSyncException("Unable to obtain Salesforce access token or instance URL");
         }
 

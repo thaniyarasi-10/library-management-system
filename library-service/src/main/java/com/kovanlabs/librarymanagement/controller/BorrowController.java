@@ -7,6 +7,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/borrow")
@@ -18,21 +21,20 @@ public class BorrowController {
     }
 
     @GetMapping
-    public java.util.List<BorrowResponseDto> getAllBorrows() {
+    public List<BorrowResponseDto> getAllBorrows() {
         return borrowService.getAllBorrows();
     }
 
     @GetMapping("/user/{userId}")
-    public java.util.List<BorrowResponseDto> getBorrowsByUserId(@PathVariable("userId") Long userId) {
+    public List<BorrowResponseDto> getBorrowsByUserId(@PathVariable("userId") Long userId) {
         return borrowService.getBorrowsByUserId(userId);
     }
 
     @GetMapping("/me")
-    public java.util.List<BorrowResponseDto> getMyBorrows(java.security.Principal principal) {
-        if (principal == null) {
-            return java.util.Collections.emptyList();
-        }
-        return borrowService.getBorrowsByUserEmail(principal.getName());
+    public List<BorrowResponseDto> getMyBorrows(java.security.Principal principal) {
+        return Objects.isNull(principal)
+                ? Collections.emptyList()
+                : borrowService.getBorrowsByUserEmail(principal.getName());
     }
 
     @PostMapping

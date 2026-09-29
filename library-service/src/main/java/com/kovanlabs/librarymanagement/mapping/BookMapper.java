@@ -12,13 +12,14 @@ import org.mapstruct.Named;
 import org.mapstruct.factory.Mappers;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
  * MapStruct mapper for Book entity conversions, DTO transformations,
  * and Salesforce Book SObject mappings.
  */
-@Mapper(imports = {SObject.class, SObjectAttributes.class})
+@Mapper(imports = {SObject.class, SObjectAttributes.class, Objects.class})
 public interface BookMapper {
 
     BookMapper INSTANCE = Mappers.getMapper(BookMapper.class);
@@ -80,8 +81,8 @@ public interface BookMapper {
      */
     @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.BOOK.getObjectName()).build())")
     @Mapping(target = "externalBookUuid", source = "uuid")
-    @Mapping(target = "name", expression = "java((book.getTitle() != null && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
-    @Mapping(target = "title", expression = "java((book.getTitle() != null && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "name", expression = "java((Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "title", expression = "java((Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
     @Mapping(target = "author", source = "author")
     @Mapping(target = "isbn", source = "isbn")
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
@@ -121,7 +122,7 @@ public interface BookMapper {
      */
     @Named("parseUUID")
     default UUID parseUUID(String str) {
-        if (str == null || str.isBlank()) return null;
+        if (Objects.isNull(str) || str.isBlank()) return null;
         try {
             return UUID.fromString(str);
         } catch (Exception e) {

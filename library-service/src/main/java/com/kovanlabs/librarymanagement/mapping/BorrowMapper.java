@@ -18,13 +18,14 @@ import org.mapstruct.factory.Mappers;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
  * MapStruct mapper for Borrow entity conversions, DTO transformations,
  * and Salesforce Borrow SObject mappings using static INSTANCE.
  */
-@Mapper(imports = { LocalDate.class, BorrowStatus.class, SObject.class, SObjectAttributes.class })
+@Mapper(imports = { LocalDate.class, BorrowStatus.class, SObject.class, SObjectAttributes.class, Objects.class })
 public interface BorrowMapper {
 
     BorrowMapper INSTANCE = Mappers.getMapper(BorrowMapper.class);
@@ -130,9 +131,9 @@ public interface BorrowMapper {
     @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.CONTACT.getObjectName()).build())")
     @Mapping(target = "externalUserUuid", source = "uuid")
     @Mapping(target = "legacyUserId", source = "id")
-    @Mapping(target = "lastName", expression = "java((user.getName() != null && !user.getName().isBlank()) ? user.getName() : \"User\")")
+    @Mapping(target = "lastName", expression = "java((Objects.nonNull(user.getName()) && !user.getName().isBlank()) ? user.getName() : \"User\")")
     @Mapping(target = "email", source = "email")
-    @Mapping(target = "role", expression = "java(user.getRole() != null ? user.getRole().name() : null)")
+    @Mapping(target = "role", expression = "java(Objects.nonNull(user.getRole()) ? user.getRole().name() : null)")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     ContactSObject toContactSObject(User user);
@@ -160,8 +161,8 @@ public interface BorrowMapper {
      */
     @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.BOOK.getObjectName()).build())")
     @Mapping(target = "externalBookUuid", source = "uuid")
-    @Mapping(target = "name", expression = "java((book.getTitle() != null && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
-    @Mapping(target = "title", expression = "java((book.getTitle() != null && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "name", expression = "java((Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "title", expression = "java((Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
     @Mapping(target = "author", source = "author")
     @Mapping(target = "isbn", source = "isbn")
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
@@ -212,9 +213,9 @@ public interface BorrowMapper {
      */
     @Named("resolveBookTitle")
     default String resolveBookTitle(BookSObject book) {
-        if (book == null)
-            return null;
-        return (book.getTitle() != null && !book.getTitle().isBlank()) ? book.getTitle() : book.getName();
+        return Objects.isNull(book)
+                ? null
+                : ((Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank()) ? book.getTitle() : book.getName());
     }
 
     /**
@@ -225,7 +226,7 @@ public interface BorrowMapper {
      */
     @Named("parseUUID")
     default UUID parseUUID(String str) {
-        if (str == null || str.isBlank())
+        if (Objects.isNull(str) || str.isBlank())
             return null;
         try {
             return UUID.fromString(str);
@@ -242,7 +243,7 @@ public interface BorrowMapper {
      */
     @Named("parseLocalDate")
     default LocalDate parseLocalDate(String str) {
-        if (str == null || str.isBlank())
+        if (Objects.isNull(str) || str.isBlank())
             return null;
         try {
             return LocalDate.parse(str);
@@ -259,7 +260,7 @@ public interface BorrowMapper {
      */
     @Named("parseBorrowStatus")
     default BorrowStatus parseBorrowStatus(String statusStr) {
-        if (statusStr == null || statusStr.isBlank())
+        if (Objects.isNull(statusStr) || statusStr.isBlank())
             return null;
         try {
             return BorrowStatus.valueOf(statusStr);

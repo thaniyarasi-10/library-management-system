@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -48,7 +49,7 @@ public class NotificationScheduler {
         log.info("Found {} overdue borrow records to process", overdueBorrows.size());
 
         Map<User, List<Borrow>> userBorrowsMap = overdueBorrows.stream()
-                .filter(b -> b.getUser() != null && b.getUser().getEmail() != null)
+                .filter(b -> Objects.nonNull(b.getUser()) && Objects.nonNull(b.getUser().getEmail()))
                 .collect(Collectors.groupingBy(Borrow::getUser));
 
         for (Map.Entry<User, List<Borrow>> entry : userBorrowsMap.entrySet()) {
@@ -67,8 +68,8 @@ public class NotificationScheduler {
                         fineService.processFineForBorrow(b);
 
                         return new OverdueBookDto(
-                                b.getBook() != null ? b.getBook().getTitle() : "Unknown Title",
-                                b.getBook() != null ? b.getBook().getAuthor() : "Unknown Author",
+                                Objects.nonNull(b.getBook()) ? b.getBook().getTitle() : "Unknown Title",
+                                Objects.nonNull(b.getBook()) ? b.getBook().getAuthor() : "Unknown Author",
                                 b.getDueDate(),
                                 result.daysOverdue(),
                                 result.fine()
@@ -84,7 +85,7 @@ public class NotificationScheduler {
                     user.getEmail(),
                     "Overdue Books Notice",
                     "Please return your overdue books to avoid further fines.",
-                    user.getName() != null ? user.getName() : user.getEmail(),
+                    Objects.nonNull(user.getName()) ? user.getName() : user.getEmail(),
                     overdueBookDtos,
                     totalFine
             );

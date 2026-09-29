@@ -7,6 +7,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -47,11 +48,11 @@ public class UserProvider {
 
     @PrePersist
     protected void onCreate() {
-        if (uuid == null) {
+        if (Objects.isNull(uuid)) {
             uuid = UUID.randomUUID();
         }
         LocalDateTime now = LocalDateTime.now();
-        if (createdAt == null) {
+        if (Objects.isNull(createdAt)) {
             createdAt = now;
         }
         updatedAt = now;

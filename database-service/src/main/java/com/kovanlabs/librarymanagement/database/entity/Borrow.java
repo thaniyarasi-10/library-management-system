@@ -9,6 +9,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDate;
+import java.util.Objects;
 import java.util.UUID;
 
 @Builder
@@ -63,7 +64,7 @@ public class Borrow {
 
     @PrePersist
     public void prePersist() {
-        if (uuid == null) {
+        if (Objects.isNull(uuid)) {
             uuid = UUID.randomUUID();
         }
     }

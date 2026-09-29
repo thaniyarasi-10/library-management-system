@@ -29,6 +29,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -353,7 +354,7 @@ class UserServiceImplTest {
         when(userRepository.findByEmail("brandnew@example.com")).thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenAnswer(i -> {
             User u = i.getArgument(0);
-            if (u.getUuid() == null) {
+            if (Objects.isNull(u.getUuid())) {
                 u.setUuid(UUID.randomUUID());
             }
             return u;
@@ -393,7 +394,7 @@ class UserServiceImplTest {
         when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenAnswer(i -> {
             User u = i.getArgument(0);
-            if (u.getUuid() == null) {
+            if (Objects.isNull(u.getUuid())) {
                 u.setUuid(UUID.randomUUID());
             }
             return u;

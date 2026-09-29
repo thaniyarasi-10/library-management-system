@@ -5,6 +5,8 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.Objects;
+
 @Configuration
 @ConfigurationProperties(prefix = "auth0.management")
 @Getter
@@ -18,7 +20,7 @@ public class Auth0ManagementProperties {
     private String audience;
 
     public boolean isConfigured() {
-        return clientId != null && !clientId.isBlank()
-                && clientSecret != null && !clientSecret.isBlank();
+        return Objects.nonNull(clientId) && !clientId.isBlank()
+                && Objects.nonNull(clientSecret) && !clientSecret.isBlank();
     }
 }

@@ -10,6 +10,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 public class Auth0AuthoritiesConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
@@ -20,71 +21,54 @@ public class Auth0AuthoritiesConverter implements Converter<Jwt, Collection<Gran
 
     private final String customRolesClaim;
 
-    public Auth0AuthoritiesConverter() {
-        this(DEFAULT_ROLES_CLAIM);
-    }
-
     public Auth0AuthoritiesConverter(String customRolesClaim) {
-        this.customRolesClaim = (customRolesClaim != null && !customRolesClaim.isBlank())
+        this.customRolesClaim = (Objects.nonNull(customRolesClaim) && !customRolesClaim.isBlank())
                 ? customRolesClaim
                 : DEFAULT_ROLES_CLAIM;
     }
 
     @Override
     public Collection<GrantedAuthority> convert(Jwt jwt) {
-        if (jwt == null) {
+        if (Objects.isNull(jwt)) {
             return Collections.emptyList();
         }
 
         Set<GrantedAuthority> authorities = new HashSet<>();
 
         // 1. Extract permissions (Auth0 RBAC)
-        List<String> permissions = extractStringList(jwt, PERMISSIONS_CLAIM);
-        for (String permission : permissions) {
-            if (!permission.isBlank()) {
-                authorities.add(new SimpleGrantedAuthority(permission));
-            }
-        }
+        extractStringList(jwt, PERMISSIONS_CLAIM).stream()
+                .filter(p -> !p.isBlank())
+                .map(SimpleGrantedAuthority::new)
+                .forEach(authorities::add);
 
         // 2. Extract roles from configured namespaced claim
         List<String> namespacedRoles = extractStringList(jwt, customRolesClaim);
-        for (String role : namespacedRoles) {
-            addRoleAuthority(authorities, role);
-        }
+        namespacedRoles.forEach(role -> addRoleAuthority(authorities, role));
 
         // 3. Fallback to standard roles claim if configured claim returned none
         if (namespacedRoles.isEmpty() && !customRolesClaim.equals(STANDARD_ROLES_CLAIM)) {
-            List<String> standardRoles = extractStringList(jwt, STANDARD_ROLES_CLAIM);
-            for (String role : standardRoles) {
-                addRoleAuthority(authorities, role);
-            }
+            extractStringList(jwt, STANDARD_ROLES_CLAIM).forEach(role -> addRoleAuthority(authorities, role));
         }
 
         return new ArrayList<>(authorities);
     }
 
     private void addRoleAuthority(Set<GrantedAuthority> authorities, String role) {
-        if (role == null || role.isBlank()) {
+        if (Objects.isNull(role) || role.isBlank()) {
             return;
         }
-        String trimmed = role.trim();
-        String upper = trimmed.toUpperCase();
-        if (upper.startsWith("ROLE_")) {
-            authorities.add(new SimpleGrantedAuthority(upper));
-        } else {
-            authorities.add(new SimpleGrantedAuthority("ROLE_" + upper));
-        }
+        String upper = role.trim().toUpperCase();
+        authorities.add(new SimpleGrantedAuthority(upper.startsWith("ROLE_") ? upper : "ROLE_" + upper));
     }
 
     @SuppressWarnings("unchecked")
     private List<String> extractStringList(Jwt jwt, String claimName) {
         Object claim = jwt.getClaims().get(claimName);
-        if (claim instanceof List<?> list) {
-            return list.stream()
-                    .filter(item -> item instanceof String)
-                    .map(item -> (String) item)
-                    .toList();
-        }
-        return Collections.emptyList();
+        return (claim instanceof List<?> list)
+                ? list.stream()
+                        .filter(item -> item instanceof String)
+                        .map(item -> (String) item)
+                        .toList()
+                : Collections.emptyList();
     }
 }

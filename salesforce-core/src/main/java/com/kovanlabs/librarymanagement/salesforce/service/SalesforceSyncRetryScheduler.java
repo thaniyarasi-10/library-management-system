@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Scheduled task that periodically checks for PENDING Salesforce synchronizations
@@ -56,7 +57,7 @@ public class SalesforceSyncRetryScheduler {
             user.setSalesforceRetryCount(currentRetries);
 
             try {
-                if (salesforceSyncService != null) {
+                if (Objects.nonNull(salesforceSyncService)) {
                     salesforceSyncService.syncContact(toContactSObject(user));
                 }
                 user.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
@@ -90,7 +91,7 @@ public class SalesforceSyncRetryScheduler {
             book.setSalesforceRetryCount(currentRetries);
 
             try {
-                if (salesforceSyncService != null) {
+                if (Objects.nonNull(salesforceSyncService)) {
                     salesforceSyncService.syncBook(toBookSObject(book));
                 }
                 book.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
@@ -126,7 +127,7 @@ public class SalesforceSyncRetryScheduler {
             borrow.setSalesforceRetryCount(currentRetries);
 
             try {
-                if (salesforceSyncService != null) {
+                if (Objects.nonNull(salesforceSyncService)) {
                     salesforceSyncService.syncBorrow(toBorrowSObject(borrow));
                 }
                 borrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
@@ -151,28 +152,28 @@ public class SalesforceSyncRetryScheduler {
     }
 
     private ContactSObject toContactSObject(User user) {
-        if (user == null) {
+        if (Objects.isNull(user)) {
             return null;
         }
         return ContactSObject.builder()
                 .attributes(SObjectAttributes.builder().type(SObject.CONTACT.getObjectName()).build())
-                .externalUserUuid(user.getUuid() != null ? user.getUuid().toString() : null)
+                .externalUserUuid(Objects.nonNull(user.getUuid()) ? user.getUuid().toString() : null)
                 .legacyUserId(user.getId())
-                .lastName(user.getName() != null && !user.getName().isBlank() ? user.getName() : "User")
+                .lastName(Objects.nonNull(user.getName()) && !user.getName().isBlank() ? user.getName() : "User")
                 .email(user.getEmail())
-                .role(user.getRole() != null ? user.getRole().name() : null)
+                .role(Objects.nonNull(user.getRole()) ? user.getRole().name() : null)
                 .build();
     }
 
     private BookSObject toBookSObject(Book book) {
-        if (book == null) {
+        if (Objects.isNull(book)) {
             return null;
         }
         return BookSObject.builder()
                 .attributes(SObjectAttributes.builder().type(SObject.BOOK.getObjectName()).build())
-                .externalBookUuid(book.getUuid() != null ? book.getUuid().toString() : null)
-                .name(book.getTitle() != null && !book.getTitle().isBlank() ? book.getTitle() : "Untitled")
-                .title(book.getTitle() != null && !book.getTitle().isBlank() ? book.getTitle() : "Untitled")
+                .externalBookUuid(Objects.nonNull(book.getUuid()) ? book.getUuid().toString() : null)
+                .name(Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank() ? book.getTitle() : "Untitled")
+                .title(Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank() ? book.getTitle() : "Untitled")
                 .author(book.getAuthor())
                 .isbn(book.getIsbn())
                 .coverImageUrl(book.getCoverImageUrl())
@@ -180,28 +181,28 @@ public class SalesforceSyncRetryScheduler {
     }
 
     private BorrowSObject toBorrowSObject(Borrow borrow) {
-        if (borrow == null) {
+        if (Objects.isNull(borrow)) {
             return null;
         }
         ContactSObject contact = null;
-        if (borrow.getUser() != null) {
+        if (Objects.nonNull(borrow.getUser())) {
             contact = ContactSObject.builder()
-                    .externalUserUuid(borrow.getUser().getUuid() != null ? borrow.getUser().getUuid().toString() : null)
+                    .externalUserUuid(Objects.nonNull(borrow.getUser().getUuid()) ? borrow.getUser().getUuid().toString() : null)
                     .build();
         }
         BookSObject book = null;
-        if (borrow.getBook() != null) {
+        if (Objects.nonNull(borrow.getBook())) {
             book = BookSObject.builder()
-                    .externalBookUuid(borrow.getBook().getUuid() != null ? borrow.getBook().getUuid().toString() : null)
+                    .externalBookUuid(Objects.nonNull(borrow.getBook().getUuid()) ? borrow.getBook().getUuid().toString() : null)
                     .build();
         }
         return BorrowSObject.builder()
                 .attributes(SObjectAttributes.builder().type(SObject.BORROW.getObjectName()).build())
-                .externalBorrowUuid(borrow.getUuid() != null ? borrow.getUuid().toString() : null)
-                .borrowDate(borrow.getBorrowDate() != null ? borrow.getBorrowDate().toString() : null)
-                .dueDate(borrow.getDueDate() != null ? borrow.getDueDate().toString() : null)
-                .returnDate(borrow.getReturnedDate() != null ? borrow.getReturnedDate().toString() : null)
-                .borrowStatus(borrow.getStatus() != null ? borrow.getStatus().name() : null)
+                .externalBorrowUuid(Objects.nonNull(borrow.getUuid()) ? borrow.getUuid().toString() : null)
+                .borrowDate(Objects.nonNull(borrow.getBorrowDate()) ? borrow.getBorrowDate().toString() : null)
+                .dueDate(Objects.nonNull(borrow.getDueDate()) ? borrow.getDueDate().toString() : null)
+                .returnDate(Objects.nonNull(borrow.getReturnedDate()) ? borrow.getReturnedDate().toString() : null)
+                .borrowStatus(Objects.nonNull(borrow.getStatus()) ? borrow.getStatus().name() : null)
                 .contact(contact)
                 .book(book)
                 .build();

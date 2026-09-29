@@ -10,7 +10,6 @@ import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.dto.MembershipApplicationResponse;
 import com.kovanlabs.librarymanagement.dto.MembershipResponseDto;
 import com.kovanlabs.librarymanagement.mapping.MembershipMapper;
-import com.kovanlabs.librarymanagement.service.MembershipService;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,8 +27,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.Collections;
-import java.util.Optional;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -291,9 +289,9 @@ public class MembershipServiceImpl implements MembershipService {
 
         String html = getAgreementTemplate();
         log.info("Fetched template from S3");
-        String membershipIdText = membership.getMembershipId() != null ? membership.getMembershipId().toString()
+        String membershipIdText = Objects.nonNull(membership.getMembershipId()) ? membership.getMembershipId().toString()
                 : "PENDING";
-        String startDateText = membership.getCreatedAt() != null ? membership.getCreatedAt().toLocalDate().toString()
+        String startDateText = Objects.nonNull(membership.getCreatedAt()) ? membership.getCreatedAt().toLocalDate().toString()
                 : LocalDate.now().toString();
 
         return html
@@ -326,7 +324,7 @@ public class MembershipServiceImpl implements MembershipService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access Denied");
         }
 
-        if (membership.getStatus() != MembershipStatus.ACTIVE || membership.getSignedPdfKey() == null) {
+        if (membership.getStatus() != MembershipStatus.ACTIVE || Objects.isNull(membership.getSignedPdfKey())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Signed PDF is not available yet");
         }
 
@@ -342,15 +340,10 @@ public class MembershipServiceImpl implements MembershipService {
     @Override
     public boolean hasActiveMembership(UUID userUuid) {
         log.info("Checking active membership for user: {} in DATABASE", userUuid);
-        Optional<Membership> membershipOpt = membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid);
-        if (membershipOpt.isEmpty()) {
-            return false;
-        }
-        Membership membership = membershipOpt.get();
-        boolean isActive = membership.getStatus() == MembershipStatus.ACTIVE;
-        boolean isNotExpired = membership.getExpiryDate() == null
-                || !membership.getExpiryDate().isBefore(LocalDate.now());
-        return isActive && isNotExpired;
+        return membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid)
+                .map(membership -> membership.getStatus() == MembershipStatus.ACTIVE
+                        && (Objects.isNull(membership.getExpiryDate()) || !membership.getExpiryDate().isBefore(LocalDate.now())))
+                .orElse(false);
     }
 
     /**

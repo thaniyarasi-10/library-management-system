@@ -17,10 +17,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
-import java.util.UUID;
 import java.util.List;
+import java.util.Objects;
+import java.util.Collections;
+
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl;
-import com.kovanlabs.librarymanagement.service.MembershipService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -49,7 +50,7 @@ public class BorrowServiceImpl implements BorrowService {
      */
     @Override
     public BorrowResponseDto borrowBook(BorrowRequestDto borrowRequestDto) {
-        if (borrowRequestDto == null || borrowRequestDto.userId() == null || borrowRequestDto.bookId() == null) {
+        if (Objects.isNull(borrowRequestDto) || Objects.isNull(borrowRequestDto.userId()) || Objects.isNull(borrowRequestDto.bookId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bookId and userId are required");
         }
 
@@ -62,7 +63,7 @@ public class BorrowServiceImpl implements BorrowService {
                     "Only users with an ACTIVE membership can perform borrow operations");
         }
 
-        if (userFineChecker != null && userFineChecker.hasPendingFines(borrowRequestDto.userId())) {
+        if (Objects.nonNull(userFineChecker) && userFineChecker.hasPendingFines(borrowRequestDto.userId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "User has pending fines. Please pay outstanding fines before borrowing books.");
         }
@@ -76,7 +77,7 @@ public class BorrowServiceImpl implements BorrowService {
         Borrow savedBorrow = borrowRepository.save(borrow);
 
         // Salesforce Sync
-        if (salesforceSyncService != null) {
+        if (Objects.nonNull(salesforceSyncService)) {
             try {
                 salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(BorrowMapper.INSTANCE.mapToResponse(savedBorrow)));
                 savedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
@@ -103,14 +104,14 @@ public class BorrowServiceImpl implements BorrowService {
      */
     @Override
     public BorrowResponseDto returnBook(Long borrowId) {
-        if (borrowId == null) {
+        if (Objects.isNull(borrowId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "borrowId is required");
         }
 
         Borrow borrow = borrowRepository.findById(borrowId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Borrow record not found"));
 
-        if (userFineChecker != null && borrow.getUser() != null && userFineChecker.hasPendingFines(borrow.getUser().getId())) {
+        if (Objects.nonNull(userFineChecker) && Objects.nonNull(borrow.getUser()) && userFineChecker.hasPendingFines(borrow.getUser().getId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "User has pending fines. Please pay outstanding fines before returning books.");
         }
@@ -121,7 +122,7 @@ public class BorrowServiceImpl implements BorrowService {
         Borrow updatedBorrow = borrowRepository.save(borrow);
 
         // Salesforce Sync
-        if (salesforceSyncService != null) {
+        if (Objects.nonNull(salesforceSyncService)) {
             try {
                 salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(BorrowMapper.INSTANCE.mapToResponse(updatedBorrow)));
                 updatedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
@@ -160,12 +161,11 @@ public class BorrowServiceImpl implements BorrowService {
      */
     @Override
     public List<BorrowResponseDto> getBorrowsByUserId(Long userId) {
-        if (userId == null) {
-            return java.util.Collections.emptyList();
-        }
-        return borrowRepository.findByUser_IdOrderByIdDesc(userId).stream()
-                .map(BorrowMapper.INSTANCE::mapToResponse)
-                .toList();
+        return Objects.isNull(userId)
+                ? Collections.emptyList()
+                : borrowRepository.findByUser_IdOrderByIdDesc(userId).stream()
+                        .map(BorrowMapper.INSTANCE::mapToResponse)
+                        .toList();
     }
 
     /**
@@ -176,16 +176,15 @@ public class BorrowServiceImpl implements BorrowService {
      */
     @Override
     public java.util.List<BorrowResponseDto> getBorrowsByUserEmail(String email) {
-        if (email == null) {
-            return java.util.Collections.emptyList();
+        if (Objects.isNull(email)) {
+            return Collections.emptyList();
         }
         User user = userProviderRepository.findByProviderId(email)
                 .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
                 .or(() -> userRepository.findByEmail(email))
                 .orElse(null);
-        if (user == null || user.getId() == null) {
-            return java.util.Collections.emptyList();
-        }
-        return getBorrowsByUserId(user.getId());
+        return (Objects.isNull(user) || Objects.isNull(user.getId()))
+                ? Collections.emptyList()
+                : getBorrowsByUserId(user.getId());
     }
 }

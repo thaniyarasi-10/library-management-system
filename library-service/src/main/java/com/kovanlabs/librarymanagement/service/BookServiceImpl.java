@@ -23,11 +23,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
-import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.UUID;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -58,7 +57,7 @@ public class BookServiceImpl implements BookService {
         Book savedBook = bookRepository.save(book);
         BookResponse response = BookMapper.INSTANCE.mapToResponse(savedBook);
 
-        if (salesforceSyncService != null) {
+        if (Objects.nonNull(salesforceSyncService)) {
             try {
                 salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(response));
                 savedBook.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
@@ -87,15 +86,15 @@ public class BookServiceImpl implements BookService {
      */
     @Override
     public PagedResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDir) {
-        if (salesforceSyncService != null) {
+        if (Objects.nonNull(salesforceSyncService)) {
             try {
                 int offset = page * size;
                 var sfBookModels = salesforceSyncService.fetchBooksFromSalesforce(size, offset);
                 long totalBooks = salesforceSyncService.getTotalBooksFromSalesforce();
 
-                if (sfBookModels != null && !sfBookModels.isEmpty()) {
+                if (Objects.nonNull(sfBookModels) && !sfBookModels.isEmpty()) {
                     for (var sfBook : sfBookModels) {
-                        if (sfBook != null && sfBook.getErrors() != null && !sfBook.getErrors().isEmpty()) {
+                        if (Objects.nonNull(sfBook) && Objects.nonNull(sfBook.getErrors()) && !sfBook.getErrors().isEmpty()) {
                             log.warn("Salesforce error for Book [UUID: {}]: {}", sfBook.getExternalBookUuid(), sfBook.getErrors());
                         }
                     }
@@ -201,7 +200,7 @@ public class BookServiceImpl implements BookService {
         Book updatedBook = bookRepository.save(book);
         BookResponse response = BookMapper.INSTANCE.mapToResponse(updatedBook);
 
-        if (salesforceSyncService != null) {
+        if (Objects.nonNull(salesforceSyncService)) {
             try {
                 salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(response));
                 updatedBook.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);

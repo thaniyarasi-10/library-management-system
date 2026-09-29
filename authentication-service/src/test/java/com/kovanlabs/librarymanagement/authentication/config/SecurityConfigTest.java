@@ -28,6 +28,7 @@ import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -103,7 +104,7 @@ class SecurityConfigTest {
 
     @AfterEach
     void tearDown() {
-        if (context != null) {
+        if (Objects.nonNull(context)) {
             context.close();
         }
     }

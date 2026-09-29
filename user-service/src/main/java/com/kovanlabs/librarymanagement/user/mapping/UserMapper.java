@@ -11,12 +11,13 @@ import org.mapstruct.Mapping;
 import org.mapstruct.factory.Mappers;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
  * MapStruct mapper for converting between {@link User} entities and User DTOs.
  */
-@Mapper(imports = {SObjectAttributes.class, SObject.class, UUID.class})
+@Mapper(imports = {SObjectAttributes.class, SObject.class, UUID.class, Objects.class})
 public interface UserMapper {
 
     UserMapper INSTANCE = Mappers.getMapper(UserMapper.class);
@@ -61,7 +62,7 @@ public interface UserMapper {
     @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.CONTACT.getObjectName()).build())")
     @Mapping(target = "externalUserUuid", source = "uuid")
     @Mapping(target = "legacyUserId", source = "id")
-    @Mapping(target = "lastName", expression = "java((user.name() != null && !user.name().isBlank()) ? user.name() : \"User\")")
+    @Mapping(target = "lastName", expression = "java((Objects.nonNull(user.name()) && !user.name().isBlank()) ? user.name() : \"User\")")
     @Mapping(target = "email", source = "email")
     @Mapping(target = "role", source = "role")
     @Mapping(target = "id", ignore = true)
@@ -74,9 +75,9 @@ public interface UserMapper {
     @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.CONTACT.getObjectName()).build())")
     @Mapping(target = "externalUserUuid", source = "uuid")
     @Mapping(target = "legacyUserId", source = "id")
-    @Mapping(target = "lastName", expression = "java((user.getName() != null && !user.getName().isBlank()) ? user.getName() : \"User\")")
+    @Mapping(target = "lastName", expression = "java((Objects.nonNull(user.getName()) && !user.getName().isBlank()) ? user.getName() : \"User\")")
     @Mapping(target = "email", source = "email")
-    @Mapping(target = "role", expression = "java(user.getRole() != null ? user.getRole().name() : null)")
+    @Mapping(target = "role", expression = "java(Objects.nonNull(user.getRole()) ? user.getRole().name() : null)")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     ContactSObject toContactSObject(User user);
@@ -84,7 +85,7 @@ public interface UserMapper {
     /**
      * Converts a {@link ContactSObject} to a {@link UserResponse} DTO.
      */
-    @Mapping(target = "uuid", expression = "java(contact.getExternalUserUuid() != null ? UUID.fromString(contact.getExternalUserUuid()) : null)")
+    @Mapping(target = "uuid", expression = "java(Objects.nonNull(contact.getExternalUserUuid()) ? UUID.fromString(contact.getExternalUserUuid()) : null)")
     @Mapping(target = "id", source = "legacyUserId")
     @Mapping(target = "name", source = "lastName")
     @Mapping(target = "email", source = "email")

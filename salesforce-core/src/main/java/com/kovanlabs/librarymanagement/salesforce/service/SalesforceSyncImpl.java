@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -40,7 +41,7 @@ public class SalesforceSyncImpl implements SalesforceSync {
      */
     @Override
     public void syncContact(ContactSObject contact) {
-        if (contact == null || contact.getExternalUserUuid() == null) {
+        if (Objects.isNull(contact) || Objects.isNull(contact.getExternalUserUuid())) {
             return;
         }
         Map<String, Object> fields = toPayloadMap(contact);
@@ -60,7 +61,7 @@ public class SalesforceSyncImpl implements SalesforceSync {
      */
     @Override
     public void deleteUser(UUID userUuid) {
-        if (userUuid == null) {
+        if (Objects.isNull(userUuid)) {
             return;
         }
         clientService.deleteByExternalId(
@@ -77,7 +78,7 @@ public class SalesforceSyncImpl implements SalesforceSync {
      */
     @Override
     public void syncBook(BookSObject book) {
-        if (book == null || book.getExternalBookUuid() == null) {
+        if (Objects.isNull(book) || Objects.isNull(book.getExternalBookUuid())) {
             return;
         }
         Map<String, Object> fields = toPayloadMap(book);
@@ -97,7 +98,7 @@ public class SalesforceSyncImpl implements SalesforceSync {
      */
     @Override
     public void syncBorrow(BorrowSObject borrow) {
-        if (borrow == null || borrow.getExternalBorrowUuid() == null) {
+        if (Objects.isNull(borrow) || Objects.isNull(borrow.getExternalBorrowUuid())) {
             return;
         }
 
@@ -105,7 +106,7 @@ public class SalesforceSyncImpl implements SalesforceSync {
 
         fields.remove(BorrowSObject.EXTERNAL_ID_FIELD);
 
-        if (borrow.getBook() != null) {
+        if (Objects.nonNull(borrow.getBook())) {
             Map<String, Object> bookReference = Map.of(
                     BookSObject.EXTERNAL_ID_FIELD,
                     borrow.getBook().getExternalBookUuid()
@@ -114,7 +115,7 @@ public class SalesforceSyncImpl implements SalesforceSync {
             fields.put(BorrowFields.BOOK_RELATION, bookReference);
         }
 
-        if (borrow.getContact() != null) {
+        if (Objects.nonNull(borrow.getContact())) {
             Map<String, Object> contactReference = Map.of(
                     ContactSObject.EXTERNAL_ID_FIELD,
                     borrow.getContact().getExternalUserUuid()
@@ -147,16 +148,14 @@ public class SalesforceSyncImpl implements SalesforceSync {
                 .build();
 
         JsonNode json = clientService.query(soql);
-        if (json == null || !json.has("records")) {
+        if (Objects.isNull(json) || !json.has("records")) {
             return Collections.emptyList();
         }
 
         List<ContactSObject> contacts = toSObjectList(json, ContactSObject.class);
-        for (ContactSObject contact : contacts) {
-            if (contact != null && contact.getErrors() != null && !contact.getErrors().isEmpty()) {
-                log.warn("Salesforce error for Contact [UUID: {}]: {}", contact.getExternalUserUuid(), contact.getErrors());
-            }
-        }
+        contacts.stream()
+                .filter(contact -> Objects.nonNull(contact) && Objects.nonNull(contact.getErrors()) && !contact.getErrors().isEmpty())
+                .forEach(contact -> log.warn("Salesforce error for Contact [UUID: {}]: {}", contact.getExternalUserUuid(), contact.getErrors()));
         return contacts;
     }
 
@@ -174,10 +173,7 @@ public class SalesforceSyncImpl implements SalesforceSync {
                 .build();
 
         JsonNode json = clientService.query(soql);
-        if (json == null || !json.has("totalSize")) {
-            return 0;
-        }
-        return json.path("totalSize").asLong();
+        return (Objects.isNull(json) || !json.has("totalSize")) ? 0 : json.path("totalSize").asLong();
     }
 
     /**
@@ -198,16 +194,14 @@ public class SalesforceSyncImpl implements SalesforceSync {
                 .build();
 
         JsonNode json = clientService.query(soql);
-        if (json == null || !json.has("records")) {
+        if (Objects.isNull(json) || !json.has("records")) {
             return Collections.emptyList();
         }
 
         List<BookSObject> books = toSObjectList(json, BookSObject.class);
-        for (BookSObject book : books) {
-            if (book != null && book.getErrors() != null && !book.getErrors().isEmpty()) {
-                log.warn("Salesforce error for Book [UUID: {}]: {}", book.getExternalBookUuid(), book.getErrors());
-            }
-        }
+        books.stream()
+                .filter(book -> Objects.nonNull(book) && Objects.nonNull(book.getErrors()) && !book.getErrors().isEmpty())
+                .forEach(book -> log.warn("Salesforce error for Book [UUID: {}]: {}", book.getExternalBookUuid(), book.getErrors()));
         return books;
     }
 
@@ -225,16 +219,14 @@ public class SalesforceSyncImpl implements SalesforceSync {
                 .build();
 
         JsonNode json = clientService.query(soql);
-        if (json == null || !json.has("records")) {
+        if (Objects.isNull(json) || !json.has("records")) {
             return Collections.emptyList();
         }
 
         List<BorrowSObject> borrows = toSObjectList(json, BorrowSObject.class);
-        for (BorrowSObject borrow : borrows) {
-            if (borrow != null && borrow.getErrors() != null && !borrow.getErrors().isEmpty()) {
-                log.warn("Salesforce error for Borrow [UUID: {}]: {}", borrow.getExternalBorrowUuid(), borrow.getErrors());
-            }
-        }
+        borrows.stream()
+                .filter(borrow -> Objects.nonNull(borrow) && Objects.nonNull(borrow.getErrors()) && !borrow.getErrors().isEmpty())
+                .forEach(borrow -> log.warn("Salesforce error for Borrow [UUID: {}]: {}", borrow.getExternalBorrowUuid(), borrow.getErrors()));
         return borrows;
     }
 }

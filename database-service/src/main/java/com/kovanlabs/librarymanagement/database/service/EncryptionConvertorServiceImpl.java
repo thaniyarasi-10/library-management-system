@@ -10,6 +10,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.Objects;
 
 /**
  * AES/GCM/NoPadding implementation of {@link EncryptionConverterService} for field-level attribute encryption.
@@ -31,7 +32,7 @@ public class EncryptionConvertorServiceImpl implements EncryptionConverterServic
     public EncryptionConvertorServiceImpl(
             @Value("${encryption.secret-key:${ENCRYPTION_SECRET_KEY}}") String secretKey
     ) {
-        if (secretKey == null || secretKey.isBlank()) {
+        if (Objects.isNull(secretKey) || secretKey.isBlank()) {
             throw new IllegalStateException(
                     "Encryption secret key is not configured"
             );
@@ -50,7 +51,7 @@ public class EncryptionConvertorServiceImpl implements EncryptionConverterServic
      * @return Base64 encoded string containing prepended IV and ciphertext
      */
     public String encrypt(String attribute) {
-        if (attribute == null || attribute.isEmpty()) {
+        if (Objects.isNull(attribute) || attribute.isEmpty()) {
             return attribute;
         }
 
@@ -85,7 +86,7 @@ public class EncryptionConvertorServiceImpl implements EncryptionConverterServic
      * @return Decrypted UTF-8 plaintext string
      */
     public String decrypt(String dbData) {
-        if (dbData == null || dbData.isEmpty()) {
+        if (Objects.isNull(dbData) || dbData.isEmpty()) {
             return dbData;
         }
 

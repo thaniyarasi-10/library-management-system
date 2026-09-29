@@ -11,6 +11,7 @@ import org.springframework.web.client.RestClient;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Service responsible for requesting and caching Auth0 Management API M2M access tokens.
@@ -32,13 +33,13 @@ public class Auth0TokenService {
      * Retrieves or refreshes cached Auth0 Management API access token using client credentials flow.
      */
     public synchronized String getManagementApiToken() {
-        if (cachedAccessToken != null && Instant.now().isBefore(tokenExpiry.minusSeconds(60))) {
+        if (Objects.nonNull(cachedAccessToken) && Instant.now().isBefore(tokenExpiry.minusSeconds(60))) {
             return cachedAccessToken;
         }
 
         String domain = urlHelper.normalizeDomain(auth0Properties.getDomain());
         String tokenUrl = String.format("https://%s/oauth/token", domain);
-        String audience = (managementProperties.getAudience() != null && !managementProperties.getAudience().isBlank())
+        String audience = (Objects.nonNull(managementProperties.getAudience()) && !managementProperties.getAudience().isBlank())
                 ? managementProperties.getAudience()
                 : String.format("https://%s/api/v2/", domain);
 
@@ -57,9 +58,9 @@ public class Auth0TokenService {
                     .retrieve()
                     .body(TokenResponse.class);
 
-            if (response != null && response.accessToken() != null) {
+            if (Objects.nonNull(response) && Objects.nonNull(response.accessToken())) {
                 cachedAccessToken = response.accessToken();
-                long expiresIn = response.expiresIn() != null ? response.expiresIn() : 3600;
+                long expiresIn = Objects.nonNull(response.expiresIn()) ? response.expiresIn() : 3600;
                 tokenExpiry = Instant.now().plusSeconds(expiresIn);
                 return cachedAccessToken;
             }

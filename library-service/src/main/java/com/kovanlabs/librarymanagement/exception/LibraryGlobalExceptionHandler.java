@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice("com.kovanlabs.librarymanagement")
@@ -23,12 +24,12 @@ public class LibraryGlobalExceptionHandler {
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ErrorResponse> handleResponseStatusException(ResponseStatusException ex, HttpServletRequest request) {
         HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
-        HttpStatus responseStatus = status != null ? status : HttpStatus.BAD_REQUEST;
+        HttpStatus responseStatus = Objects.nonNull(status) ? status : HttpStatus.BAD_REQUEST;
         ErrorResponse errorResponse = new ErrorResponse(
                 LocalDateTime.now(),
                 responseStatus.value(),
                 responseStatus.getReasonPhrase(),
-                ex.getReason() != null ? ex.getReason() : ex.getMessage(),
+                Objects.nonNull(ex.getReason()) ? ex.getReason() : ex.getMessage(),
                 request.getRequestURI()
         );
         return new ResponseEntity<>(errorResponse, responseStatus);
@@ -80,7 +81,7 @@ public class LibraryGlobalExceptionHandler {
                 LocalDateTime.now(),
                 HttpStatus.UNAUTHORIZED.value(),
                 HttpStatus.UNAUTHORIZED.getReasonPhrase(),
-                ex.getMessage() != null ? ex.getMessage() : "Authentication failed.",
+                Objects.nonNull(ex.getMessage()) ? ex.getMessage() : "Authentication failed.",
                 request.getRequestURI()
         );
         return new ResponseEntity<>(errorResponse, HttpStatus.UNAUTHORIZED);
@@ -140,7 +141,7 @@ public class LibraryGlobalExceptionHandler {
                 LocalDateTime.now(),
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
                 HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase(),
-                ex.getMessage() != null ? ex.getMessage() : "An unexpected internal server error occurred.",
+                Objects.nonNull(ex.getMessage()) ? ex.getMessage() : "An unexpected internal server error occurred.",
                 request.getRequestURI()
         );
         return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);

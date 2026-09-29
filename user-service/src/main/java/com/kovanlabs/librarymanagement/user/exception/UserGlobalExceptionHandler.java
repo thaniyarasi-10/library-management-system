@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice("com.kovanlabs.librarymanagement.user")
@@ -18,12 +19,12 @@ public class UserGlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleResponseStatusException(ResponseStatusException ex,
             HttpServletRequest request) {
         HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
-        HttpStatus responseStatus = status != null ? status : HttpStatus.BAD_REQUEST;
+        HttpStatus responseStatus = Objects.nonNull(status) ? status : HttpStatus.BAD_REQUEST;
         ErrorResponse errorResponse = new ErrorResponse(
                 LocalDateTime.now(),
                 responseStatus.value(),
                 responseStatus.getReasonPhrase(),
-                ex.getReason() != null ? ex.getReason() : ex.getMessage(),
+                Objects.nonNull(ex.getReason()) ? ex.getReason() : ex.getMessage(),
                 request.getRequestURI());
         return new ResponseEntity<>(errorResponse, responseStatus);
     }

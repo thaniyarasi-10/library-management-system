@@ -7,11 +7,12 @@ import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.StreamSupport;
 
 /**
  * Service interface for synchronizing Contacts, Books, and Borrows with Salesforce SObjects.
@@ -87,7 +88,7 @@ public interface SalesforceSync {
      * @return Map containing Salesforce field names and values
      */
     default Map<String, Object> toPayloadMap(Object sObject) {
-        if (sObject == null) {
+        if (Objects.isNull(sObject)) {
             return Collections.emptyMap();
         }
         return OBJECT_MAPPER.convertValue(sObject, new TypeReference<Map<String, Object>>() {});
@@ -102,7 +103,7 @@ public interface SalesforceSync {
      * @return The deserialized SObject instance, or {@code null} on failure
      */
     default <T> T toSObject(JsonNode node, Class<T> clazz) {
-        if (node == null || node.isNull()) {
+        if (Objects.isNull(node) || node.isNull()) {
             return null;
         }
         try {
@@ -121,33 +122,13 @@ public interface SalesforceSync {
      * @return List of deserialized SObjects
      */
     default <T> List<T> toSObjectList(JsonNode root, Class<T> clazz) {
-        if (root == null || !root.has("records")) {
+        if (Objects.isNull(root) || !root.has("records")) {
             return Collections.emptyList();
         }
-        List<T> list = new ArrayList<>();
-        for (JsonNode record : root.path("records")) {
-            T obj = toSObject(record, clazz);
-            if (obj != null) {
-                list.add(obj);
-            }
-        }
-        return list;
+        return StreamSupport.stream(root.path("records").spliterator(), false)
+                .map(record -> toSObject(record, clazz))
+                .filter(Objects::nonNull)
+                .toList();
     }
 
-    /**
-     * Safely parses a UUID string without throwing exceptions.
-     *
-     * @param str The UUID string to parse
-     * @return The parsed {@link UUID}, or {@code null} if parsing fails or input is blank
-     */
-    default UUID parseUUID(String str) {
-        if (str == null || str.isBlank()) {
-            return null;
-        }
-        try {
-            return UUID.fromString(str);
-        } catch (Exception e) {
-            return null;
-        }
-    }
 }

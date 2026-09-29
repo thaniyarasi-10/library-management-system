@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -43,7 +44,7 @@ public class RewardService {
 
         // Group eligible borrows by User UUID to aggregate total points earned per user
         Map<UUID, Long> pointsPerUser = eligibleBorrows.stream()
-                .filter(b -> b.getUser() != null && b.getUser().getUuid() != null)
+                .filter(b -> Objects.nonNull(b.getUser()) && Objects.nonNull(b.getUser().getUuid()))
                 .collect(Collectors.groupingBy(b -> b.getUser().getUuid(), Collectors.counting()));
 
         // Increment user reward points using rewardRepository

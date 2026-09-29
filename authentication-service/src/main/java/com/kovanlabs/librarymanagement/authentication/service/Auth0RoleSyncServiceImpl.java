@@ -14,6 +14,7 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Service for communicating with the Auth0 Management API to synchronize user roles.
@@ -38,11 +39,11 @@ public class Auth0RoleSyncServiceImpl implements Auth0RoleSyncService {
      */
     @Override
     public void syncUserRole(String auth0Sub, RoleEnum role) {
-        if (auth0Sub == null || auth0Sub.isBlank()) {
+        if (Objects.isNull(auth0Sub) || auth0Sub.isBlank()) {
             log.warn("Cannot sync role to Auth0: auth0Sub is null or blank");
             return;
         }
-        if (role == null) {
+        if (Objects.isNull(role)) {
             log.warn("Cannot sync role to Auth0 for user {}: role is null", auth0Sub);
             return;
         }
@@ -55,7 +56,7 @@ public class Auth0RoleSyncServiceImpl implements Auth0RoleSyncService {
 
         try {
             String token = tokenService.getManagementApiToken();
-            if (token == null || token.isBlank()) {
+            if (Objects.isNull(token) || token.isBlank()) {
                 log.warn("Failed to obtain Auth0 Management API token. Skipping role sync for {}", auth0Sub);
                 return;
             }

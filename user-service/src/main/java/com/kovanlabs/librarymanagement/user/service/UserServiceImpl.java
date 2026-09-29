@@ -14,7 +14,6 @@ import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import com.kovanlabs.librarymanagement.user.mapping.UserMapper;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -61,14 +60,11 @@ public class UserServiceImpl implements UserService {
      * @return The populated {@link UserResponse}
      */
     private UserResponse mapToUserResponseWithRewards(User user) {
-        if (user == null)
+        if (Objects.isNull(user))
             return null;
-        Integer points = 0;
-        if (user.getUuid() != null) {
-            points = rewardRepository.findByUserUuid(user.getUuid())
-                    .map(Reward::getPoints)
-                    .orElse(0);
-        }
+        Integer points = Objects.nonNull(user.getUuid())
+                ? rewardRepository.findByUserUuid(user.getUuid()).map(Reward::getPoints).orElse(0)
+                : 0;
         return new UserResponse(
                 user.getUuid(),
                 user.getId(),
@@ -86,7 +82,7 @@ public class UserServiceImpl implements UserService {
      * @return List of mapped {@link UserResponse} DTOs
      */
     private List<UserResponse> mapToUserResponseListWithRewards(List<User> users) {
-        if (users == null || users.isEmpty())
+        if (Objects.isNull(users) || users.isEmpty())
             return List.of();
         List<UUID> uuids = users.stream()
                 .map(User::getUuid)
@@ -105,7 +101,7 @@ public class UserServiceImpl implements UserService {
                 user.getName(),
                 user.getEmail(),
                 user.getRole().name(),
-                user.getUuid() != null ? rewardMap.getOrDefault(user.getUuid(), 0) : 0)).toList();
+                Objects.nonNull(user.getUuid()) ? rewardMap.getOrDefault(user.getUuid(), 0) : 0)).toList();
     }
 
     /**
@@ -120,13 +116,13 @@ public class UserServiceImpl implements UserService {
     @CacheEvict(value = "users", allEntries = true)
     public UserResponse createUser(UserRequest request) {
         User user = UserMapper.INSTANCE.mapToEntity(request);
-        if (user != null) {
+        if (Objects.nonNull(user)) {
             user.setRole(RoleEnum.USER);
         }
         User savedUser = userRepository.save(user);
         UserResponse response = mapToUserResponseWithRewards(savedUser);
 
-        if (salesforceSyncDelegate != null) {
+        if (Objects.nonNull(salesforceSyncDelegate)) {
             try {
                 salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(savedUser));
                 savedUser.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
@@ -152,10 +148,10 @@ public class UserServiceImpl implements UserService {
      */
     @Override
     public List<UserResponse> getAllUsers() {
-        if (salesforceSyncDelegate != null) {
+        if (Objects.nonNull(salesforceSyncDelegate)) {
             try {
                 var sfContacts = salesforceSyncDelegate.fetchContactsFromSalesforce();
-                if (sfContacts != null && !sfContacts.isEmpty()) {
+                if (Objects.nonNull(sfContacts) && !sfContacts.isEmpty()) {
                     log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} users from Salesforce SOQL",
                             sfContacts.size());
                     return UserMapper.INSTANCE.toUserResponseList(sfContacts);
@@ -181,10 +177,10 @@ public class UserServiceImpl implements UserService {
      */
     @Override
     public PagedResponse<UserResponse> getAllUsers(int page, int size, String sortBy, String sortDir) {
-        if (salesforceSyncDelegate != null) {
+        if (Objects.nonNull(salesforceSyncDelegate)) {
             try {
                 var sfContacts = salesforceSyncDelegate.fetchContactsFromSalesforce();
-                if (sfContacts != null && !sfContacts.isEmpty()) {
+                if (Objects.nonNull(sfContacts) && !sfContacts.isEmpty()) {
                     List<UserResponse> sfUsers = UserMapper.INSTANCE.toUserResponseList(sfContacts);
                     log.info(
                             "[DATA SOURCE: SALESFORCE] Successfully fetched {} users from Salesforce SOQL (paging in memory)",
@@ -279,17 +275,17 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
 
-        if (request.name() != null && !request.name().isBlank()) {
+        if (Objects.nonNull(request.name()) && !request.name().isBlank()) {
             user.setName(request.name());
         }
-        if (request.email() != null && !request.email().isBlank()) {
+        if (Objects.nonNull(request.email()) && !request.email().isBlank()) {
             user.setEmail(request.email());
         }
 
         User updatedUser = userRepository.save(user);
         UserResponse response = mapToUserResponseWithRewards(updatedUser);
 
-        if (salesforceSyncDelegate != null) {
+        if (Objects.nonNull(salesforceSyncDelegate)) {
             try {
                 salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(updatedUser));
                 updatedUser.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
@@ -321,7 +317,7 @@ public class UserServiceImpl implements UserService {
         UUID userUuid = user.getUuid();
         userRepository.delete(user);
 
-        if (salesforceSyncDelegate != null && userUuid != null) {
+        if (Objects.nonNull(salesforceSyncDelegate) && Objects.nonNull(userUuid)) {
             try {
                 salesforceSyncDelegate.deleteUser(userUuid);
             } catch (Exception e) {
@@ -344,7 +340,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserResponse getUserByIdentifier(String identifier) {
-        if (identifier == null || identifier.isBlank()) {
+        if (Objects.isNull(identifier) || identifier.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User identifier must not be empty");
         }
         User user = userProviderRepository.findByProviderId(identifier)
@@ -387,7 +383,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     @CacheEvict(value = "users", key = "#p0")
     public UserResponse updateUserRole(Long id, RoleEnum newRole) {
-        if (newRole == null) {
+        if (Objects.isNull(newRole)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Role must not be null");
         }
         User user = userRepository.findById(id)
@@ -397,7 +393,7 @@ public class UserServiceImpl implements UserService {
         User updatedUser = userRepository.save(user);
         UserResponse response = mapToUserResponseWithRewards(updatedUser);
 
-        if (salesforceSyncDelegate != null) {
+        if (Objects.nonNull(salesforceSyncDelegate)) {
             try {
                 salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(updatedUser));
                 updatedUser.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
@@ -432,7 +428,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public User syncAuth0User(String sub, String email, String name, RoleEnum tokenRole) {
-        if (sub == null || sub.isBlank()) {
+        if (Objects.isNull(sub) || sub.isBlank()) {
             throw new IllegalArgumentException("Auth0 sub claim must not be empty");
         }
 
@@ -461,7 +457,7 @@ public class UserServiceImpl implements UserService {
                     UserProvider rawProvider = rawProviderOpt.get();
                     User existing = userRepository.findByUuid(rawProvider.getUserUuid())
                             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                                    "User not found for raw providerId: " + rawProvider.getProviderId()));
+                                     "User not found for raw providerId: " + rawProvider.getProviderId()));
 
                     // Insert the new provider mapping for this existing user if not already present
                     var existingSubMapping = userProviderRepository.findByProviderId(sub);
@@ -480,7 +476,7 @@ public class UserServiceImpl implements UserService {
         }
 
         // 3. Fallback lookup by email for linking existing accounts
-        if (email != null && !email.isBlank()) {
+        if (Objects.nonNull(email) && !email.isBlank()) {
             var userByEmail = userRepository.findByEmail(email);
             if (userByEmail.isPresent()) {
                 User existing = userByEmail.get();
@@ -505,12 +501,12 @@ public class UserServiceImpl implements UserService {
 
         // 4. No existing user -> create new User with role from Auth0 (or default USER)
         // and UserProvider link
-        if (email == null || email.isBlank()) {
+        if (Objects.isNull(email) || email.isBlank()) {
             throw new IllegalArgumentException("Email is required to create a new user");
         }
 
-        RoleEnum initialRole = (tokenRole != null) ? tokenRole : RoleEnum.USER;
-        String effectiveName = (name != null && !name.isBlank()) ? name : "User";
+        RoleEnum initialRole = Objects.nonNull(tokenRole) ? tokenRole : RoleEnum.USER;
+        String effectiveName = (Objects.nonNull(name) && !name.isBlank()) ? name : "User";
 
         User newUser = User.builder()
                 .email(email)
@@ -534,7 +530,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserResponse getCurrentUser(Principal principal) {
-        if (principal == null) {
+        if (Objects.isNull(principal)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
         }
 
@@ -542,26 +538,26 @@ public class UserServiceImpl implements UserService {
                 && auth.getPrincipal() instanceof Jwt jwt) {
             String sub = jwt.getSubject();
             String email = jwt.getClaimAsString("email");
-            if (email == null || email.isBlank()) {
+            if (Objects.isNull(email) || email.isBlank()) {
                 email = jwt.getClaimAsString("https://library.kovanlabs.com/email");
             }
-            if (email == null || email.isBlank()) {
+            if (Objects.isNull(email) || email.isBlank()) {
                 email = jwt.getClaimAsString("https://library-management.com/email");
             }
 
             String customUsername = getHeaderFromRequestContext("X-User-Username");
-            if (customUsername == null || customUsername.isBlank()) {
+            if (Objects.isNull(customUsername) || customUsername.isBlank()) {
                 customUsername = getHeaderFromRequestContext("X-User-Name");
             }
 
-            String name = (customUsername != null && !customUsername.isBlank()) ? customUsername.trim() : null;
-            if (name == null || name.isBlank()) {
+            String name = (Objects.nonNull(customUsername) && !customUsername.isBlank()) ? customUsername.trim() : null;
+            if (Objects.isNull(name) || name.isBlank()) {
                 name = jwt.getClaimAsString("name");
             }
-            if (name == null || name.isBlank()) {
+            if (Objects.isNull(name) || name.isBlank()) {
                 name = jwt.getClaimAsString("nickname");
             }
-            if (name == null || name.isBlank()) {
+            if (Objects.isNull(name) || name.isBlank()) {
                 name = jwt.getClaimAsString("https://library.kovanlabs.com/name");
             }
 
@@ -577,11 +573,11 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserResponse updateCurrentUser(Principal principal, UserRequest request) {
-        if (principal == null) {
+        if (Objects.isNull(principal)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
         }
         UserResponse currentUser = getCurrentUser(principal);
-        if (currentUser == null || currentUser.id() == null) {
+        if (Objects.isNull(currentUser) || Objects.isNull(currentUser.id())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile not found");
         }
         return updateUser(currentUser.id(), request);
@@ -600,37 +596,27 @@ public class UserServiceImpl implements UserService {
             candidates.addAll(extractRolesList(appMeta.get("roles")));
         }
 
-        // Check ADMIN
-        for (String r : candidates) {
-            String clean = r.toUpperCase().replace("ROLE_", "").trim();
-            if (clean.equals("ADMIN") || clean.contains("ADMIN") || clean.equals("BOOKS:WRITE")) {
-                return RoleEnum.ADMIN;
-            }
+        boolean isAdmin = candidates.stream()
+                .map(r -> r.toUpperCase().replace("ROLE_", "").trim())
+                .anyMatch(clean -> clean.equals("ADMIN") || clean.contains("ADMIN") || clean.equals("BOOKS:WRITE"));
+        if (isAdmin) {
+            return RoleEnum.ADMIN;
         }
-        // Then check USER
-        for (String r : candidates) {
-            String clean = r.toUpperCase().replace("ROLE_", "").trim();
-            if (clean.equals("USER") || clean.contains("USER")) {
-                return RoleEnum.USER;
-            }
-        }
-        return null;
+
+        boolean isUser = candidates.stream()
+                .map(r -> r.toUpperCase().replace("ROLE_", "").trim())
+                .anyMatch(clean -> clean.equals("USER") || clean.contains("USER"));
+        return isUser ? RoleEnum.USER : null;
     }
 
     private List<String> extractRolesList(Object claim) {
-        if (claim instanceof List<?> list) {
-            return list.stream()
-                    .filter(item -> item instanceof String)
-                    .map(item -> (String) item)
-                    .toList();
-        } else if (claim instanceof String s && !s.isBlank()) {
-            return List.of(s);
-        }
-        return Collections.emptyList();
+        return claim instanceof List<?> list
+                ? list.stream().filter(item -> item instanceof String).map(item -> (String) item).toList()
+                : (claim instanceof String s && !s.isBlank() ? List.of(s) : Collections.emptyList());
     }
 
     private void syncUserToSalesforce(User user) {
-        if (salesforceSyncDelegate != null && user != null && user.getUuid() != null) {
+        if (Objects.nonNull(salesforceSyncDelegate) && Objects.nonNull(user) && Objects.nonNull(user.getUuid())) {
             try {
                 salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(user));
                 user.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
@@ -649,16 +635,12 @@ public class UserServiceImpl implements UserService {
 
     private String getHeaderFromRequestContext(String headerName) {
         try {
-            var requestAttributes = RequestContextHolder.getRequestAttributes();
-            if (requestAttributes instanceof ServletRequestAttributes servletAttributes) {
-                HttpServletRequest request = servletAttributes.getRequest();
-                if (request != null) {
-                    return request.getHeader(headerName);
-                }
-            }
+            return (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes servletAttributes
+                    && Objects.nonNull(servletAttributes.getRequest()))
+                    ? servletAttributes.getRequest().getHeader(headerName)
+                    : null;
         } catch (Exception ignored) {
-            // Ignored outside web request context
+            return null;
         }
-        return null;
     }
 }
