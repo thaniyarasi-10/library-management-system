@@ -24,7 +24,7 @@ class UserMapperTest {
 
     @Test
     void testMapToResponse_SingleUser() {
-        UUID uuid = UUID.randomUUID();
+        String uuid = UUID.randomUUID().toString();
         User user = User.builder()
                 .uuid(uuid)
                 .id(1L)
@@ -83,7 +83,7 @@ class UserMapperTest {
 
     @Test
     void testToContactSObject_withUserEntity() {
-        UUID uuid = UUID.randomUUID();
+        String uuid = UUID.randomUUID().toString();
         User user = User.builder()
                 .uuid(uuid)
                 .id(1L)
@@ -94,7 +94,7 @@ class UserMapperTest {
 
         var sObject = userMapper.toContactSObject(user);
         assertNotNull(sObject);
-        assertEquals(uuid.toString(), sObject.getExternalUserUuid());
+        assertEquals(uuid, sObject.getExternalUserUuid());
         assertEquals(1L, sObject.getLegacyUserId());
         assertEquals("Alice", sObject.getLastName());
         assertEquals("alice@example.com", sObject.getEmail());
@@ -105,12 +105,12 @@ class UserMapperTest {
 
     @Test
     void testToContactSObject_withUserResponse() {
-        UUID uuid = UUID.randomUUID();
+        String uuid = UUID.randomUUID().toString();
         UserResponse dto = new UserResponse(uuid, 2L, "Bob", "bob@example.com", "USER", 10);
 
         var sObject = userMapper.toContactSObject(dto);
         assertNotNull(sObject);
-        assertEquals(uuid.toString(), sObject.getExternalUserUuid());
+        assertEquals(uuid, sObject.getExternalUserUuid());
         assertEquals(2L, sObject.getLegacyUserId());
         assertEquals("Bob", sObject.getLastName());
         assertEquals("bob@example.com", sObject.getEmail());
@@ -121,9 +121,9 @@ class UserMapperTest {
 
     @Test
     void testToUserResponse_and_toUserResponseList() {
-        UUID uuid = UUID.randomUUID();
+        String uuid = UUID.randomUUID().toString();
         var contact = com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject.builder()
-                .externalUserUuid(uuid.toString())
+                .externalUserUuid(uuid)
                 .legacyUserId(42L)
                 .lastName("Charlie")
                 .email("charlie@example.com")

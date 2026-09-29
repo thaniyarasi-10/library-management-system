@@ -5,18 +5,17 @@ import lombok.Builder;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Builder
 public record FineResponseDto(
-        UUID uuid,
+        String uuid,
         Long id,
-        UUID bookUuid,
+        String bookUuid,
         Long bookNumericId,
         String bookTitle,
         String bookAuthor,
         String bookCoverImageUrl,
-        UUID userUuid,
+        String userUuid,
         Long userNumericId,
         String userName,
         String userEmail,

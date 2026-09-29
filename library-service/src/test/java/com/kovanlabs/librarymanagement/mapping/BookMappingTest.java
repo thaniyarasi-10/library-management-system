@@ -23,7 +23,7 @@ class BookMapperTest {
 
     @Test
     void testMapToResponse_SingleBook() {
-        UUID uuid = UUID.randomUUID();
+        String uuid = UUID.randomUUID().toString();
         Book book = Book.builder()
                 .uuid(uuid)
                 .id(10L)
@@ -85,12 +85,12 @@ class BookMapperTest {
 
     @Test
     void testToBookSObject_and_toBookResponse() {
-        UUID uuid = UUID.randomUUID();
+        String uuid = UUID.randomUUID().toString();
         BookResponse dto = new BookResponse(uuid, 1L, "Clean Architecture", "Uncle Bob", "1234567890", "http://img.png");
 
         var sObject = bookMapper.toBookSObject(dto);
         assertNotNull(sObject);
-        assertEquals(uuid.toString(), sObject.getExternalBookUuid());
+        assertEquals(uuid, sObject.getExternalBookUuid());
         assertEquals("Clean Architecture", sObject.getTitle());
         assertEquals("Clean Architecture", sObject.getName());
 
@@ -103,7 +103,7 @@ class BookMapperTest {
 
     @Test
     void testToBookSObject_withBookEntity() {
-        UUID uuid = UUID.randomUUID();
+        String uuid = UUID.randomUUID().toString();
         Book book = Book.builder()
                 .uuid(uuid)
                 .title("Clean Architecture")
@@ -114,7 +114,7 @@ class BookMapperTest {
 
         var sObject = bookMapper.toBookSObject(book);
         assertNotNull(sObject);
-        assertEquals(uuid.toString(), sObject.getExternalBookUuid());
+        assertEquals(uuid, sObject.getExternalBookUuid());
         assertEquals("Clean Architecture", sObject.getTitle());
         assertEquals("Clean Architecture", sObject.getName());
         assertEquals("Uncle Bob", sObject.getAuthor());
@@ -143,12 +143,5 @@ class BookMapperTest {
     @Test
     void testToBookResponseList_Null() {
         assertNull(bookMapper.toBookResponseList(null));
-    }
-
-    @Test
-    void testHelperMethods() {
-        assertNull(bookMapper.parseUUID(null));
-        assertNull(bookMapper.parseUUID("invalid-uuid"));
-        assertNotNull(bookMapper.parseUUID(UUID.randomUUID().toString()));
     }
 }

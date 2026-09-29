@@ -61,14 +61,14 @@ class BorrowServiceImplTest {
     @BeforeEach
     void setUp() {
         user = User.builder()
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .id(1L)
                 .name("John Doe")
                 .email("john@example.com")
                 .build();
 
         book = Book.builder()
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .id(10L)
                 .title("Clean Architecture")
                 .author("Robert C. Martin")
@@ -76,7 +76,7 @@ class BorrowServiceImplTest {
                 .build();
 
         borrow = Borrow.builder()
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .id(100L)
                 .book(book)
                 .user(user)
@@ -98,7 +98,7 @@ class BorrowServiceImplTest {
         when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
         when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> {
             Borrow b = inv.getArgument(0);
-            b.setUuid(UUID.randomUUID());
+            b.setUuid(UUID.randomUUID().toString());
             b.setId(100L);
             return b;
         });

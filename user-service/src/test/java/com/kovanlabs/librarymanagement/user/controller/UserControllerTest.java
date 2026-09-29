@@ -39,16 +39,16 @@ class UserControllerTest {
     private UserController userController;
 
     private MockMvc mockMvc;
-    private UUID uuid1;
-    private UUID uuid2;
+    private String uuid1;
+    private String uuid2;
     private Long id1;
     private Long id2;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(userController).build();
-        uuid1 = UUID.randomUUID();
-        uuid2 = UUID.randomUUID();
+        uuid1 = UUID.randomUUID().toString();
+        uuid2 = UUID.randomUUID().toString();
         id1 = 1L;
         id2 = 2L;
     }

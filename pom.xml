@@ -161,12 +161,24 @@
                     <groupId>org.liquibase</groupId>
                     <artifactId>liquibase-maven-plugin</artifactId>
                     <version>5.0.1</version>
+
+                    <dependencies>
+                        <dependency>
+                            <groupId>com.mysql</groupId>
+                            <artifactId>mysql-connector-j</artifactId>
+                            <version>9.7.0</version>
+                        </dependency>
+                    </dependencies>
+
                     <configuration>
-                        <url>jdbc:mysql://localhost:3306/library?allowPublicKeyRetrieval=true&amp;useSSL=false&amp;serverTimezone=UTC</url>
-                        <username>root</username>
+                        <changeLogFile>
+                            database-service/src/main/resources/db/changelog/db.changelog-master.xml
+                        </changeLogFile>
+
+                        <url>${env:DB_URL}</url>
+                        <username>${env:DB_USERNAME}</username>
                         <password>${env:DB_PASSWORD}</password>
                         <driver>com.mysql.cj.jdbc.Driver</driver>
-                        <changeLogFile>...</changeLogFile>
                     </configuration>
                 </plugin>
 

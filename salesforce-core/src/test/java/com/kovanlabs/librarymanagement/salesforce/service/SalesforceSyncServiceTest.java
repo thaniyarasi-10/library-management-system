@@ -92,11 +92,11 @@ class SalesforceSyncServiceTest {
 
     @Test
     void deleteUser_whenValidUuid_shouldCallDelete() {
-        UUID uuid = UUID.randomUUID();
+        String uuid = UUID.randomUUID().toString();
 
         salesforceSyncService.deleteUser(uuid);
 
-        verify(clientService).deleteByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFields.EXTERNAL_USER_UUID), eq(uuid.toString()));
+        verify(clientService).deleteByExternalId(eq(SObject.CONTACT.getObjectName()), eq(ContactFields.EXTERNAL_USER_UUID), eq(uuid));
     }
 
     @Test

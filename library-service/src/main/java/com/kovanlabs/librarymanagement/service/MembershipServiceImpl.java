@@ -132,7 +132,7 @@ public class MembershipServiceImpl implements MembershipService {
      */
     @Override
     @Transactional
-    public MembershipResponseDto signAgreement(UUID membershipUuid, MultipartFile file, String email) {
+    public MembershipResponseDto signAgreement(String membershipUuid, MultipartFile file, String email) {
         if (file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Signature file is empty");
         }
@@ -277,7 +277,7 @@ public class MembershipServiceImpl implements MembershipService {
      * @return Formatted HTML agreement
      */
     @Override
-    public String getAgreementHtmlByUuid(UUID membershipUuid, String email) {
+    public String getAgreementHtmlByUuid(String membershipUuid, String email) {
         User user = findUserByIdentifier(email);
 
         Membership membership = membershipRepository.findByUuid(membershipUuid)
@@ -338,7 +338,7 @@ public class MembershipServiceImpl implements MembershipService {
      * @return {@code true} if active and not expired
      */
     @Override
-    public boolean hasActiveMembership(UUID userUuid) {
+    public boolean hasActiveMembership(String userUuid) {
         log.info("Checking active membership for user: {} in DATABASE", userUuid);
         return membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid)
                 .map(membership -> membership.getStatus() == MembershipStatus.ACTIVE
@@ -352,7 +352,7 @@ public class MembershipServiceImpl implements MembershipService {
      * @param userUuid User UUID
      */
     @CacheEvict(value = "active-memberships", key = "#userUuid")
-    public void evictActiveMembershipCache(UUID userUuid) {
+    public void evictActiveMembershipCache(String userUuid) {
         log.info("Evicting active membership cache for user: {}", userUuid);
     }
 

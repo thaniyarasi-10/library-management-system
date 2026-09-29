@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="10" author="thani">
+        <createTable tableName="membership">
+
+            <column name="uuid" type="char(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+
+            <column name="membership_id" type="bigint">
+                <constraints nullable="false" unique="true"/>
+            </column>
+
+            <column name="user_uuid" type="char(36)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="status" type="varchar(36)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="activated_at" type="timestamp">
+                <constraints nullable="true"/>
+            </column>
+
+            <column name="expiry_date" type="date">
+                <constraints nullable="true"/>
+            </column>
+
+            <column name="is_signed" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="signed_at" type="timestamp">
+                <constraints nullable="true"/>
+            </column>
+
+            <column name="signed_pdf_key" type="varchar(500)">
+                <constraints nullable="true"/>
+            </column>
+
+            <column name="created_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="updated_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+
+        </createTable>
+    </changeSet>
+
+    <changeSet id="11" author="thani">
+        <sql>ALTER TABLE membership MODIFY COLUMN is_signed BIT(1) NOT NULL;</sql>
+    </changeSet>
+
+    <changeSet id="12" author="thani">
+        <addColumn tableName="membership">
+            <column name="signature_base64" type="longtext">
+                <constraints nullable="true"/>
+            </column>
+            <column name="cancelled_at" type="timestamp">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+        <dropNotNullConstraint tableName="membership" columnName="membership_id" columnDataType="bigint"/>
+    </changeSet>
+
+    <changeSet id="21-add-id-to-membership" author="thani">
+
+        <addColumn tableName="membership">
+            <column name="id" type="BIGINT"/>
+        </addColumn>
+
+        <sql>
+            SET @row_number = 0;
+            UPDATE membership
+            SET id = (@row_number := @row_number + 1)
+                ORDER BY membership_id;
+        </sql>
+
+        <addNotNullConstraint
+                tableName="membership"
+                columnName="id"
+                columnDataType="BIGINT"/>
+
+        <addUniqueConstraint
+                tableName="membership"
+                columnNames="id"
+                constraintName="uk_membership_id"/>
+
+        <addAutoIncrement
+                tableName="membership"
+                columnName="id"
+                columnDataType="BIGINT"
+                startWith="8"/>
+
+    </changeSet>
+
+</databaseChangeLog>

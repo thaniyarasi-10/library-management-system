@@ -1,10 +1,9 @@
 package com.kovanlabs.librarymanagement.dto;
 
 import java.io.Serializable;
-import java.util.UUID;
 
 public record BookResponse(
-        UUID uuid,
+        String uuid,
         Long id,
         String title,
         String author,

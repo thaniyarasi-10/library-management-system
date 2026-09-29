@@ -4,8 +4,6 @@ import com.kovanlabs.librarymanagement.dto.MembershipApplicationResponse;
 import com.kovanlabs.librarymanagement.dto.MembershipResponseDto;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.UUID;
-
 /**
  * Service interface for library membership applications, digital signing, template fetching, and PDF rendering.
  */
@@ -27,7 +25,7 @@ public interface MembershipService {
      * @param email The applicant's email address
      * @return The updated {@link MembershipResponseDto}
      */
-    MembershipResponseDto signAgreement(UUID membershipUuid, MultipartFile file, String email);
+    MembershipResponseDto signAgreement(String membershipUuid, MultipartFile file, String email);
 
     /**
      * Retrieves the current membership status and details for the given user email.
@@ -52,7 +50,7 @@ public interface MembershipService {
      * @param email The user's email address
      * @return The filled agreement HTML string
      */
-    String getAgreementHtmlByUuid(UUID membershipUuid, String email);
+    String getAgreementHtmlByUuid(String membershipUuid, String email);
 
     /**
      * Downloads the final signed agreement PDF from AWS S3.
@@ -69,5 +67,5 @@ public interface MembershipService {
      * @param userUuid The user's unique UUID
      * @return {@code true} if an active, valid membership exists, {@code false} otherwise
      */
-    boolean hasActiveMembership(UUID userUuid);
+    boolean hasActiveMembership(String userUuid);
 }

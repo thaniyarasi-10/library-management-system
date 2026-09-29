@@ -21,9 +21,9 @@ class FineControllerTest {
 
     private FineService fineService;
     private FineController fineController;
-    private UUID fineUuid;
-    private UUID bookUuid;
-    private UUID userUuid;
+    private String fineUuid;
+    private String bookUuid;
+    private String userUuid;
     private Long fineId;
     private Long bookId;
     private Long userId;
@@ -32,9 +32,9 @@ class FineControllerTest {
     void setUp() {
         fineService = mock(FineService.class);
         fineController = new FineController(fineService);
-        fineUuid = UUID.randomUUID();
-        bookUuid = UUID.randomUUID();
-        userUuid = UUID.randomUUID();
+        fineUuid = UUID.randomUUID().toString();
+        bookUuid = UUID.randomUUID().toString();
+        userUuid = UUID.randomUUID().toString();
         fineId = 1L;
         bookId = 10L;
         userId = 20L;

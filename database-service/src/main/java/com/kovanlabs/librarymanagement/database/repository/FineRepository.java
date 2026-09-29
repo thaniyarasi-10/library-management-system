@@ -7,21 +7,20 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 @Repository
-public interface FineRepository extends JpaRepository<Fine, UUID> {
+public interface FineRepository extends JpaRepository<Fine, String> {
 
-    Optional<Fine> findByUuid(UUID uuid);
+    Optional<Fine> findByUuid(String uuid);
 
     Optional<Fine> findById(Long id);
 
-    Optional<Fine> findTopByBookUuidAndUserUuidOrderByIdDesc(UUID bookUuid, UUID userUuid);
-    Optional<Fine> findByBookUuidAndUserUuid(UUID bookUuid, UUID userUuid);
+    Optional<Fine> findTopByBookUuidAndUserUuidOrderByIdDesc(String bookUuid, String userUuid);
+    Optional<Fine> findByBookUuidAndUserUuid(String bookUuid, String userUuid);
 
-    List<Fine> findByUserUuidAndStatus(UUID userUuid, FineStatus status);
+    List<Fine> findByUserUuidAndStatus(String userUuid, FineStatus status);
 
-    List<Fine> findByUserUuid(UUID userUuid);
+    List<Fine> findByUserUuid(String userUuid);
     List<Fine> findAllByOrderByIdDesc();
-    List<Fine> findByUserUuidOrderByIdDesc(UUID userUuid);
+    List<Fine> findByUserUuidOrderByIdDesc(String userUuid);
 }

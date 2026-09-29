@@ -58,7 +58,7 @@ class SalesforceSyncRetrySchedulerTest {
 
         pendingUser = User.builder()
                 .id(1L)
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .name("Alice")
                 .email("alice@example.com")
                 .salesforceSyncStatus(SalesforceSyncStatus.PENDING)
@@ -67,7 +67,7 @@ class SalesforceSyncRetrySchedulerTest {
 
         pendingBook = Book.builder()
                 .id(10L)
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .title("Clean Code")
                 .author("Uncle Bob")
                 .isbn("1234567890")
@@ -77,7 +77,7 @@ class SalesforceSyncRetrySchedulerTest {
 
         pendingBorrow = Borrow.builder()
                 .id(100L)
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .user(pendingUser)
                 .book(pendingBook)
                 .salesforceSyncStatus(SalesforceSyncStatus.PENDING)
@@ -132,17 +132,24 @@ class SalesforceSyncRetrySchedulerTest {
     @Test
     @DisplayName("retryPendingSyncs when User reaches maxRetries, marks FAILED")
     void retryPendingSyncs_userFailureAtMax_marksFailed() {
-        pendingUser.setSalesforceRetryCount(2);
-        when(userRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(List.of(pendingUser));
+        User userAtMax = User.builder()
+                .id(1L)
+                .uuid(UUID.randomUUID().toString())
+                .name("Alice")
+                .email("alice@example.com")
+                .salesforceSyncStatus(SalesforceSyncStatus.PENDING)
+                .salesforceRetryCount(2)
+                .build();
+        when(userRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(List.of(userAtMax));
         when(bookRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
         when(borrowRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
         doThrow(new RuntimeException("SF persistent error")).when(salesforceSyncService).syncContact(any());
 
         scheduler.retryPendingSyncs();
 
-        verify(userRepository).save(pendingUser);
-        assertEquals(SalesforceSyncStatus.FAILED, pendingUser.getSalesforceSyncStatus());
-        assertEquals(3, pendingUser.getSalesforceRetryCount());
+        verify(userRepository).save(userAtMax);
+        assertEquals(SalesforceSyncStatus.FAILED, userAtMax.getSalesforceSyncStatus());
+        assertEquals(3, userAtMax.getSalesforceRetryCount());
     }
 
     @Test
@@ -178,17 +185,25 @@ class SalesforceSyncRetrySchedulerTest {
     @Test
     @DisplayName("retryPendingSyncs when Book reaches maxRetries, marks FAILED")
     void retryPendingSyncs_bookFailureAtMax_marksFailed() {
-        pendingBook.setSalesforceRetryCount(2);
+        Book bookAtMax = Book.builder()
+                .id(10L)
+                .uuid(UUID.randomUUID().toString())
+                .title("Clean Code")
+                .author("Uncle Bob")
+                .isbn("1234567890")
+                .salesforceSyncStatus(SalesforceSyncStatus.PENDING)
+                .salesforceRetryCount(2)
+                .build();
         when(userRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
-        when(bookRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(List.of(pendingBook));
+        when(bookRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(List.of(bookAtMax));
         when(borrowRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
         doThrow(new RuntimeException("Book SF persistent error")).when(salesforceSyncService).syncBook(any());
 
         scheduler.retryPendingSyncs();
 
-        verify(bookRepository).save(pendingBook);
-        assertEquals(SalesforceSyncStatus.FAILED, pendingBook.getSalesforceSyncStatus());
-        assertEquals(3, pendingBook.getSalesforceRetryCount());
+        verify(bookRepository).save(bookAtMax);
+        assertEquals(SalesforceSyncStatus.FAILED, bookAtMax.getSalesforceSyncStatus());
+        assertEquals(3, bookAtMax.getSalesforceRetryCount());
     }
 
     @Test
@@ -224,16 +239,23 @@ class SalesforceSyncRetrySchedulerTest {
     @Test
     @DisplayName("retryPendingSyncs when Borrow reaches maxRetries, marks FAILED")
     void retryPendingSyncs_borrowFailureAtMax_marksFailed() {
-        pendingBorrow.setSalesforceRetryCount(2);
+        Borrow borrowAtMax = Borrow.builder()
+                .id(100L)
+                .uuid(UUID.randomUUID().toString())
+                .user(pendingUser)
+                .book(pendingBook)
+                .salesforceSyncStatus(SalesforceSyncStatus.PENDING)
+                .salesforceRetryCount(2)
+                .build();
         when(userRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
         when(bookRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
-        when(borrowRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(List.of(pendingBorrow));
+        when(borrowRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(List.of(borrowAtMax));
         doThrow(new RuntimeException("Borrow SF persistent error")).when(salesforceSyncService).syncBorrow(any());
 
         scheduler.retryPendingSyncs();
 
-        verify(borrowRepository).save(pendingBorrow);
-        assertEquals(SalesforceSyncStatus.FAILED, pendingBorrow.getSalesforceSyncStatus());
-        assertEquals(3, pendingBorrow.getSalesforceRetryCount());
+        verify(borrowRepository).save(borrowAtMax);
+        assertEquals(SalesforceSyncStatus.FAILED, borrowAtMax.getSalesforceSyncStatus());
+        assertEquals(3, borrowAtMax.getSalesforceRetryCount());
     }
 }

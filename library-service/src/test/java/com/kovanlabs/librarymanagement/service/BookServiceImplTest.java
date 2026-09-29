@@ -48,11 +48,11 @@ class BookServiceImplTest {
 
     private Book book1;
     private Book book2;
-    private UUID uuid1;
+    private String uuid1;
 
     @BeforeEach
     void setUp() {
-        uuid1 = UUID.randomUUID();
+        uuid1 = UUID.randomUUID().toString();
 
         book1 = Book.builder()
                 .uuid(uuid1)
@@ -64,7 +64,7 @@ class BookServiceImplTest {
                 .build();
 
         book2 = Book.builder()
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .id(2L)
                 .title("Effective Java")
                 .author("Joshua Bloch")

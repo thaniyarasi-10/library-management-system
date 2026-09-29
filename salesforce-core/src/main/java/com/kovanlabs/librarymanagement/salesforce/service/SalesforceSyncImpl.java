@@ -60,14 +60,14 @@ public class SalesforceSyncImpl implements SalesforceSync {
      * @param userUuid The user UUID
      */
     @Override
-    public void deleteUser(UUID userUuid) {
+    public void deleteUser(String userUuid) {
         if (Objects.isNull(userUuid)) {
             return;
         }
         clientService.deleteByExternalId(
                 SObject.CONTACT.getObjectName(),
                 ContactSObject.EXTERNAL_ID_FIELD,
-                userUuid.toString()
+                userUuid
         );
     }
 

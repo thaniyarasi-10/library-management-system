@@ -54,6 +54,8 @@ public interface BookMapper {
     @Mapping(target = "coverImageKey", ignore = true)
     @Mapping(target = "salesforceSyncStatus", ignore = true)
     @Mapping(target = "salesforceRetryCount", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
     Book mapToEntity(BookRequest request);
 
     // --- DTO <-> SObject (Salesforce Models) ---
@@ -96,7 +98,7 @@ public interface BookMapper {
      * @param sObject The book SObject from Salesforce
      * @return The mapped {@link BookResponse} DTO
      */
-    @Mapping(target = "uuid", source = "externalBookUuid", qualifiedByName = "parseUUID")
+    @Mapping(target = "uuid", source = "externalBookUuid")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "title", source = "title", defaultExpression = "java(sObject.getName())")
     @Mapping(target = "author", source = "author")
@@ -111,22 +113,4 @@ public interface BookMapper {
      * @return List of mapped {@link BookResponse} DTOs
      */
     List<BookResponse> toBookResponseList(List<BookSObject> sObjects);
-
-    // --- Helper Mapping Methods ---
-
-    /**
-     * Safely parses a UUID string into a {@link UUID}.
-     *
-     * @param str The UUID string
-     * @return Parsed {@link UUID} or {@code null}
-     */
-    @Named("parseUUID")
-    default UUID parseUUID(String str) {
-        if (Objects.isNull(str) || str.isBlank()) return null;
-        try {
-            return UUID.fromString(str);
-        } catch (Exception e) {
-            return null;
-        }
-    }
 }

@@ -49,7 +49,7 @@ class MembershipServiceImplTest {
     private MembershipServiceImpl membershipService;
 
     private User user;
-    private UUID userUuid;
+    private String userUuid;
     private final String email = "test@example.com";
     private final String sampleHtmlTemplate = "<html><body>Hello {{MEMBER_NAME}} {{MEMBERSHIP_ID}} {{START_DATE}} {{EXPIRY_DATE}} {{signaturePlaceholder}}</body></html>";
 
@@ -59,7 +59,7 @@ class MembershipServiceImplTest {
         ReflectionTestUtils.setField(membershipService, "membershipBucketRegion", "us-east-1");
         ReflectionTestUtils.setField(membershipService, "membershipTemplateKey", "templates/agreement.html");
 
-        userUuid = UUID.randomUUID();
+        userUuid = UUID.randomUUID().toString();
         user = User.builder()
                 .uuid(userUuid)
                 .email(email)
@@ -84,7 +84,7 @@ class MembershipServiceImplTest {
         when(membershipRepository.existsByUserUuidAndStatusIn(eq(userUuid), any())).thenReturn(false);
         when(s3Service.downloadFileAsString(anyString(), anyString(), anyString())).thenReturn(sampleHtmlTemplate);
 
-        UUID newMemUuid = UUID.randomUUID();
+        String newMemUuid = UUID.randomUUID().toString();
         Membership savedMembership = Membership.builder()
                 .uuid(newMemUuid)
                 .userUuid(userUuid)
@@ -124,14 +124,14 @@ class MembershipServiceImplTest {
     void testSignAgreement_emptyFile_throwsBadRequest() {
         MockMultipartFile emptyFile = new MockMultipartFile("file", "sig.png", "image/png", new byte[0]);
         assertThrows(ResponseStatusException.class,
-                () -> membershipService.signAgreement(UUID.randomUUID(), emptyFile, email));
+                () -> membershipService.signAgreement(UUID.randomUUID().toString(), emptyFile, email));
     }
 
     @Test
     void testSignAgreement_invalidContentType_throwsBadRequest() {
         MockMultipartFile file = new MockMultipartFile("file", "sig.jpg", "image/jpeg", new byte[]{1, 2, 3});
         assertThrows(ResponseStatusException.class,
-                () -> membershipService.signAgreement(UUID.randomUUID(), file, email));
+                () -> membershipService.signAgreement(UUID.randomUUID().toString(), file, email));
     }
 
     @Test
@@ -139,7 +139,7 @@ class MembershipServiceImplTest {
         byte[] largeBytes = new byte[51 * 1024];
         MockMultipartFile largeFile = new MockMultipartFile("file", "sig.png", "image/png", largeBytes);
         assertThrows(ResponseStatusException.class,
-                () -> membershipService.signAgreement(UUID.randomUUID(), largeFile, email));
+                () -> membershipService.signAgreement(UUID.randomUUID().toString(), largeFile, email));
     }
 
     @Test
@@ -148,7 +148,7 @@ class MembershipServiceImplTest {
         when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
 
         assertThrows(ResponseStatusException.class,
-                () -> membershipService.signAgreement(UUID.randomUUID(), file, email));
+                () -> membershipService.signAgreement(UUID.randomUUID().toString(), file, email));
     }
 
     @Test
@@ -158,15 +158,15 @@ class MembershipServiceImplTest {
         when(membershipRepository.findByUuid(any())).thenReturn(Optional.empty());
 
         assertThrows(ResponseStatusException.class,
-                () -> membershipService.signAgreement(UUID.randomUUID(), file, email));
+                () -> membershipService.signAgreement(UUID.randomUUID().toString(), file, email));
     }
 
     @Test
     void testSignAgreement_forbiddenUser_throwsForbidden() {
         MockMultipartFile file = new MockMultipartFile("file", "sig.png", "image/png", new byte[]{1, 2, 3});
         Membership otherMembership = Membership.builder()
-                .uuid(UUID.randomUUID())
-                .userUuid(UUID.randomUUID()) // Different user
+                .uuid(UUID.randomUUID().toString())
+                .userUuid(UUID.randomUUID().toString()) // Different user
                 .status(MembershipStatus.PENDING)
                 .build();
 
@@ -174,14 +174,14 @@ class MembershipServiceImplTest {
         when(membershipRepository.findByUuid(any())).thenReturn(Optional.of(otherMembership));
 
         assertThrows(ResponseStatusException.class,
-                () -> membershipService.signAgreement(UUID.randomUUID(), file, email));
+                () -> membershipService.signAgreement(UUID.randomUUID().toString(), file, email));
     }
 
     @Test
     void testSignAgreement_alreadyActive_throwsBadRequest() {
         MockMultipartFile file = new MockMultipartFile("file", "sig.png", "image/png", new byte[]{1, 2, 3});
         Membership activeMembership = Membership.builder()
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .userUuid(userUuid)
                 .status(MembershipStatus.ACTIVE)
                 .build();
@@ -190,13 +190,13 @@ class MembershipServiceImplTest {
         when(membershipRepository.findByUuid(any())).thenReturn(Optional.of(activeMembership));
 
         assertThrows(ResponseStatusException.class,
-                () -> membershipService.signAgreement(UUID.randomUUID(), file, email));
+                () -> membershipService.signAgreement(UUID.randomUUID().toString(), file, email));
     }
 
     @Test
     void testSignAgreement_success() {
         MockMultipartFile file = new MockMultipartFile("file", "sig.png", "image/png", new byte[]{1, 2, 3});
-        UUID memUuid = UUID.randomUUID();
+        String memUuid = UUID.randomUUID().toString();
         Membership pendingMembership = Membership.builder()
                 .uuid(memUuid)
                 .userUuid(userUuid)
@@ -220,7 +220,7 @@ class MembershipServiceImplTest {
 
     @Test
     void testGetMyMembership_success() {
-        UUID memUuid = UUID.randomUUID();
+        String memUuid = UUID.randomUUID().toString();
         Membership membership = Membership.builder()
                 .uuid(memUuid)
                 .userUuid(userUuid)
@@ -239,7 +239,7 @@ class MembershipServiceImplTest {
 
     @Test
     void testCancelMembership_success() {
-        UUID memUuid = UUID.randomUUID();
+        String memUuid = UUID.randomUUID().toString();
         Membership membership = Membership.builder()
                 .uuid(memUuid)
                 .userUuid(userUuid)
@@ -260,7 +260,7 @@ class MembershipServiceImplTest {
 
     @Test
     void testGetAgreementHtmlByUuid_success() {
-        UUID memUuid = UUID.randomUUID();
+        String memUuid = UUID.randomUUID().toString();
         Membership membership = Membership.builder()
                 .uuid(memUuid)
                 .userUuid(userUuid)
@@ -282,7 +282,7 @@ class MembershipServiceImplTest {
     void testDownloadAgreementPdf_success() {
         Long memId = 999111L;
         Membership membership = Membership.builder()
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .membershipId(memId)
                 .userUuid(userUuid)
                 .status(MembershipStatus.ACTIVE)
@@ -303,7 +303,7 @@ class MembershipServiceImplTest {
     @Test
     void testHasActiveMembership_trueAndFalse() {
         Membership activeMembership = Membership.builder()
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .userUuid(userUuid)
                 .status(MembershipStatus.ACTIVE)
                 .expiryDate(LocalDate.now().plusMonths(6))
@@ -315,7 +315,7 @@ class MembershipServiceImplTest {
         assertTrue(membershipService.hasActiveMembership(userUuid));
 
         Membership expiredMembership = Membership.builder()
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .userUuid(userUuid)
                 .status(MembershipStatus.ACTIVE)
                 .expiryDate(LocalDate.now().minusDays(1))

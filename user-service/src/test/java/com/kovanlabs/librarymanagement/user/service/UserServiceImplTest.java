@@ -55,13 +55,13 @@ class UserServiceImplTest {
 
     private User user1;
     private User user2;
-    private UUID uuid1;
-    private UUID uuid2;
+    private String uuid1;
+    private String uuid2;
 
     @BeforeEach
     void setUp() {
-        uuid1 = UUID.randomUUID();
-        uuid2 = UUID.randomUUID();
+        uuid1 = UUID.randomUUID().toString();
+        uuid2 = UUID.randomUUID().toString();
 
         user1 = User.builder()
                 .uuid(uuid1)
@@ -210,25 +210,31 @@ class UserServiceImplTest {
     void syncAuth0User_whenExistingProviderId_shouldReturnExistingUserWithoutUpdatingUserOrSalesforce() {
         LocalDateTime created = LocalDateTime.of(2025, 1, 1, 10, 0);
         LocalDateTime updated = LocalDateTime.of(2025, 1, 1, 10, 0);
-        user1.setRole(RoleEnum.USER);
-        user1.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
-        user1.setSalesforceRetryCount(0);
-        user1.setCreatedAt(created);
-        user1.setUpdatedAt(updated);
+        User testUser = User.builder()
+                .uuid(uuid1)
+                .id(1L)
+                .name("Alice Smith")
+                .email("alice@example.com")
+                .role(RoleEnum.USER)
+                .salesforceSyncStatus(SalesforceSyncStatus.SUCCESS)
+                .salesforceRetryCount(0)
+                .createdAt(created)
+                .updatedAt(updated)
+                .build();
 
         UserProvider up = UserProvider.builder()
-                .userUuid(user1.getUuid())
+                .userUuid(testUser.getUuid())
                 .provider(AuthProvider.AUTH0)
                 .providerId("auth0|12345")
                 .build();
         when(userProviderRepository.findByProviderId("auth0|12345")).thenReturn(Optional.of(up));
-        when(userRepository.findByUuid(user1.getUuid())).thenReturn(Optional.of(user1));
+        when(userRepository.findByUuid(testUser.getUuid())).thenReturn(Optional.of(testUser));
 
         User result = userService.syncAuth0User("auth0|12345", "different-email@example.com", "Different Name",
                 RoleEnum.ADMIN);
 
         assertNotNull(result);
-        assertEquals(user1.getUuid(), result.getUuid());
+        assertEquals(testUser.getUuid(), result.getUuid());
         assertEquals(1L, result.getId());
         assertEquals("Alice Smith", result.getName());
         assertEquals("alice@example.com", result.getEmail());
@@ -247,20 +253,26 @@ class UserServiceImplTest {
     void syncAuth0User_whenExistingUserWithDifferentProvider_shouldOnlyCreateUserProviderAndKeepUserUntouched() {
         LocalDateTime created = LocalDateTime.of(2025, 1, 1, 10, 0);
         LocalDateTime updated = LocalDateTime.of(2025, 1, 1, 10, 0);
-        user1.setRole(RoleEnum.USER);
-        user1.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
-        user1.setSalesforceRetryCount(0);
-        user1.setCreatedAt(created);
-        user1.setUpdatedAt(updated);
+        User testUser = User.builder()
+                .uuid(uuid1)
+                .id(1L)
+                .name("Alice Smith")
+                .email("alice@example.com")
+                .role(RoleEnum.USER)
+                .salesforceSyncStatus(SalesforceSyncStatus.SUCCESS)
+                .salesforceRetryCount(0)
+                .createdAt(created)
+                .updatedAt(updated)
+                .build();
 
         // Existing provider is GOOGLE_OAUTH; AUTH0 mapping is not yet in place
         when(userProviderRepository.findByProviderId("auth0|new-sub")).thenReturn(Optional.empty());
-        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user1));
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(testUser));
 
         User result = userService.syncAuth0User("auth0|new-sub", "alice@example.com", "Different Name", RoleEnum.ADMIN);
 
         assertNotNull(result);
-        assertEquals(user1.getUuid(), result.getUuid());
+        assertEquals(testUser.getUuid(), result.getUuid());
         assertEquals(1L, result.getId());
         assertEquals("Alice Smith", result.getName());
         assertEquals("alice@example.com", result.getEmail());
@@ -270,7 +282,7 @@ class UserServiceImplTest {
         assertEquals(created, result.getCreatedAt());
         assertEquals(updated, result.getUpdatedAt());
 
-        verify(userProviderRepository, times(1)).save(argThat(up -> up.getUserUuid().equals(user1.getUuid())
+        verify(userProviderRepository, times(1)).save(argThat(up -> up.getUserUuid().equals(testUser.getUuid())
                 && up.getProvider() == AuthProvider.AUTH0
                 && "auth0|new-sub".equals(up.getProviderId())));
         verify(userRepository, never()).save(any(User.class));
@@ -281,21 +293,27 @@ class UserServiceImplTest {
     void syncAuth0User_whenExistingUserWithMultipleProviderIds_shouldStoreAllAsSeparateUserProviderRecords() {
         LocalDateTime created = LocalDateTime.of(2025, 1, 1, 10, 0);
         LocalDateTime updated = LocalDateTime.of(2025, 1, 1, 10, 0);
-        user1.setRole(RoleEnum.USER);
-        user1.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
-        user1.setSalesforceRetryCount(0);
-        user1.setCreatedAt(created);
-        user1.setUpdatedAt(updated);
+        User testUser = User.builder()
+                .uuid(uuid1)
+                .id(1L)
+                .name("Alice Smith")
+                .email("alice@example.com")
+                .role(RoleEnum.USER)
+                .salesforceSyncStatus(SalesforceSyncStatus.SUCCESS)
+                .salesforceRetryCount(0)
+                .createdAt(created)
+                .updatedAt(updated)
+                .build();
 
         when(userProviderRepository.findByProviderId("google-oauth2|123456789")).thenReturn(Optional.empty());
-        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user1));
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(testUser));
 
         User result = userService.syncAuth0User("google-oauth2|123456789", "alice@example.com", "Alice Smith", RoleEnum.USER);
 
         assertNotNull(result);
-        assertEquals(user1.getUuid(), result.getUuid());
+        assertEquals(testUser.getUuid(), result.getUuid());
         verify(userProviderRepository, times(1)).save(argThat(up -> 
-                up.getUserUuid().equals(user1.getUuid())
+                up.getUserUuid().equals(testUser.getUuid())
                 && up.getProvider() == AuthProvider.AUTH0
                 && "google-oauth2|123456789".equals(up.getProviderId())
         ));
@@ -307,17 +325,23 @@ class UserServiceImplTest {
     void syncAuth0User_whenExistingUserWithGoogleOAuthRawId_shouldLinkAuth0ToExistingUserUuidAndKeepUserUntouched() {
         LocalDateTime created = LocalDateTime.of(2025, 1, 1, 10, 0);
         LocalDateTime updated = LocalDateTime.of(2025, 1, 1, 10, 0);
-        user1.setRole(RoleEnum.ADMIN);
-        user1.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
-        user1.setSalesforceRetryCount(0);
-        user1.setCreatedAt(created);
-        user1.setUpdatedAt(updated);
+        User testUser = User.builder()
+                .uuid(uuid1)
+                .id(1L)
+                .name("Alice Smith")
+                .email("alice@example.com")
+                .role(RoleEnum.ADMIN)
+                .salesforceSyncStatus(SalesforceSyncStatus.SUCCESS)
+                .salesforceRetryCount(0)
+                .createdAt(created)
+                .updatedAt(updated)
+                .build();
 
         String auth0Sub = "google-oauth2|115993863360458947065";
         String rawGoogleId = "115993863360458947065";
 
         UserProvider existingGoogleProvider = UserProvider.builder()
-                .userUuid(user1.getUuid())
+                .userUuid(testUser.getUuid())
                 .provider(AuthProvider.AUTH0)
                 .providerId(rawGoogleId)
                 .build();
@@ -325,12 +349,12 @@ class UserServiceImplTest {
         // Exact sub not found, but raw ID matches existing GOOGLE_OAUTH provider
         when(userProviderRepository.findByProviderId(auth0Sub)).thenReturn(Optional.empty());
         when(userProviderRepository.findByProviderId(rawGoogleId)).thenReturn(Optional.of(existingGoogleProvider));
-        when(userRepository.findByUuid(user1.getUuid())).thenReturn(Optional.of(user1));
+        when(userRepository.findByUuid(testUser.getUuid())).thenReturn(Optional.of(testUser));
 
         User result = userService.syncAuth0User(auth0Sub, "thaniyarasi10@gmail.com", "thani", RoleEnum.USER);
 
         assertNotNull(result);
-        assertEquals(user1.getUuid(), result.getUuid());
+        assertEquals(testUser.getUuid(), result.getUuid());
         assertEquals(1L, result.getId());
         assertEquals("Alice Smith", result.getName());
         assertEquals("alice@example.com", result.getEmail());
@@ -355,7 +379,7 @@ class UserServiceImplTest {
         when(userRepository.save(any(User.class))).thenAnswer(i -> {
             User u = i.getArgument(0);
             if (Objects.isNull(u.getUuid())) {
-                u.setUuid(UUID.randomUUID());
+                u.setUuid(UUID.randomUUID().toString());
             }
             return u;
         });
@@ -395,7 +419,7 @@ class UserServiceImplTest {
         when(userRepository.save(any(User.class))).thenAnswer(i -> {
             User u = i.getArgument(0);
             if (Objects.isNull(u.getUuid())) {
-                u.setUuid(UUID.randomUUID());
+                u.setUuid(UUID.randomUUID().toString());
             }
             return u;
         });
@@ -426,15 +450,21 @@ class UserServiceImplTest {
 
     @Test
     void updateUserRole_whenUserExists_shouldUpdateRoleAndSyncSalesforce() {
-        user1.setRole(RoleEnum.USER);
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+        User testUser = User.builder()
+                .uuid(uuid1)
+                .id(1L)
+                .name("Alice Smith")
+                .email("alice@example.com")
+                .role(RoleEnum.USER)
+                .build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
 
         UserResponse response = userService.updateUserRole(1L, RoleEnum.ADMIN);
 
         assertNotNull(response);
-        assertEquals(RoleEnum.ADMIN, user1.getRole());
-        verify(userRepository, atLeastOnce()).save(user1);
+        assertEquals(RoleEnum.ADMIN, testUser.getRole());
+        verify(userRepository, atLeastOnce()).save(testUser);
         verify(salesforceSyncDelegate, times(1)).syncContact(any(ContactSObject.class));
     }
 
@@ -532,7 +562,7 @@ class UserServiceImplTest {
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User u = invocation.getArgument(0);
             u.setId(10L);
-            u.setUuid(UUID.randomUUID());
+            u.setUuid(UUID.randomUUID().toString());
             return u;
         });
 
@@ -563,7 +593,7 @@ class UserServiceImplTest {
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User u = invocation.getArgument(0);
             u.setId(50L);
-            u.setUuid(UUID.randomUUID());
+            u.setUuid(UUID.randomUUID().toString());
             return u;
         });
 
@@ -663,12 +693,12 @@ class UserServiceImplTest {
 
     @Test
     void getUserByIdentifier_whenGivenUuidString_shouldFindUser() {
-        when(userProviderRepository.findByProviderId(uuid1.toString())).thenReturn(Optional.empty());
-        when(userRepository.findByEmail(uuid1.toString())).thenReturn(Optional.empty());
+        when(userProviderRepository.findByProviderId(uuid1)).thenReturn(Optional.empty());
+        when(userRepository.findByEmail(uuid1)).thenReturn(Optional.empty());
         when(userRepository.findByUuid(uuid1)).thenReturn(Optional.of(user1));
         when(rewardRepository.findByUserUuid(uuid1)).thenReturn(Optional.empty());
 
-        UserResponse response = userService.getUserByIdentifier(uuid1.toString());
+        UserResponse response = userService.getUserByIdentifier(uuid1);
 
         assertNotNull(response);
         assertEquals("alice@example.com", response.email());

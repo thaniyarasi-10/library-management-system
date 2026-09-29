@@ -8,14 +8,14 @@ import org.springframework.stereotype.Repository;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 @Repository
-public interface MembershipRepository extends JpaRepository<Membership, UUID> {
-    Optional<Membership> findByUuid(UUID uuid);
+public interface MembershipRepository extends JpaRepository<Membership, String> {
+    Optional<Membership> findByUuid(String uuid);
+    Optional<Membership> findById(Long id);
     Optional<Membership> findByMembershipId(Long membershipId);
-    List<Membership> findByUserUuid(UUID userUuid);
-    Optional<Membership> findTopByUserUuidOrderByCreatedAtDesc(UUID userUuid);
-    Optional<Membership> findTopByUserUuidAndStatusInOrderByCreatedAtDesc(UUID userUuid, Collection<MembershipStatus> statuses);
-    boolean existsByUserUuidAndStatusIn(UUID userUuid, Collection<MembershipStatus> statuses);
+    List<Membership> findByUserUuid(String userUuid);
+    Optional<Membership> findTopByUserUuidOrderByCreatedAtDesc(String userUuid);
+    Optional<Membership> findTopByUserUuidAndStatusInOrderByCreatedAtDesc(String userUuid, Collection<MembershipStatus> statuses);
+    boolean existsByUserUuidAndStatusIn(String userUuid, Collection<MembershipStatus> statuses);
 }

@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="1" author="thani">
+        <createTable tableName="user_books">
+            <column name="user_uuid" type="varchar(36)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="book_uuid" type="varchar(36)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addPrimaryKey tableName="user_books" columnNames="user_uuid, book_uuid" constraintName="pk_user_books"/>
+
+        <addForeignKeyConstraint baseTableName="user_books" baseColumnNames="user_uuid"
+                                 constraintName="fk_user_books_user"
+                                 referencedTableName="user" referencedColumnNames="uuid"
+                                 onDelete="CASCADE"/>
+
+        <addForeignKeyConstraint baseTableName="user_books" baseColumnNames="book_uuid"
+                                 constraintName="fk_user_books_books"
+                                 referencedTableName="books" referencedColumnNames="uuid"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <changeSet id="7-update-user-uuid" author="thani">
+        <sql>
+            UPDATE borrow SET uuid = UUID() WHERE uuid IS NULL OR uuid = '';
+        </sql>
+    </changeSet>
+
+    <changeSet id="08-modify-uuid-columns-to-varchar" author="thani">
+        <modifyDataType tableName="borrow" columnName="uuid" newDataType="varchar(36)"/>
+        <modifyDataType tableName="borrow" columnName="book_uuid" newDataType="varchar(36)"/>
+        <modifyDataType tableName="borrow" columnName="user_uuid" newDataType="varchar(36)"/>
+    </changeSet>
+
+    <changeSet id="13-2" author="thani">
+        <addColumn tableName="borrow">
+            <column name="reward_processed" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="14" author="thani">
+        <modifyDataType
+                tableName="borrow"
+                columnName="reward_processed"
+                newDataType="BIT(1)"/>
+    </changeSet>
+
+    <changeSet id="15-drop-borrow-foreign-keys" author="thani">
+        <dropAllForeignKeyConstraints baseTableName="borrow"/>
+        <dropColumn tableName="borrow" columnName="book_id"/>
+        <dropColumn tableName="borrow" columnName="user_id"/>
+        <addForeignKeyConstraint baseTableName="borrow" baseColumnNames="book_uuid"
+                                 constraintName="fk_borrow_book_uuid"
+                                 referencedTableName="book" referencedColumnNames="uuid"
+                                 onDelete="CASCADE"/>
+        <addForeignKeyConstraint baseTableName="borrow" baseColumnNames="user_uuid"
+                                 constraintName="fk_borrow_user_uuid"
+                                 referencedTableName="user" referencedColumnNames="uuid"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <changeSet id="17" author="thani">
+        <addColumn tableName="borrow">
+            <column name="salesforce_sync_status" type="varchar(20)" defaultValue="PENDING">
+                <constraints nullable="false"/>
+            </column>
+            <column name="salesforce_retry_count" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="21-add-audit-timestamps-to-borrow" author="thani">
+        <addColumn tableName="borrow">
+            <column name="created_at" type="timestamp" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+</databaseChangeLog>

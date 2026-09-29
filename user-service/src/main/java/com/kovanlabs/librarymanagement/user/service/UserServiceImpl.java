@@ -84,12 +84,12 @@ public class UserServiceImpl implements UserService {
     private List<UserResponse> mapToUserResponseListWithRewards(List<User> users) {
         if (Objects.isNull(users) || users.isEmpty())
             return List.of();
-        List<UUID> uuids = users.stream()
+        List<String> uuids = users.stream()
                 .map(User::getUuid)
                 .filter(Objects::nonNull)
                 .toList();
 
-        Map<UUID, Integer> rewardMap = rewardRepository.findByUserUuidIn(uuids).stream()
+        Map<String, Integer> rewardMap = rewardRepository.findByUserUuidIn(uuids).stream()
                 .collect(Collectors.toMap(
                         Reward::getUserUuid,
                         Reward::getPoints,
@@ -314,7 +314,7 @@ public class UserServiceImpl implements UserService {
     public void deleteUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
-        UUID userUuid = user.getUuid();
+        String userUuid = user.getUuid();
         userRepository.delete(user);
 
         if (Objects.nonNull(salesforceSyncDelegate) && Objects.nonNull(userUuid)) {
@@ -356,14 +356,7 @@ public class UserServiceImpl implements UserService {
                     return Optional.empty();
                 })
                 .or(() -> userRepository.findByEmail(identifier))
-                .or(() -> {
-                    try {
-                        UUID uuid = UUID.fromString(identifier);
-                        return userRepository.findByUuid(uuid);
-                    } catch (IllegalArgumentException ignored) {
-                        return Optional.empty();
-                    }
-                })
+                .or(() -> userRepository.findByUuid(identifier))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "User not found with identifier: " + identifier));
         return mapToUserResponseWithRewards(user);

@@ -65,7 +65,7 @@ public class FineService implements UserFineChecker {
      * @return Persisted {@link Fine} entity
      */
     @Transactional
-    public Fine createOrUpdateFine(UUID bookUuid, UUID userUuid, BigDecimal pendingAmount) {
+    public Fine createOrUpdateFine(String bookUuid, String userUuid, BigDecimal pendingAmount) {
         Optional<Fine> optionalFine = fineRepository.findTopByBookUuidAndUserUuidOrderByIdDesc(bookUuid, userUuid);
         Fine fine;
         if (optionalFine.isPresent()) {
@@ -98,8 +98,8 @@ public class FineService implements UserFineChecker {
         }
         FineResult result = calculateFine(borrow);
         if (Objects.nonNull(borrow.getBook()) && Objects.nonNull(borrow.getUser())) {
-            UUID bookUuid = borrow.getBook().getUuid();
-            UUID userUuid = borrow.getUser().getUuid();
+            String bookUuid = borrow.getBook().getUuid();
+            String userUuid = borrow.getUser().getUuid();
             BigDecimal amount = BigDecimal.valueOf(result.fine());
             log.info("Processing fine for borrowUuid: {}, bookUuid: {}, userUuid: {}, overdueDays: {}, calculated fine: {}",
                     borrow.getUuid(), bookUuid, userUuid, result.daysOverdue(), result.fine());
@@ -128,7 +128,7 @@ public class FineService implements UserFineChecker {
      * @param userUuid The user UUID
      * @return Total fine sum as {@link BigDecimal}
      */
-    public BigDecimal calculateTotalPendingFineForUser(UUID userUuid) {
+    public BigDecimal calculateTotalPendingFineForUser(String userUuid) {
         List<Fine> pendingFines = fineRepository.findByUserUuidAndStatus(userUuid, FineStatus.PENDING);
         return pendingFines.stream()
                 .map(Fine::getPendingFineAmount)

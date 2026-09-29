@@ -4,14 +4,13 @@ import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import lombok.Builder;
 
 import java.time.LocalDate;
-import java.util.UUID;
 
 @Builder
 public record BorrowResponseDto(
-        UUID borrowUuid,
+        String borrowUuid,
         Long id,
-        UUID userId,
-        UUID bookId,
+        String userId,
+        String bookId,
         Long bookNumericId,
         String bookTitle,
         String bookAuthor,

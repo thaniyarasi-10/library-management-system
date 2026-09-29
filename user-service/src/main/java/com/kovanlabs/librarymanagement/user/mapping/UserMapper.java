@@ -85,7 +85,7 @@ public interface UserMapper {
     /**
      * Converts a {@link ContactSObject} to a {@link UserResponse} DTO.
      */
-    @Mapping(target = "uuid", expression = "java(Objects.nonNull(contact.getExternalUserUuid()) ? UUID.fromString(contact.getExternalUserUuid()) : null)")
+    @Mapping(target = "uuid", source = "externalUserUuid")
     @Mapping(target = "id", source = "legacyUserId")
     @Mapping(target = "name", source = "lastName")
     @Mapping(target = "email", source = "email")

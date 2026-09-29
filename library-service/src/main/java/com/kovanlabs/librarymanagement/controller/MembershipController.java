@@ -30,7 +30,7 @@ public class MembershipController {
 
     @PostMapping("/{membershipUuid}/sign")
     public ResponseEntity<MembershipResponseDto> signAgreement(
-            @PathVariable("membershipUuid") UUID membershipUuid,
+            @PathVariable("membershipUuid") String membershipUuid,
             @RequestParam("file") MultipartFile file,
             Principal principal) {
         MembershipResponseDto response = membershipService.signAgreement(membershipUuid, file, principal.getName());
@@ -51,7 +51,7 @@ public class MembershipController {
 
     @GetMapping("/{membershipUuid}/agreement")
     public ResponseEntity<String> getAgreementHtml(
-            @PathVariable("membershipUuid") UUID membershipUuid,
+            @PathVariable("membershipUuid") String membershipUuid,
             Principal principal) {
         String html = membershipService.getAgreementHtmlByUuid(membershipUuid, principal.getName());
         return ResponseEntity.ok(html);

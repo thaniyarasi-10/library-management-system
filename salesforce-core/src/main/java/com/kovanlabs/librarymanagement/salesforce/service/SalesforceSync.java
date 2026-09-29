@@ -33,7 +33,7 @@ public interface SalesforceSync {
      *
      * @param userUuid The unique identifier of the user to delete
      */
-    void deleteUser(UUID userUuid);
+    void deleteUser(String userUuid);
 
     /**
      * Fetches all synced contact records from Salesforce.

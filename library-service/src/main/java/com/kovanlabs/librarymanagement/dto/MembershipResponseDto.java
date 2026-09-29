@@ -2,12 +2,12 @@ package com.kovanlabs.librarymanagement.dto;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 public record MembershipResponseDto(
-    UUID uuid,
+    String uuid,
+    Long id,
     Long membershipId,
-    UUID userUuid,
+    String userUuid,
     String status,
     LocalDateTime activatedAt,
     LocalDate expiryDate,

@@ -1,14 +1,17 @@
 package com.kovanlabs.librarymanagement.database.entity;
 
 import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
-import jakarta.persistence.*;
-import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
-
-import java.time.LocalDateTime;
-import java.util.Objects;
-import java.util.UUID;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.experimental.SuperBuilder;
 
 @Entity
 @Table(name = "user_provider")
@@ -16,21 +19,11 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class UserProvider {
+@SuperBuilder
+public class UserProvider extends BaseEntity {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @JdbcTypeCode(SqlTypes.CHAR)
-    @Column(name = "uuid", updatable = false, nullable = false, columnDefinition = "CHAR(36)")
-    private UUID uuid;
-
-    @Column(name = "id", insertable = false, updatable = false, unique = true)
-    private Long id;
-
-    @Column(name = "user_uuid", nullable = false, columnDefinition = "CHAR(36)")
-    @JdbcTypeCode(SqlTypes.CHAR)
-    private UUID userUuid;
+    @Column(name = "user_uuid", nullable = false, length = 36)
+    private String userUuid;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "provider", nullable = false)
@@ -39,27 +32,4 @@ public class UserProvider {
 
     @Column(name = "provider_id", nullable = false, unique = true)
     private String providerId;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
-
-    @PrePersist
-    protected void onCreate() {
-        if (Objects.isNull(uuid)) {
-            uuid = UUID.randomUUID();
-        }
-        LocalDateTime now = LocalDateTime.now();
-        if (Objects.isNull(createdAt)) {
-            createdAt = now;
-        }
-        updatedAt = now;
-    }
-
-    @PreUpdate
-    protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
-    }
 }

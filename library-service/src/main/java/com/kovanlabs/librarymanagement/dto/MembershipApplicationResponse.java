@@ -1,9 +1,7 @@
 package com.kovanlabs.librarymanagement.dto;
 
-import java.util.UUID;
-
 public record MembershipApplicationResponse(
-        UUID membershipUuid,
+        String membershipUuid,
         Long membershipId,
         String agreementHtml) {
 }

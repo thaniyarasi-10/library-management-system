@@ -43,7 +43,7 @@ public class RewardService {
         }
 
         // Group eligible borrows by User UUID to aggregate total points earned per user
-        Map<UUID, Long> pointsPerUser = eligibleBorrows.stream()
+        Map<String, Long> pointsPerUser = eligibleBorrows.stream()
                 .filter(b -> Objects.nonNull(b.getUser()) && Objects.nonNull(b.getUser().getUuid()))
                 .collect(Collectors.groupingBy(b -> b.getUser().getUuid(), Collectors.counting()));
 
@@ -61,7 +61,7 @@ public class RewardService {
         });
 
         // Mark all processed borrows as rewardProcessed = true in a single bulk update
-        List<UUID> borrowUuids = eligibleBorrows.stream()
+        List<String> borrowUuids = eligibleBorrows.stream()
                 .map(Borrow::getUuid)
                 .collect(Collectors.toList());
 

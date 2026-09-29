@@ -77,6 +77,8 @@ public interface BorrowMapper {
     @Mapping(target = "rewardProcessed", ignore = true)
     @Mapping(target = "salesforceSyncStatus", ignore = true)
     @Mapping(target = "salesforceRetryCount", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
     Borrow mapToEntity(BorrowRequestDto request, Book book, User user);
 
     // --- DTO <-> SObject (Salesforce Models) ---
@@ -176,12 +178,12 @@ public interface BorrowMapper {
      * @param sObject The borrow SObject
      * @return The mapped {@link BorrowResponseDto}
      */
-    @Mapping(target = "borrowUuid", source = "externalBorrowUuid", qualifiedByName = "parseUUID")
+    @Mapping(target = "borrowUuid", source = "externalBorrowUuid")
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "userId", source = "contact.externalUserUuid", qualifiedByName = "parseUUID")
+    @Mapping(target = "userId", source = "contact.externalUserUuid")
     @Mapping(target = "userName", source = "contact.lastName")
     @Mapping(target = "userEmail", source = "contact.email")
-    @Mapping(target = "bookId", source = "book.externalBookUuid", qualifiedByName = "parseUUID")
+    @Mapping(target = "bookId", source = "book.externalBookUuid")
     @Mapping(target = "bookNumericId", ignore = true)
     @Mapping(target = "bookTitle", source = "book", qualifiedByName = "resolveBookTitle")
     @Mapping(target = "bookAuthor", source = "book.author")
@@ -216,23 +218,6 @@ public interface BorrowMapper {
         return Objects.isNull(book)
                 ? null
                 : ((Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank()) ? book.getTitle() : book.getName());
-    }
-
-    /**
-     * Safely parses a UUID string into a {@link UUID}.
-     *
-     * @param str The UUID string
-     * @return Parsed {@link UUID} or {@code null}
-     */
-    @Named("parseUUID")
-    default UUID parseUUID(String str) {
-        if (Objects.isNull(str) || str.isBlank())
-            return null;
-        try {
-            return UUID.fromString(str);
-        } catch (Exception e) {
-            return null;
-        }
     }
 
     /**
