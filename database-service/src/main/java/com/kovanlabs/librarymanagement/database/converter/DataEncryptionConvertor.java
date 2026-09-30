@@ -6,6 +6,8 @@ import jakarta.persistence.Converter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.Objects;
+
 @Component
 @Converter
 @RequiredArgsConstructor
@@ -15,17 +17,11 @@ public class DataEncryptionConvertor implements AttributeConverter<String, Strin
 
     @Override
     public String convertToDatabaseColumn(String attribute) {
-        if (attribute == null) {
-            return null;
-        }
-        return encryptionConverterService.encrypt(attribute);
+        return Objects.isNull(attribute) ? null : encryptionConverterService.encrypt(attribute);
     }
 
     @Override
     public String convertToEntityAttribute(String dbData) {
-        if (dbData == null) {
-            return null;
-        }
-        return encryptionConverterService.decrypt(dbData);
+        return Objects.isNull(dbData) ? null : encryptionConverterService.decrypt(dbData);
     }
 }

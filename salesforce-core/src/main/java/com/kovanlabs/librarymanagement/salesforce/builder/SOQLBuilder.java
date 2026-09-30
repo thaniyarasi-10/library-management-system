@@ -6,6 +6,7 @@ import com.kovanlabs.librarymanagement.salesforce.enums.SalesforceOperator;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -42,21 +43,21 @@ public class SOQLBuilder<T> {
     }
 
     public SOQLBuilder<T> select(String... selectedFields) {
-        if (selectedFields != null) {
+        if (Objects.nonNull(selectedFields)) {
             fields.addAll(List.of(selectedFields));
         }
         return this;
     }
 
     public SOQLBuilder<T> select(Collection<String> selectedFields) {
-        if (selectedFields != null) {
+        if (Objects.nonNull(selectedFields)) {
             fields.addAll(selectedFields);
         }
         return this;
     }
 
     public SOQLBuilder<T> from(SObject sObject) {
-        if (sObject != null) {
+        if (Objects.nonNull(sObject)) {
             this.fromObject = sObject.getObjectName();
         }
         return this;
@@ -68,14 +69,14 @@ public class SOQLBuilder<T> {
     }
 
     public SOQLBuilder<T> where(String condition) {
-        if (condition != null && !condition.isBlank()) {
+        if (Objects.nonNull(condition) && !condition.isBlank()) {
             this.whereClauses.add(condition);
         }
         return this;
     }
 
     public SOQLBuilder<T> where(String field, SalesforceOperator operator, Object value) {
-        if (field != null && !field.isBlank() && operator != null) {
+        if (Objects.nonNull(field) && !field.isBlank() && Objects.nonNull(operator)) {
             String formattedVal = formatValue(value);
             this.whereClauses.add(field + " " + operator.getOperator() + " " + formattedVal);
         }
@@ -83,21 +84,21 @@ public class SOQLBuilder<T> {
     }
 
     public SOQLBuilder<T> whereNotNull(String field) {
-        if (field != null && !field.isBlank()) {
+        if (Objects.nonNull(field) && !field.isBlank()) {
             this.whereClauses.add(field + " != null");
         }
         return this;
     }
 
     public SOQLBuilder<T> whereEquals(String field, String value) {
-        if (field != null && !field.isBlank()) {
+        if (Objects.nonNull(field) && !field.isBlank()) {
             this.whereClauses.add(field + " = '" + escape(value) + "'");
         }
         return this;
     }
 
     public SOQLBuilder<T> orderBy(String field, boolean ascending) {
-        if (field != null && !field.isBlank()) {
+        if (Objects.nonNull(field) && !field.isBlank()) {
             this.orderByClauses.add(field + (ascending ? " ASC" : " DESC"));
         }
         return this;
@@ -117,7 +118,7 @@ public class SOQLBuilder<T> {
         if (!isCount && fields.isEmpty()) {
             throw new IllegalStateException("SOQL query must specify at least one field to select");
         }
-        if (fromObject == null || fromObject.isBlank()) {
+        if (Objects.isNull(fromObject) || fromObject.isBlank()) {
             throw new IllegalStateException("SOQL query must specify a FROM sObject");
         }
 
@@ -154,6 +155,6 @@ public class SOQLBuilder<T> {
     }
 
     private static String escape(String value) {
-        return (value == null) ? "" : value.replace("'", "\\'");
+        return Objects.isNull(value) ? "" : value.replace("'", "\\'");
     }
 }

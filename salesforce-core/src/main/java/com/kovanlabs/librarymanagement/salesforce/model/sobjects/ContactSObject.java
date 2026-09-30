@@ -29,4 +29,7 @@ public class ContactSObject extends SObjectBase {
 
     @JsonProperty(ContactFields.EMAIL)
     private String email;
+
+    @JsonProperty(ContactFields.ROLE)
+    private String role;
 }

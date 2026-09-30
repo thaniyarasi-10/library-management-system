@@ -1,6 +1,5 @@
 package com.kovanlabs.librarymanagement.service;
 
-import com.kovanlabs.librarymanagement.service.UserFineChecker;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.Fine;
@@ -9,6 +8,7 @@ import com.kovanlabs.librarymanagement.database.enums.FineStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.FineRepository;
+import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.dto.FineResponseDto;
 import com.kovanlabs.librarymanagement.dto.FineResult;
@@ -20,10 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Service for calculating, tracking, persisting, and processing payments for overdue library fines.
@@ -39,6 +36,7 @@ public class FineService implements UserFineChecker {
     private final FineRepository fineRepository;
     private final BookRepository bookRepository;
     private final UserRepository userRepository;
+    private final UserProviderRepository userProviderRepository;
     private final BorrowRepository borrowRepository;
 
     /**
@@ -48,11 +46,11 @@ public class FineService implements UserFineChecker {
      * @return {@link FineResult} containing days overdue and fine amount
      */
     public FineResult calculateFine(Borrow borrow) {
-        if (borrow == null || borrow.getDueDate() == null) {
+        if (Objects.isNull(borrow) || Objects.isNull(borrow.getDueDate())) {
             return new FineResult(borrow, 0, 0.0);
         }
 
-        LocalDate endDate = borrow.getReturnedDate() != null ? borrow.getReturnedDate() : LocalDate.now();
+        LocalDate endDate = Objects.nonNull(borrow.getReturnedDate()) ? borrow.getReturnedDate() : LocalDate.now();
         long daysOverdue = Math.max(0, ChronoUnit.DAYS.between(borrow.getDueDate(), endDate));
         double fine = daysOverdue * FINE_PER_DAY;
         return new FineResult(borrow, daysOverdue, fine);
@@ -67,7 +65,7 @@ public class FineService implements UserFineChecker {
      * @return Persisted {@link Fine} entity
      */
     @Transactional
-    public Fine createOrUpdateFine(UUID bookUuid, UUID userUuid, BigDecimal pendingAmount) {
+    public Fine createOrUpdateFine(String bookUuid, String userUuid, BigDecimal pendingAmount) {
         Optional<Fine> optionalFine = fineRepository.findTopByBookUuidAndUserUuidOrderByIdDesc(bookUuid, userUuid);
         Fine fine;
         if (optionalFine.isPresent()) {
@@ -94,14 +92,14 @@ public class FineService implements UserFineChecker {
      */
     @Transactional
     public Fine processFineForBorrow(Borrow borrow) {
-        if (borrow == null) {
+        if (Objects.isNull(borrow)) {
             log.warn("Cannot process fine for null borrow record");
             return null;
         }
         FineResult result = calculateFine(borrow);
-        if (borrow.getBook() != null && borrow.getUser() != null) {
-            UUID bookUuid = borrow.getBook().getUuid();
-            UUID userUuid = borrow.getUser().getUuid();
+        if (Objects.nonNull(borrow.getBook()) && Objects.nonNull(borrow.getUser())) {
+            String bookUuid = borrow.getBook().getUuid();
+            String userUuid = borrow.getUser().getUuid();
             BigDecimal amount = BigDecimal.valueOf(result.fine());
             log.info("Processing fine for borrowUuid: {}, bookUuid: {}, userUuid: {}, overdueDays: {}, calculated fine: {}",
                     borrow.getUuid(), bookUuid, userUuid, result.daysOverdue(), result.fine());
@@ -130,7 +128,7 @@ public class FineService implements UserFineChecker {
      * @param userUuid The user UUID
      * @return Total fine sum as {@link BigDecimal}
      */
-    public BigDecimal calculateTotalPendingFineForUser(UUID userUuid) {
+    public BigDecimal calculateTotalPendingFineForUser(String userUuid) {
         List<Fine> pendingFines = fineRepository.findByUserUuidAndStatus(userUuid, FineStatus.PENDING);
         return pendingFines.stream()
                 .map(Fine::getPendingFineAmount)
@@ -145,14 +143,14 @@ public class FineService implements UserFineChecker {
      * @return Populated {@link FineResponseDto}
      */
     public FineResponseDto mapToDtoWithDetails(Fine fine) {
-        if (fine == null) return null;
-        Book book = fine.getBookUuid() != null ? bookRepository.findByUuid(fine.getBookUuid()).orElse(null) : null;
-        User user = fine.getUserUuid() != null ? userRepository.findByUuid(fine.getUserUuid()).orElse(null) : null;
+        if (Objects.isNull(fine)) return null;
+        Book book = Objects.nonNull(fine.getBookUuid()) ? bookRepository.findByUuid(fine.getBookUuid()).orElse(null) : null;
+        User user = Objects.nonNull(fine.getUserUuid()) ? userRepository.findByUuid(fine.getUserUuid()).orElse(null) : null;
         
         BigDecimal fineAmount = fine.getPendingFineAmount();
         // If the fine amount was previously zeroed out in the database by payFine, recover it from the borrow record
-        if (fineAmount == null || fineAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            if (fine.getBookUuid() != null && fine.getUserUuid() != null) {
+        if (Objects.isNull(fineAmount) || fineAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            if (Objects.nonNull(fine.getBookUuid()) && Objects.nonNull(fine.getUserUuid())) {
                 Optional<Borrow> borrowOpt = borrowRepository.findFirstByBook_UuidAndUser_UuidOrderByDueDateDesc(
                         fine.getBookUuid(), fine.getUserUuid());
                 if (borrowOpt.isPresent()) {
@@ -168,7 +166,7 @@ public class FineService implements UserFineChecker {
                     }
                 }
             }
-            if (fineAmount == null || fineAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            if (Objects.isNull(fineAmount) || fineAmount.compareTo(BigDecimal.ZERO) <= 0) {
                 fineAmount = BigDecimal.valueOf(10.0);
             }
         }
@@ -177,14 +175,14 @@ public class FineService implements UserFineChecker {
                 .uuid(fine.getUuid())
                 .id(fine.getId())
                 .bookUuid(fine.getBookUuid())
-                .bookNumericId(book != null ? book.getId() : null)
-                .bookTitle(book != null ? book.getTitle() : "Library Book")
-                .bookAuthor(book != null ? book.getAuthor() : "Unknown Author")
-                .bookCoverImageUrl(book != null ? book.getCoverImageUrl() : null)
+                .bookNumericId(Objects.nonNull(book) ? book.getId() : null)
+                .bookTitle(Objects.nonNull(book) ? book.getTitle() : "Library Book")
+                .bookAuthor(Objects.nonNull(book) ? book.getAuthor() : "Unknown Author")
+                .bookCoverImageUrl(Objects.nonNull(book) ? book.getCoverImageUrl() : null)
                 .userUuid(fine.getUserUuid())
-                .userNumericId(user != null ? user.getId() : null)
-                .userName(user != null ? user.getName() : "Library Member")
-                .userEmail(user != null ? user.getEmail() : "")
+                .userNumericId(Objects.nonNull(user) ? user.getId() : null)
+                .userName(Objects.nonNull(user) ? user.getName() : "Library Member")
+                .userEmail(Objects.nonNull(user) ? user.getEmail() : "")
                 .amount(fineAmount)
                 .pendingFineAmount(fineAmount)
                 .status(fine.getStatus())
@@ -225,14 +223,16 @@ public class FineService implements UserFineChecker {
      * @return List of {@link FineResponseDto}s
      */
     public List<FineResponseDto> getFinesDtoByUserEmail(String email) {
-        if (email == null) {
+        if (Objects.isNull(email)) {
             return java.util.Collections.emptyList();
         }
-        User user = userRepository.findByEmail(email).orElse(null);
-        if (user == null || user.getId() == null) {
-            return java.util.Collections.emptyList();
-        }
-        return getFinesDtoByUserId(user.getId());
+        User user = userProviderRepository.findByProviderId(email)
+                .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
+                .or(() -> userRepository.findByEmail(email))
+                .orElse(null);
+        return (Objects.isNull(user) || Objects.isNull(user.getId()))
+                ? Collections.emptyList()
+                : getFinesDtoByUserId(user.getId());
     }
 
     /**
@@ -284,6 +284,6 @@ public class FineService implements UserFineChecker {
     @Override
     public boolean hasPendingFines(Long userId) {
         BigDecimal totalPending = calculateTotalPendingFineForUser(userId);
-        return totalPending != null && totalPending.compareTo(BigDecimal.ZERO) > 0;
+        return Objects.nonNull(totalPending) && totalPending.compareTo(BigDecimal.ZERO) > 0;
     }
 }

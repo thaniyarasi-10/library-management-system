@@ -7,22 +7,12 @@
         http://www.liquibase.org/xml/ns/dbchangelog
         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
 
-    <include file="db/changelog/changes/01-create-tables.xml"/>
-    <include file="db/changelog/changes/02-add-coverimage.xml"/>
-    <include file="db/changelog/changes/03-rename-coverimage.xml"/>
-    <include file="db/changelog/changes/04-add-coverimage-key.xml"/>
-    <include file="db/changelog/changes/05-create-fine-table.xml"/>
-    <include file="db/changelog/changes/06-rename-users-table.xml"/>
-    <include file="db/changelog/changes/07-populate-user-uuid.xml"/>
-    <include file="db/changelog/changes/08-modify-uuid-columns-to-varchar.xml"/>
-    <include file="db/changelog/changes/09-rename-books-table.xml"/>
-    <include file="db/changelog/changes/10-membership-table.xml"/>
-    <include file="db/changelog/changes/11-change-membership-datatype.xml"/>
-    <include file="db/changelog/changes/12-add-signature-base64-and-nullable-membership-id.xml"/>
-    <include file="db/changelog/changes/13-create-rewards-table.xml"/>
-    <include file="db/changelog/changes/14-modify-reward-datatype.xml"/>
-    <include file="db/changelog/changes/15-create-rewards-table.xml"/>
-    <include file="db/changelog/changes/16-update-rewards.xml"/>
-    <include file="db/changelog/changes/17-add-salesforce-sync-status.xml"/>
+    <include file="/db/changelog/user-changelog.xml"/>
+    <include file="db/changelog/book-changelog.xml"/>
+    <include file="db/changelog/borrow-changelog.xml"/>
+    <include file="db/changelog/fine-changelog.xml"/>
+    <include file="db/changelog/membership-changelog.xml"/>
+    <include file="/db/changelog/reward-changelog.xml"/>
+    <include file="/db/changelog/user-provider-changelog.xml"/>
 
 </databaseChangeLog>

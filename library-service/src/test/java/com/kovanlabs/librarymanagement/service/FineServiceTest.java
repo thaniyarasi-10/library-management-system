@@ -29,6 +29,7 @@ class FineServiceTest {
     private FineRepository fineRepository;
     private BookRepository bookRepository;
     private UserRepository userRepository;
+    private com.kovanlabs.librarymanagement.database.repository.UserProviderRepository userProviderRepository;
     private BorrowRepository borrowRepository;
     private FineService fineService;
 
@@ -37,8 +38,9 @@ class FineServiceTest {
         fineRepository = mock(FineRepository.class);
         bookRepository = mock(BookRepository.class);
         userRepository = mock(UserRepository.class);
+        userProviderRepository = mock(com.kovanlabs.librarymanagement.database.repository.UserProviderRepository.class);
         borrowRepository = mock(BorrowRepository.class);
-        fineService = new FineService(fineRepository, bookRepository, userRepository, borrowRepository);
+        fineService = new FineService(fineRepository, bookRepository, userRepository, userProviderRepository, borrowRepository);
     }
 
     @Test
@@ -57,8 +59,8 @@ class FineServiceTest {
     @Test
     @DisplayName("Should create new Fine record when no existing fine found for bookUuid and userUuid")
     void testCreateOrUpdateFine_NewRecord() {
-        UUID bookUuid = UUID.randomUUID();
-        UUID userUuid = UUID.randomUUID();
+        String bookUuid = UUID.randomUUID().toString();
+        String userUuid = UUID.randomUUID().toString();
         BigDecimal amount = BigDecimal.valueOf(25.0);
 
         when(fineRepository.findTopByBookUuidAndUserUuidOrderByIdDesc(bookUuid, userUuid)).thenReturn(Optional.empty());
@@ -77,9 +79,9 @@ class FineServiceTest {
     @Test
     @DisplayName("Should update existing Fine record for bookUuid and userUuid")
     void testCreateOrUpdateFine_ExistingRecord() {
-        UUID bookUuid = UUID.randomUUID();
-        UUID userUuid = UUID.randomUUID();
-        UUID fineUuid = UUID.randomUUID();
+        String bookUuid = UUID.randomUUID().toString();
+        String userUuid = UUID.randomUUID().toString();
+        String fineUuid = UUID.randomUUID().toString();
         BigDecimal oldAmount = BigDecimal.valueOf(15.0);
         BigDecimal newAmount = BigDecimal.valueOf(25.0);
 
@@ -106,10 +108,10 @@ class FineServiceTest {
     @Test
     @DisplayName("Should process fine for valid borrow record")
     void testProcessFineForBorrow() {
-        Book book = Book.builder().uuid(UUID.randomUUID()).build();
-        User user = User.builder().uuid(UUID.randomUUID()).build();
+        Book book = Book.builder().uuid(UUID.randomUUID().toString()).build();
+        User user = User.builder().uuid(UUID.randomUUID().toString()).build();
         Borrow borrow = Borrow.builder()
-                .uuid(UUID.randomUUID())
+                .uuid(UUID.randomUUID().toString())
                 .book(book)
                 .user(user)
                 .dueDate(LocalDate.now().minusDays(2))
@@ -128,7 +130,7 @@ class FineServiceTest {
     @DisplayName("Should calculate total pending fine and check pending fines for user")
     void testPendingFinesAndHasPendingFines() {
         Long userId = 100L;
-        UUID userUuid = UUID.randomUUID();
+        String userUuid = UUID.randomUUID().toString();
         User user = User.builder().id(userId).uuid(userUuid).build();
 
         Fine fine1 = Fine.builder().pendingFineAmount(BigDecimal.valueOf(15.0)).status(FineStatus.PENDING).build();
@@ -177,7 +179,7 @@ class FineServiceTest {
     void testProcessFineForBorrow_NullCases() {
         assertNull(fineService.processFineForBorrow(null));
 
-        Borrow borrowWithoutUser = Borrow.builder().book(Book.builder().uuid(UUID.randomUUID()).build()).build();
+        Borrow borrowWithoutUser = Borrow.builder().book(Book.builder().uuid(UUID.randomUUID().toString()).build()).build();
         assertNull(fineService.processFineForBorrow(borrowWithoutUser));
     }
 
@@ -229,7 +231,7 @@ class FineServiceTest {
     @DisplayName("hasPendingFines should return false when user has zero pending fine")
     void testHasPendingFines_NoFines_ReturnsFalse() {
         Long userId = 100L;
-        UUID userUuid = UUID.randomUUID();
+        String userUuid = UUID.randomUUID().toString();
         User user = User.builder().id(userId).uuid(userUuid).build();
 
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));

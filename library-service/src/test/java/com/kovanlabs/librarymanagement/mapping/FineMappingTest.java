@@ -25,9 +25,9 @@ class FineMappingTest {
 
     @Test
     void testMapToResponse_SingleFine() {
-        UUID fineUuid = UUID.randomUUID();
-        UUID bookUuid = UUID.randomUUID();
-        UUID userUuid = UUID.randomUUID();
+        String fineUuid = UUID.randomUUID().toString();
+        String bookUuid = UUID.randomUUID().toString();
+        String userUuid = UUID.randomUUID().toString();
         LocalDateTime now = LocalDateTime.now();
 
         Fine fine = Fine.builder()

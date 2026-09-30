@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.util.List;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/fines")
@@ -25,10 +26,7 @@ public class FineController {
 
     @GetMapping("/me")
     public ResponseEntity<List<FineResponseDto>> getMyFines(Principal principal) {
-        if (principal == null) {
-            return ResponseEntity.ok(List.of());
-        }
-        return ResponseEntity.ok(fineService.getFinesDtoByUserEmail(principal.getName()));
+        return ResponseEntity.ok(Objects.isNull(principal) ? List.of() : fineService.getFinesDtoByUserEmail(principal.getName()));
     }
 
     @PostMapping("/{id}/pay")

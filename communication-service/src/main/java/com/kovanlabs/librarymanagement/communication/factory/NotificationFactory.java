@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import java.util.Optional;
+
 @Component
 public class NotificationFactory {
 
@@ -23,11 +25,8 @@ public class NotificationFactory {
     }
 
     public NotificationService get(NotificationTypeEnum type) {
-        NotificationService service = notificationMap.get(type);
-        if (service == null) {
-            throw new IllegalArgumentException("Notification type not supported: " + type);
-        }
-        return service;
+        return Optional.ofNullable(notificationMap.get(type))
+                .orElseThrow(() -> new IllegalArgumentException("Notification type not supported: " + type));
     }
 }
 

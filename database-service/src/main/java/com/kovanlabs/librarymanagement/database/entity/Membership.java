@@ -1,37 +1,37 @@
 package com.kovanlabs.librarymanagement.database.entity;
 
-import com.kovanlabs.librarymanagement.database.enums.MembershipStatus;
 import com.kovanlabs.librarymanagement.database.converter.DataEncryptionConvertor;
-import jakarta.persistence.*;
-import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
+import com.kovanlabs.librarymanagement.database.enums.MembershipStatus;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Entity
+
 @Table(name = "membership")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class Membership {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @JdbcTypeCode(SqlTypes.CHAR)
-    @Column(name = "uuid", updatable = false, nullable = false, columnDefinition = "CHAR(36)")
-    private UUID uuid;
+@SuperBuilder
+public class Membership extends BaseEntity {
 
     @Column(name = "membership_id", nullable = true, unique = true)
     private Long membershipId;
 
-    @Column(name = "user_uuid", nullable = false)
-    @JdbcTypeCode(SqlTypes.CHAR)
-    private UUID userUuid;
+    @Column(name = "user_uuid", nullable = false, length = 36)
+    private String userUuid;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -59,24 +59,4 @@ public class Membership {
 
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
-
-    @PrePersist
-    protected void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
-        if (createdAt == null) {
-            createdAt = now;
-        }
-        updatedAt = now;
-    }
-
-    @PreUpdate
-    protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
-    }
 }

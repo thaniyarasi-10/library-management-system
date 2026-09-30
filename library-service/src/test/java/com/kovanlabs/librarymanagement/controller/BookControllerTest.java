@@ -11,18 +11,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.server.ResponseStatusException;
-
 import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -36,16 +35,16 @@ class BookControllerTest {
     private BookController bookController;
 
     private MockMvc mockMvc;
-    private UUID uuid1;
-    private UUID uuid2;
+    private String uuid1;
+    private String uuid2;
     private Long id1;
     private Long id2;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(bookController).build();
-        uuid1 = UUID.randomUUID();
-        uuid2 = UUID.randomUUID();
+        uuid1 = UUID.randomUUID().toString();
+        uuid2 = UUID.randomUUID().toString();
         id1 = 1L;
         id2 = 2L;
     }
@@ -150,10 +149,10 @@ class BookControllerTest {
     @Test
     @DisplayName("POST /books/{id}/cover should upload cover image")
     void uploadCover_ShouldReturnMessage() throws Exception {
-        org.springframework.mock.web.MockMultipartFile file = new org.springframework.mock.web.MockMultipartFile("file", "cover.jpg", "image/jpeg", "content".getBytes());
+        MockMultipartFile file = new MockMultipartFile("file", "cover.jpg", "image/jpeg", "content".getBytes());
         when(bookService.uploadBookCover(id1, file)).thenReturn("Book cover updated");
 
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/books/" + id1 + "/cover").file(file))
+        mockMvc.perform(multipart("/books/" + id1 + "/cover").file(file))
                 .andExpect(status().isOk())
                 .andExpect(content().string("Book cover updated"));
     }

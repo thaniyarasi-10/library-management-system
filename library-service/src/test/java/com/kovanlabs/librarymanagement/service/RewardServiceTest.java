@@ -34,8 +34,8 @@ class RewardServiceTest {
     @InjectMocks
     private RewardService rewardService;
 
-    private UUID userUuid1;
-    private UUID userUuid2;
+    private String userUuid1;
+    private String userUuid2;
     private User user1;
     private User user2;
     private Borrow borrow1;
@@ -44,15 +44,15 @@ class RewardServiceTest {
 
     @BeforeEach
     void setUp() {
-        userUuid1 = UUID.randomUUID();
-        userUuid2 = UUID.randomUUID();
+        userUuid1 = UUID.randomUUID().toString();
+        userUuid2 = UUID.randomUUID().toString();
 
         user1 = User.builder().uuid(userUuid1).email("user1@example.com").build();
         user2 = User.builder().uuid(userUuid2).email("user2@example.com").build();
 
-        borrow1 = Borrow.builder().uuid(UUID.randomUUID()).user(user1).rewardProcessed(false).build();
-        borrow2 = Borrow.builder().uuid(UUID.randomUUID()).user(user1).rewardProcessed(false).build();
-        borrow3 = Borrow.builder().uuid(UUID.randomUUID()).user(user2).rewardProcessed(false).build();
+        borrow1 = Borrow.builder().uuid(UUID.randomUUID().toString()).user(user1).rewardProcessed(false).build();
+        borrow2 = Borrow.builder().uuid(UUID.randomUUID().toString()).user(user1).rewardProcessed(false).build();
+        borrow3 = Borrow.builder().uuid(UUID.randomUUID().toString()).user(user2).rewardProcessed(false).build();
     }
 
     @Test
@@ -102,8 +102,8 @@ class RewardServiceTest {
 
     @Test
     void testProcessOnTimeReturnRewards_withNullUserOrNullUserUuid_filtersOutSafely() {
-        Borrow borrowWithNullUser = Borrow.builder().uuid(UUID.randomUUID()).user(null).build();
-        Borrow borrowWithNullUserUuid = Borrow.builder().uuid(UUID.randomUUID()).user(User.builder().uuid(null).build()).build();
+        Borrow borrowWithNullUser = Borrow.builder().uuid(UUID.randomUUID().toString()).user(null).build();
+        Borrow borrowWithNullUserUuid = Borrow.builder().uuid(UUID.randomUUID().toString()).user(User.builder().uuid(null).build()).build();
 
         when(borrowRepository.findUnprocessedOnTimeBorrows()).thenReturn(List.of(borrow1, borrowWithNullUser, borrowWithNullUserUuid));
         when(rewardRepository.incrementPoints(eq(userUuid1), eq(1))).thenReturn(1);

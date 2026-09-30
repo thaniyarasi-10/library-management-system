@@ -37,7 +37,7 @@ class MembershipControllerTest {
     private MembershipController membershipController;
 
     private final String email = "user@example.com";
-    private final UUID membershipUuid = UUID.randomUUID();
+    private final String membershipUuid = UUID.randomUUID().toString();
 
     @BeforeEach
     void setUp() {
@@ -46,7 +46,7 @@ class MembershipControllerTest {
 
     private MembershipResponseDto createSampleDto(String status) {
         return new MembershipResponseDto(
-                membershipUuid, 123456L, UUID.randomUUID(), status,
+                membershipUuid, 1L, 123456L, UUID.randomUUID().toString(), status,
                 LocalDateTime.now(), LocalDate.now().plusYears(1), true,
                 LocalDateTime.now(), "key.pdf", "sigBase64",
                 null, LocalDateTime.now(), LocalDateTime.now()

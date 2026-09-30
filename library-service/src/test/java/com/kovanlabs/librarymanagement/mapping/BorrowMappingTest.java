@@ -23,9 +23,9 @@ class BorrowMappingTest {
 
     @Test
     void testMapToResponse_SingleBorrow() {
-        UUID borrowUuid = UUID.randomUUID();
-        UUID bookUuid = UUID.randomUUID();
-        UUID userUuid = UUID.randomUUID();
+        String borrowUuid = UUID.randomUUID().toString();
+        String bookUuid = UUID.randomUUID().toString();
+        String userUuid = UUID.randomUUID().toString();
 
         Book book = Book.builder()
                 .uuid(bookUuid)
@@ -111,9 +111,9 @@ class BorrowMappingTest {
 
     @Test
     void testToBorrowSObject_and_toBorrowResponse() {
-        UUID borrowUuid = UUID.randomUUID();
-        UUID userUuid = UUID.randomUUID();
-        UUID bookUuid = UUID.randomUUID();
+        String borrowUuid = UUID.randomUUID().toString();
+        String userUuid = UUID.randomUUID().toString();
+        String bookUuid = UUID.randomUUID().toString();
         LocalDate now = LocalDate.now();
 
         BorrowResponseDto dto = BorrowResponseDto.builder()
@@ -133,13 +133,13 @@ class BorrowMappingTest {
 
         BorrowSObject sObject = borrowMapper.toBorrowSObject(dto);
         assertNotNull(sObject);
-        assertEquals(borrowUuid.toString(), sObject.getExternalBorrowUuid());
+        assertEquals(borrowUuid, sObject.getExternalBorrowUuid());
         assertEquals("BORROWED", sObject.getBorrowStatus());
         assertNotNull(sObject.getContact());
-        assertEquals(userUuid.toString(), sObject.getContact().getExternalUserUuid());
+        assertEquals(userUuid, sObject.getContact().getExternalUserUuid());
         assertEquals(99L, sObject.getContact().getLegacyUserId());
         assertNotNull(sObject.getBook());
-        assertEquals(bookUuid.toString(), sObject.getBook().getExternalBookUuid());
+        assertEquals(bookUuid, sObject.getBook().getExternalBookUuid());
         assertEquals("DDD", sObject.getBook().getTitle());
 
         BorrowResponseDto mappedBack = borrowMapper.toBorrowResponse(sObject);
@@ -151,6 +151,37 @@ class BorrowMappingTest {
         assertEquals(bookUuid, mappedBack.bookId());
         assertEquals("DDD", mappedBack.bookTitle());
         assertEquals(BorrowStatus.BORROWED, mappedBack.status());
+    }
+
+    @Test
+    void testToBorrowSObject_withEntity() {
+        String borrowUuid = UUID.randomUUID().toString();
+        String userUuid = UUID.randomUUID().toString();
+        String bookUuid = UUID.randomUUID().toString();
+
+        User user = User.builder().uuid(userUuid).id(1L).name("Alice").email("alice@example.com").build();
+        Book book = Book.builder().uuid(bookUuid).id(10L).title("Clean Code").build();
+        Borrow borrow = Borrow.builder()
+                .uuid(borrowUuid)
+                .user(user)
+                .book(book)
+                .borrowDate(LocalDate.of(2026, 9, 1))
+                .dueDate(LocalDate.of(2026, 9, 15))
+                .status(BorrowStatus.BORROWED)
+                .build();
+
+        BorrowSObject sObject = borrowMapper.toBorrowSObject(borrow);
+        assertNotNull(sObject);
+        assertEquals(borrowUuid, sObject.getExternalBorrowUuid());
+        assertEquals("2026-09-01", sObject.getBorrowDate());
+        assertEquals("2026-09-15", sObject.getDueDate());
+        assertEquals("BORROWED", sObject.getBorrowStatus());
+        assertNotNull(sObject.getContact());
+        assertEquals(userUuid, sObject.getContact().getExternalUserUuid());
+        assertNotNull(sObject.getBook());
+        assertEquals(bookUuid, sObject.getBook().getExternalBookUuid());
+
+        assertNull(borrowMapper.toBorrowSObject((Borrow) null));
     }
 
     @Test
@@ -179,10 +210,6 @@ class BorrowMappingTest {
 
     @Test
     void testHelperMethods() {
-        assertNull(borrowMapper.parseUUID(null));
-        assertNull(borrowMapper.parseUUID("invalid-uuid"));
-        assertNotNull(borrowMapper.parseUUID(UUID.randomUUID().toString()));
-
         assertNull(borrowMapper.parseLocalDate(null));
         assertNull(borrowMapper.parseLocalDate("invalid-date"));
         assertEquals(LocalDate.of(2025, 1, 1), borrowMapper.parseLocalDate("2025-01-01"));

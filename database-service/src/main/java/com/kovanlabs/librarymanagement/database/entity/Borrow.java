@@ -2,40 +2,36 @@ package com.kovanlabs.librarymanagement.database.entity;
 
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
-import jakarta.persistence.*;
-import lombok.*;
-
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDate;
-import java.util.UUID;
 
-@Builder
 @Getter
 @Setter
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
+@SuperBuilder
 @Table(name = "borrow")
-public class Borrow {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @JdbcTypeCode(SqlTypes.CHAR)
-    @Column(name = "uuid", updatable = false, nullable = false, columnDefinition = "CHAR(36)")
-    private UUID uuid;
-
-    @Column(name = "id", insertable = false, updatable = false, unique = true)
-    private Long id;
+public class Borrow extends BaseEntity {
 
     @ManyToOne
-    @JdbcTypeCode(SqlTypes.CHAR)
     @JoinColumn(name = "book_uuid", referencedColumnName = "uuid")
     private Book book;
 
     @ManyToOne
-    @JdbcTypeCode(SqlTypes.CHAR)
     @JoinColumn(name = "user_uuid", referencedColumnName = "uuid")
     private User user;
 
@@ -60,12 +56,4 @@ public class Borrow {
     @Column(name = "salesforce_retry_count", nullable = false)
     @Builder.Default
     private int salesforceRetryCount = 0;
-
-    @PrePersist
-    public void prePersist() {
-        if (uuid == null) {
-            uuid = UUID.randomUUID();
-        }
-    }
-
 }

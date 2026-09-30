@@ -12,13 +12,14 @@ import org.mapstruct.Named;
 import org.mapstruct.factory.Mappers;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
  * MapStruct mapper for Book entity conversions, DTO transformations,
  * and Salesforce Book SObject mappings.
  */
-@Mapper(imports = {SObject.class, SObjectAttributes.class})
+@Mapper(imports = {SObject.class, SObjectAttributes.class, Objects.class})
 public interface BookMapper {
 
     BookMapper INSTANCE = Mappers.getMapper(BookMapper.class);
@@ -53,6 +54,8 @@ public interface BookMapper {
     @Mapping(target = "coverImageKey", ignore = true)
     @Mapping(target = "salesforceSyncStatus", ignore = true)
     @Mapping(target = "salesforceRetryCount", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
     Book mapToEntity(BookRequest request);
 
     // --- DTO <-> SObject (Salesforce Models) ---
@@ -73,12 +76,29 @@ public interface BookMapper {
     BookSObject toBookSObject(BookResponse dto);
 
     /**
+     * Converts a {@link Book} entity to a {@link BookSObject} model.
+     *
+     * @param book The Book entity
+     * @return The mapped {@link BookSObject}
+     */
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.BOOK.getObjectName()).build())")
+    @Mapping(target = "externalBookUuid", source = "uuid")
+    @Mapping(target = "name", expression = "java((Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "title", expression = "java((Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "author", source = "author")
+    @Mapping(target = "isbn", source = "isbn")
+    @Mapping(target = "coverImageUrl", source = "coverImageUrl")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "errors", ignore = true)
+    BookSObject toBookSObject(Book book);
+
+    /**
      * Maps a Salesforce {@link BookSObject} to a {@link BookResponse} DTO.
      *
      * @param sObject The book SObject from Salesforce
      * @return The mapped {@link BookResponse} DTO
      */
-    @Mapping(target = "uuid", source = "externalBookUuid", qualifiedByName = "parseUUID")
+    @Mapping(target = "uuid", source = "externalBookUuid")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "title", source = "title", defaultExpression = "java(sObject.getName())")
     @Mapping(target = "author", source = "author")
@@ -93,22 +113,4 @@ public interface BookMapper {
      * @return List of mapped {@link BookResponse} DTOs
      */
     List<BookResponse> toBookResponseList(List<BookSObject> sObjects);
-
-    // --- Helper Mapping Methods ---
-
-    /**
-     * Safely parses a UUID string into a {@link UUID}.
-     *
-     * @param str The UUID string
-     * @return Parsed {@link UUID} or {@code null}
-     */
-    @Named("parseUUID")
-    default UUID parseUUID(String str) {
-        if (str == null || str.isBlank()) return null;
-        try {
-            return UUID.fromString(str);
-        } catch (Exception e) {
-            return null;
-        }
-    }
 }

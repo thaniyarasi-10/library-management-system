@@ -4,8 +4,10 @@ import com.kovanlabs.librarymanagement.aws.s3.dto.S3UploadResponse;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -16,8 +18,8 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 import java.io.IOException;
@@ -46,29 +48,20 @@ public class S3Service {
     }
 
     private S3Client getS3ClientForRegion(String regionName) {
-
-        if (regionName == null || regionName.isBlank() || regionName.equalsIgnoreCase(region)) {
-            return s3Client;
-        }
-
-        return clientsByRegion.computeIfAbsent(
-                regionName,
-                this::createS3Client
-        );
+        return (Objects.isNull(regionName) || regionName.isBlank() || regionName.equalsIgnoreCase(region))
+                ? s3Client
+                : clientsByRegion.computeIfAbsent(regionName, this::createS3Client);
     }
+
     private S3Client createS3Client(String regionName) {
+        var credentialsProvider = (Objects.nonNull(accessKey) && !accessKey.isBlank() && Objects.nonNull(secretKey) && !secretKey.isBlank())
+                ? StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+                : DefaultCredentialsProvider.create();
 
-        S3ClientBuilder builder = S3Client.builder().region(Region.of(regionName));
-
-        if (accessKey != null && !accessKey.isBlank() && secretKey != null && !secretKey.isBlank()) {
-            builder.credentialsProvider(
-                    StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
-            );
-        } else {
-            builder.credentialsProvider(DefaultCredentialsProvider.create());
-        }
-
-        return builder.build();
+        return S3Client.builder()
+                .region(Region.of(regionName))
+                .credentialsProvider(credentialsProvider)
+                .build();
     }
 
     @PreDestroy
@@ -106,8 +99,8 @@ public class S3Service {
             return objectBytes.asByteArray();
         } catch (Exception e) {
             log.error("Failed to download file from S3: bucket={}, region={}, key={}", bucket, regionName, key, e);
-            throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR,
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
                     "Failed to download file from S3: " + key,
                     e
             );
@@ -116,7 +109,7 @@ public class S3Service {
 
 
     public String downloadFileAsString(String bucket, String regionName, String key) {
-        if (bucket == null || key == null) {
+        if (Objects.isNull(bucket) || Objects.isNull(key)) {
             throw new IllegalArgumentException("Bucket and key must not be null");
         }
         try {
@@ -131,8 +124,8 @@ public class S3Service {
             return objectBytes.asUtf8String();
         } catch (Exception e) {
             log.error("Failed to download text file from S3: bucket={}, region={}, key={}", bucket, regionName, key, e);
-            throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR,
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
                     "Failed to download file from S3: " + key,
                     e
             );
@@ -152,8 +145,8 @@ public class S3Service {
             return key;
         } catch (Exception e) {
             log.error("Failed to upload file bytes to S3: bucket={}, region={}, key={}", bucket, regionName, key, e);
-            throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR,
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
                     "Failed to upload file to S3: " + key,
                     e
             );

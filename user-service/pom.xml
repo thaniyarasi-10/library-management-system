@@ -29,6 +29,10 @@
             <groupId>com.kovanlabs</groupId>
             <artifactId>database-service</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.kovanlabs</groupId>
+            <artifactId>salesforce-core</artifactId>
+        </dependency>
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -46,6 +50,10 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
         <!-- Test dependencies -->

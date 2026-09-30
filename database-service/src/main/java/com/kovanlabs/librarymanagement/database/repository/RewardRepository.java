@@ -10,20 +10,19 @@ import org.springframework.stereotype.Repository;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 @Repository
-public interface RewardRepository extends JpaRepository<Reward, UUID> {
+public interface RewardRepository extends JpaRepository<Reward, String> {
 
-    Optional<Reward> findByUuid(UUID uuid);
+    Optional<Reward> findByUuid(String uuid);
 
     Optional<Reward> findById(Long id);
 
-    Optional<Reward> findByUserUuid(UUID userUuid);
+    Optional<Reward> findByUserUuid(String userUuid);
 
-    List<Reward> findByUserUuidIn(Collection<UUID> userUuids);
+    List<Reward> findByUserUuidIn(Collection<String> userUuids);
 
     @Modifying
     @Query("UPDATE Reward r SET r.points = r.points + :points, r.updatedAt = CURRENT_TIMESTAMP WHERE r.userUuid = :userUuid")
-    int incrementPoints(@Param("userUuid") UUID userUuid, @Param("points") int points);
+    int incrementPoints(@Param("userUuid") String userUuid, @Param("points") int points);
 }

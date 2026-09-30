@@ -1,15 +1,14 @@
 package com.kovanlabs.librarymanagement.user.dto;
 
 import java.io.Serializable;
-import java.util.UUID;
 
 public record UserResponse(
-        UUID uuid,
+        String uuid,
         Long id,
         String name,
         String email,
-        Integer rewardPoints) implements Serializable {
-    public UserResponse(UUID uuid, Long id, String name, String email) {
-        this(uuid, id, name, email, 0);
-    }
+        String role,
+        Integer rewardPoints
+) implements Serializable {
+
 }

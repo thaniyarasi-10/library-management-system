@@ -8,7 +8,8 @@ import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.S3ClientBuilder;
+
+import java.util.Objects;
 
 @Configuration
 public class S3Config {
@@ -24,18 +25,14 @@ public class S3Config {
 
     @Bean
     public S3Client s3Client() {
-        S3ClientBuilder builder = S3Client.builder()
-                .region(Region.of(region));
+        var credentialsProvider = (Objects.nonNull(accessKey) && !accessKey.isBlank() && Objects.nonNull(secretKey) && !secretKey.isBlank())
+                ? StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+                : DefaultCredentialsProvider.create();
 
-        if (accessKey != null && !accessKey.isBlank() && secretKey != null && !secretKey.isBlank()) {
-            builder.credentialsProvider(StaticCredentialsProvider.create(
-                    AwsBasicCredentials.create(accessKey, secretKey)
-            ));
-        } else {
-            builder.credentialsProvider(DefaultCredentialsProvider.create());
-        }
-
-        return builder.build();
+        return S3Client.builder()
+                .region(Region.of(region))
+                .credentialsProvider(credentialsProvider)
+                .build();
     }
 }
 

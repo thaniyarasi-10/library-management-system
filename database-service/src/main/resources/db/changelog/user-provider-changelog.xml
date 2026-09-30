@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="18-1" author="thani">
+        <createTable tableName="user_provider">
+            <column name="uuid" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="user_uuid" type="varchar(36)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="provider" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="provider_id" type="varchar(255)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="created_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addForeignKeyConstraint baseTableName="user_provider"
+                                 baseColumnNames="user_uuid"
+                                 constraintName="fk_user_provider_user"
+                                 referencedTableName="user"
+                                 referencedColumnNames="uuid"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <changeSet id="18-2" author="thani">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="user" columnName="provider_id"/>
+        </preConditions>
+        <sql>
+            INSERT INTO user_provider (uuid, user_uuid, provider, provider_id, created_at, updated_at)
+            SELECT UUID(), uuid, COALESCE(provider, 'AUTH0'), provider_id, NOW(), NOW()
+            FROM user
+            WHERE provider_id IS NOT NULL AND provider_id != '';
+        </sql>
+    </changeSet>
+
+    <changeSet id="18-3-drop-provider-columns-from-user" author="thani">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="user" columnName="provider_id"/>
+        </preConditions>
+        <dropColumn tableName="user" columnName="provider_id"/>
+        <dropColumn tableName="user" columnName="provider"/>
+    </changeSet>
+
+    <changeSet id="19" author="thani">
+
+        <dropForeignKeyConstraint
+                baseTableName="user_provider"
+                constraintName="fk_user_provider_user"/>
+
+        <modifyDataType
+                tableName="user_provider"
+                columnName="user_uuid"
+                newDataType="CHAR(36)"/>
+
+        <addNotNullConstraint
+                tableName="user_provider"
+                columnName="user_uuid"
+                columnDataType="CHAR(36)"/>
+
+        <addForeignKeyConstraint
+                baseTableName="user_provider"
+                baseColumnNames="user_uuid"
+                referencedTableName="user"
+                referencedColumnNames="uuid"
+                constraintName="fk_user_provider_user"/>
+
+    </changeSet>
+
+</databaseChangeLog>

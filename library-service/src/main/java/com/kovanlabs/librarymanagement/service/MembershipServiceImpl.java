@@ -5,6 +5,7 @@ import com.kovanlabs.librarymanagement.database.entity.Membership;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.MembershipStatus;
 import com.kovanlabs.librarymanagement.database.repository.MembershipRepository;
+import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.dto.MembershipApplicationResponse;
 import com.kovanlabs.librarymanagement.dto.MembershipResponseDto;
@@ -26,8 +27,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.Collections;
-import java.util.Optional;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -43,6 +43,7 @@ public class MembershipServiceImpl implements MembershipService {
 
     private final MembershipRepository membershipRepository;
     private final UserRepository userRepository;
+    private final UserProviderRepository userProviderRepository;
     private final S3Service s3Service;
 
     @Value("${aws.s3.membership.bucket-name}")
@@ -66,6 +67,13 @@ public class MembershipServiceImpl implements MembershipService {
         return s3Service.downloadFileAsString(membershipBucketName, membershipBucketRegion, membershipTemplateKey);
     }
 
+    private User findUserByIdentifier(String identifier) {
+        return userProviderRepository.findByProviderId(identifier)
+                .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
+                .or(() -> userRepository.findByEmail(identifier))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + identifier));
+    }
+
     /**
      * Submits a membership application in PENDING status and returns the populated agreement HTML.
      *
@@ -75,8 +83,7 @@ public class MembershipServiceImpl implements MembershipService {
     @Override
     @Transactional
     public MembershipApplicationResponse applyForMembership(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+        User user = findUserByIdentifier(email);
 
         boolean exists = membershipRepository.existsByUserUuidAndStatusIn(
                 user.getUuid(),
@@ -125,7 +132,7 @@ public class MembershipServiceImpl implements MembershipService {
      */
     @Override
     @Transactional
-    public MembershipResponseDto signAgreement(UUID membershipUuid, MultipartFile file, String email) {
+    public MembershipResponseDto signAgreement(String membershipUuid, MultipartFile file, String email) {
         if (file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Signature file is empty");
         }
@@ -138,8 +145,7 @@ public class MembershipServiceImpl implements MembershipService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Signature file size must not exceed 50KB");
         }
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+        User user = findUserByIdentifier(email);
 
         Membership membership = membershipRepository.findByUuid(membershipUuid)
                 .orElseThrow(
@@ -220,8 +226,7 @@ public class MembershipServiceImpl implements MembershipService {
      */
     @Override
     public MembershipResponseDto getMyMembership(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+        User user = findUserByIdentifier(email);
 
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
@@ -242,8 +247,7 @@ public class MembershipServiceImpl implements MembershipService {
     @Override
     @Transactional
     public MembershipResponseDto cancelMembership(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+        User user = findUserByIdentifier(email);
 
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
@@ -273,9 +277,8 @@ public class MembershipServiceImpl implements MembershipService {
      * @return Formatted HTML agreement
      */
     @Override
-    public String getAgreementHtmlByUuid(UUID membershipUuid, String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+    public String getAgreementHtmlByUuid(String membershipUuid, String email) {
+        User user = findUserByIdentifier(email);
 
         Membership membership = membershipRepository.findByUuid(membershipUuid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership not found"));
@@ -286,9 +289,9 @@ public class MembershipServiceImpl implements MembershipService {
 
         String html = getAgreementTemplate();
         log.info("Fetched template from S3");
-        String membershipIdText = membership.getMembershipId() != null ? membership.getMembershipId().toString()
+        String membershipIdText = Objects.nonNull(membership.getMembershipId()) ? membership.getMembershipId().toString()
                 : "PENDING";
-        String startDateText = membership.getCreatedAt() != null ? membership.getCreatedAt().toLocalDate().toString()
+        String startDateText = Objects.nonNull(membership.getCreatedAt()) ? membership.getCreatedAt().toLocalDate().toString()
                 : LocalDate.now().toString();
 
         return html
@@ -312,8 +315,7 @@ public class MembershipServiceImpl implements MembershipService {
      */
     @Override
     public byte[] downloadAgreementPdf(Long membershipId, String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + email));
+        User user = findUserByIdentifier(email);
 
         Membership membership = membershipRepository.findByMembershipId(membershipId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Membership not found"));
@@ -322,7 +324,7 @@ public class MembershipServiceImpl implements MembershipService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access Denied");
         }
 
-        if (membership.getStatus() != MembershipStatus.ACTIVE || membership.getSignedPdfKey() == null) {
+        if (membership.getStatus() != MembershipStatus.ACTIVE || Objects.isNull(membership.getSignedPdfKey())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Signed PDF is not available yet");
         }
 
@@ -336,17 +338,12 @@ public class MembershipServiceImpl implements MembershipService {
      * @return {@code true} if active and not expired
      */
     @Override
-    public boolean hasActiveMembership(UUID userUuid) {
+    public boolean hasActiveMembership(String userUuid) {
         log.info("Checking active membership for user: {} in DATABASE", userUuid);
-        Optional<Membership> membershipOpt = membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid);
-        if (membershipOpt.isEmpty()) {
-            return false;
-        }
-        Membership membership = membershipOpt.get();
-        boolean isActive = membership.getStatus() == MembershipStatus.ACTIVE;
-        boolean isNotExpired = membership.getExpiryDate() == null
-                || !membership.getExpiryDate().isBefore(LocalDate.now());
-        return isActive && isNotExpired;
+        return membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid)
+                .map(membership -> membership.getStatus() == MembershipStatus.ACTIVE
+                        && (Objects.isNull(membership.getExpiryDate()) || !membership.getExpiryDate().isBefore(LocalDate.now())))
+                .orElse(false);
     }
 
     /**
@@ -355,7 +352,7 @@ public class MembershipServiceImpl implements MembershipService {
      * @param userUuid User UUID
      */
     @CacheEvict(value = "active-memberships", key = "#userUuid")
-    public void evictActiveMembershipCache(UUID userUuid) {
+    public void evictActiveMembershipCache(String userUuid) {
         log.info("Evicting active membership cache for user: {}", userUuid);
     }
 

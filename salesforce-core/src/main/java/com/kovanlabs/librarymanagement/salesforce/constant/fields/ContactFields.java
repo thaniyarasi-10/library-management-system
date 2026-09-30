@@ -10,4 +10,5 @@ public final class ContactFields {
     public static final String EMAIL = "Email";
     public static final String EXTERNAL_USER_UUID = "External_User_UUID__c";
     public static final String LEGACY_USER_ID = "Legacy_User_ID__c";
+    public static final String ROLE = "Role__c";
 }

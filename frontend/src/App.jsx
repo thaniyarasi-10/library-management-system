@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useAuth0 } from '@auth0/auth0-react';
+import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
-  Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw
+  Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
+  User as UserIcon, Edit2
 } from 'lucide-react';
 import './styles.css';
 
@@ -9,16 +12,24 @@ export default function App() {
   // Theme state
   const [theme, setTheme] = useState(localStorage.getItem('athenaeum_theme') || 'dark');
 
-  // Auth state
-  const [authToken, setAuthToken] = useState(localStorage.getItem('athenaeum_token') || '');
+  // Auth0 state
+  const {
+    isAuthenticated,
+    isLoading,
+    user: auth0User,
+    loginWithRedirect,
+    logout,
+    getAccessTokenSilently,
+    error: auth0Error
+  } = useAuth0();
+
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState('');
-  const [authError, setAuthError] = useState('');
-  const [authLoading, setAuthLoading] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [authMode, setAuthMode] = useState('signin');
+  const [signupUsername, setSignupUsername] = useState('');
+  const [signupError, setSignupError] = useState('');
+  const userFetchedRef = useRef(false);
 
   // Navigation
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -59,19 +70,19 @@ export default function App() {
   const [sigPreviewUrl, setSigPreviewUrl] = useState('');
 
   // Modals & Drawers
-  const [activeModal, setActiveModal] = useState(null); // 'createBook', 'editBook', 'uploadCover', 'createUser', 'editUser', 'adminBorrow', 'userBorrow', 'googleToken', 'confirm'
+  const [activeModal, setActiveModal] = useState(null); // 'createBook', 'editBook', 'uploadCover', 'createUser', 'editUser', 'adminBorrow', 'userBorrow', 'confirm'
   const [drawerData, setDrawerData] = useState(null); // { type: 'book'|'member', data: obj }
   const [confirmConfig, setConfirmConfig] = useState({ title: '', message: '', actionBtnText: 'Confirm', onConfirm: null });
 
   // Form models
   const [bookForm, setBookForm] = useState({ id: '', title: '', author: '', isbn: '' });
   const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '' });
+  const [profileForm, setProfileForm] = useState({ name: '', email: '' });
   const [selectedBookForCover, setSelectedBookForCover] = useState({ id: '', title: '' });
   const [coverFile, setCoverFile] = useState(null);
   const [coverPreview, setCoverPreview] = useState('');
   const [adminBorrowSelect, setAdminBorrowSelect] = useState({ memberId: '', bookId: '' });
   const [userBorrowBookId, setUserBorrowBookId] = useState('');
-  const [manualOAuthToken, setManualOAuthToken] = useState('');
 
   // Toasts
   const [toasts, setToasts] = useState([]);
@@ -86,28 +97,20 @@ export default function App() {
     }, 4000);
   };
 
-  // Helper JWT Decoder
-  const parseJwt = (token) => {
-    try {
-      const parts = token.split('.');
-      if (parts.length !== 3) return null;
-      const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
-      return JSON.parse(jsonPayload);
-    } catch (e) {
-      return null;
-    }
-  };
-
-  const fetchApi = async (endpoint, options = {}) => {
+  const fetchApi = useCallback(async (endpoint, options = {}) => {
     const headers = {
       ...(options.headers || {})
     };
-    if (authToken && !headers['Authorization']) {
-      headers['Authorization'] = `Bearer ${authToken}`;
+
+    if (isAuthenticated && !headers['Authorization']) {
+      try {
+        const token = await getAccessTokenSilently();
+        headers['Authorization'] = `Bearer ${token}`;
+      } catch (err) {
+        console.warn('Could not retrieve access token silently:', err);
+      }
     }
+
     if (!(options.body instanceof FormData) && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
     }
@@ -115,9 +118,12 @@ export default function App() {
     try {
       const res = await fetch(`${baseUrl}${endpoint}`, { ...options, headers });
       if (res.status === 401) {
-        handleSignOut();
-        showToast('Session expired, please sign in again', 'error');
+        showToast('Session expired or unauthenticated. Please sign in again.', 'error');
         return { ok: false, status: 401 };
+      }
+      if (res.status === 403) {
+        showToast('Access denied: You lack permission for this action.', 'error');
+        return { ok: false, status: 403 };
       }
 
       const contentType = res.headers.get('content-type');
@@ -135,20 +141,7 @@ export default function App() {
       console.error('API Call Error:', err);
       return { ok: false, status: 0, error: err };
     }
-  };
-
-  // Check URL token parameter on mount (fallback redirect from OAuth)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tokenParam = params.get('token');
-    if (tokenParam) {
-      setAuthToken(tokenParam);
-      localStorage.setItem('athenaeum_token', tokenParam);
-      // Clean query string from browser bar
-      window.history.replaceState({}, document.title, window.location.pathname);
-      showToast('Signed in successfully', 'success');
-    }
-  }, []);
+  }, [isAuthenticated, getAccessTokenSilently]);
 
   // Theme Sync
   useEffect(() => {
@@ -156,38 +149,98 @@ export default function App() {
     localStorage.setItem('athenaeum_theme', theme);
   }, [theme]);
 
-  // Auth Initialization
+  // Auth Initialization and User Sync
   useEffect(() => {
-    if (!authToken) return;
-    localStorage.setItem('athenaeum_token', authToken);
-
-    const jwtPayload = parseJwt(authToken);
-    if (!jwtPayload) {
-      handleSignOut();
+    if (!isAuthenticated) {
+      userFetchedRef.current = false;
       return;
     }
 
-    let role = 'USER';
-    if (jwtPayload.role) {
-      role = jwtPayload.role.replace('ROLE_', '');
-    } else if (jwtPayload.roles && jwtPayload.roles.length > 0) {
-      role = jwtPayload.roles[0].replace('ROLE_', '');
-    }
-    setUserRole(role);
+    if (userFetchedRef.current) return;
+    userFetchedRef.current = true;
 
-    // Load user profile
-    fetchApi('/user/me').then(res => {
+    // Helper to test if a value indicates ADMIN
+    const checkIsAdmin = (claim) => {
+      if (!claim) return false;
+      if (typeof claim === 'string') {
+        const c = claim.toUpperCase().trim();
+        return c === 'ADMIN' || c === 'ROLE_ADMIN' || c.includes('ADMIN');
+      }
+      if (Array.isArray(claim)) {
+        return claim.some(r => typeof r === 'string' && (
+          r.toUpperCase().trim() === 'ADMIN' ||
+          r.toUpperCase().trim() === 'ROLE_ADMIN' ||
+          r.toLowerCase().includes('admin') ||
+          r === 'books:write'
+        ));
+      }
+      return false;
+    };
+
+    // Determine role from all standard Auth0 claim formats
+    const findRoleFromUser = (userObj) => {
+      if (!userObj) return false;
+      const candidates = [
+        userObj['https://library.kovanlabs.com/roles'],
+        userObj['https://library.kovanlabs.com/role'],
+        userObj['roles'],
+        userObj['role'],
+        userObj['permissions'],
+        userObj['user_metadata']?.role,
+        userObj['user_metadata']?.roles,
+        userObj['app_metadata']?.role,
+        userObj['app_metadata']?.roles
+      ];
+      return candidates.some(checkIsAdmin);
+    };
+
+    let isAdmin = findRoleFromUser(auth0User);
+    setUserRole(isAdmin ? 'ADMIN' : 'USER');
+
+    // Also inspect Access Token payload & sync user profile with backend MySQL via GET /user/me
+    const syncUser = async () => {
+      // Check Access Token JWT for roles if ID token didn't have it
+      if (!isAdmin && getAccessTokenSilently) {
+        try {
+          const token = await getAccessTokenSilently();
+          if (token && token.includes('.')) {
+            const decoded = jwtDecode(token);
+            if (findRoleFromUser(decoded)) {
+              isAdmin = true;
+              setUserRole('ADMIN');
+            }
+          }
+        } catch (tokErr) {
+          console.warn('Access token decoding error:', tokErr);
+        }
+      }
+
+      let reqHeaders = {};
+      const pendingUsername = sessionStorage.getItem('auth0_pending_username');
+      if (pendingUsername && pendingUsername.trim()) {
+        reqHeaders['X-User-Username'] = pendingUsername.trim();
+        reqHeaders['X-User-Name'] = pendingUsername.trim();
+      }
+
+      const res = await fetchApi('/user/me', { headers: reqHeaders });
       if (res.ok && res.data) {
         setCurrentUser(res.data);
-      } else {
-        setCurrentUser({ email: jwtPayload.sub || jwtPayload.username || 'User', name: jwtPayload.name || 'User' });
+        sessionStorage.removeItem('auth0_pending_username');
+      } else if (auth0User) {
+        setCurrentUser({
+          email: auth0User.email || '',
+          name: auth0User.name || auth0User.nickname || pendingUsername || 'User'
+        });
+        sessionStorage.removeItem('auth0_pending_username');
       }
-    });
-  }, [authToken]);
+    };
+
+    syncUser();
+  }, [isAuthenticated, auth0User, fetchApi, getAccessTokenSilently]);
 
   // Load Page Data on Change
   useEffect(() => {
-    if (!authToken) return;
+    if (!isAuthenticated) return;
     if (currentPage === 'dashboard') {
       loadDashboard();
     } else if (currentPage === 'books') {
@@ -201,58 +254,14 @@ export default function App() {
     } else if (currentPage === 'membership') {
       loadMembership();
     }
-  }, [currentPage, authToken, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
-
-  // Listen for postMessage from Google OAuth popup
-  useEffect(() => {
-    const handleMessage = (event) => {
-      if (event.data && event.data.type === 'ATHENAEUM_OAUTH_TOKEN' && event.data.token) {
-        setAuthToken(event.data.token);
-        showToast('Signed in with Google successfully', 'success');
-        setActiveModal(null);
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  const handleLoginSubmit = async (e) => {
-    e.preventDefault();
-    setAuthError('');
-    setAuthLoading(true);
-    const res = await fetchApi('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: loginEmail, password: loginPassword })
-    });
-    setAuthLoading(false);
-
-    if (res.ok && res.data && res.data.token) {
-      setAuthToken(res.data.token);
-      showToast('Successfully signed in', 'success');
-    } else {
-      setAuthError(res.data?.message || 'Invalid email address or password.');
-    }
-  };
-
-  const handleGoogleSignIn = () => {
-    const popup = window.open(`${baseUrl}/oauth2/authorization/google`, 'googleOAuth', 'width=500,height=600');
-    setTimeout(() => {
-      try {
-        if (popup && !popup.closed) {
-          setActiveModal('googleToken');
-        }
-      } catch (e) {
-        // Cross-Origin-Opener-Policy can restrict inspecting popup.closed
-      }
-    }, 2500);
-  };
+  }, [currentPage, isAuthenticated, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
 
   const handleSignOut = () => {
-    setAuthToken('');
-    localStorage.removeItem('athenaeum_token');
+    userFetchedRef.current = false;
     setCurrentUser(null);
     setUserRole('');
     setCurrentPage('dashboard');
+    logout({ logoutParams: { returnTo: window.location.origin } });
   };
 
   // Monogram Helper
@@ -325,21 +334,10 @@ export default function App() {
       method: 'POST',
       body: JSON.stringify({ title: bookForm.title, author: bookForm.author, isbn: bookForm.isbn })
     });
-    if (res.ok && res.data) {
-      const createdBook = res.data;
-      if (coverFile && createdBook.id) {
-        const formData = new FormData();
-        formData.append('file', coverFile);
-        await fetchApi(`/books/${createdBook.id}/cover`, {
-          method: 'POST',
-          body: formData
-        });
-      }
+    if (res.ok) {
       showToast('Book created successfully', 'success');
       setActiveModal(null);
       setBookForm({ id: '', title: '', author: '', isbn: '' });
-      setCoverFile(null);
-      setCoverPreview('');
       loadBooks(booksPage, bookSearchQuery);
     } else {
       showToast(res.data?.message || 'Failed to create book', 'error');
@@ -701,8 +699,81 @@ export default function App() {
     setActiveModal('confirm');
   };
 
-  // Render Login Screen if not authenticated
-  if (!authToken) {
+  const handleOpenEditProfile = () => {
+    if (currentUser) {
+      setProfileForm({
+        name: currentUser.name || '',
+        email: currentUser.email || ''
+      });
+      setShowUserDropdown(false);
+      setActiveModal('editProfile');
+    }
+  };
+
+  const handleEditProfileSubmit = async (e) => {
+    e.preventDefault();
+    if (!profileForm.name.trim()) {
+      showToast('Username / Name is required', 'error');
+      return;
+    }
+
+    const payload = {
+      name: profileForm.name.trim(),
+      email: profileForm.email.trim() || (currentUser ? currentUser.email : '')
+    };
+
+    const endpoint = (currentUser && currentUser.id) ? `/user/${currentUser.id}` : '/user/me';
+
+    const res = await fetchApi(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok && res.data) {
+      setCurrentUser(res.data);
+      showToast('Profile updated successfully', 'success');
+      setActiveModal(null);
+    } else {
+      showToast(res.data?.message || 'Failed to update profile', 'error');
+    }
+  };
+
+  // Render loading screen while Auth0 verifies session
+  if (isLoading) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card" style={{ textAlign: 'center', padding: '48px 32px' }}>
+          <div className="auth-brand" style={{ justifyContent: 'center', marginBottom: '24px' }}>
+            <div className="brand-icon">
+              <BookOpen size={28} />
+            </div>
+            <h1 className="brand-title">Padips</h1>
+          </div>
+          <RefreshCw className="animate-spin mb-4" size={32} style={{ margin: '0 auto', color: '#6366f1' }} />
+          <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Authenticating session...</h3>
+          <p style={{ color: '#888', fontSize: '14px' }}>Connecting to Auth0 Identity Provider</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Render Auth0 Login / Signup Screen if not authenticated
+  if (!isAuthenticated) {
+    const handleSignupSubmit = (e) => {
+      if (e) e.preventDefault();
+      if (!signupUsername.trim()) {
+        setSignupError('Please enter a username');
+        return;
+      }
+      setSignupError('');
+      sessionStorage.setItem('auth0_pending_username', signupUsername.trim());
+      loginWithRedirect({
+        authorizationParams: {
+          screen_hint: 'signup'
+        }
+      });
+    };
+
     return (
       <div className="auth-screen">
         <div className="auth-card">
@@ -714,68 +785,135 @@ export default function App() {
             <p className="brand-subtitle">Library Management System</p>
           </div>
 
-          <div className="auth-header">
-            <h2>Sign in to portal</h2>
-            <p>Enter your credentials to access the library dashboard</p>
-          </div>
-
-          {authError && <div className="alert alert-danger">{authError}</div>}
-
-          <button type="button" className="btn btn-google btn-block btn-lg mb-4" onClick={handleGoogleSignIn}>
-            <svg className="google-icon" width="18" height="18" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-            </svg>
-            <span>Sign in with Google</span>
-          </button>
-
-          <div className="auth-divider mb-4">
-            <span>OR</span>
-          </div>
-
-          <form onSubmit={handleLoginSubmit}>
-            <div className="form-group">
-              <label htmlFor="loginEmail" className="form-label">Email address</label>
-              <div className="input-wrapper">
-                <input
-                  type="email"
-                  id="loginEmail"
-                  className="form-input"
-                  placeholder="staff@athenaeum.org"
-                  required
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="loginPassword" className="form-label">Password</label>
-              <div className="input-wrapper password-input-wrapper">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  id="loginPassword"
-                  className="form-input"
-                  placeholder="••••••••"
-                  required
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                />
-                <button type="button" className="btn-toggle-password" onClick={() => setShowPassword(!showPassword)}>
-                  <Shield size={18} />
-                </button>
-              </div>
-            </div>
-
-            <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={authLoading}>
-              <span className="btn-text">{authLoading ? 'Signing in...' : 'Sign in'}</span>
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', marginBottom: '20px' }}>
+            <button
+              type="button"
+              style={{
+                flex: 1,
+                padding: '10px',
+                background: 'none',
+                border: 'none',
+                borderBottom: authMode === 'signin' ? '2px solid var(--accent-primary)' : '2px solid transparent',
+                color: authMode === 'signin' ? 'var(--text-main)' : 'var(--text-muted)',
+                fontWeight: authMode === 'signin' ? 600 : 500,
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+              onClick={() => { setAuthMode('signin'); setSignupError(''); }}
+            >
+              Sign In
             </button>
-          </form>
+            <button
+              type="button"
+              style={{
+                flex: 1,
+                padding: '10px',
+                background: 'none',
+                border: 'none',
+                borderBottom: authMode === 'signup' ? '2px solid var(--accent-primary)' : '2px solid transparent',
+                color: authMode === 'signup' ? 'var(--text-main)' : 'var(--text-muted)',
+                fontWeight: authMode === 'signup' ? 600 : 500,
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+              onClick={() => { setAuthMode('signup'); setSignupError(''); }}
+            >
+              Register (Sign Up)
+            </button>
+          </div>
 
-          <div className="auth-footer">
-            <span>Library Portal</span>
+          <div className="auth-header">
+            <h2>{authMode === 'signin' ? 'Sign in to portal' : 'Create your account'}</h2>
+            <p className="text-muted" style={{ fontSize: '13px' }}>
+              {authMode === 'signin'
+                ? 'Access your library cards, book catalog, and more'
+                : 'Choose a username and register'}
+            </p>
+          </div>
+
+          {auth0Error && (
+            <div className="alert alert-danger mb-4">
+              {auth0Error.message || 'Authentication error occurred'}
+            </div>
+          )}
+
+          {signupError && (
+            <div className="alert alert-danger mb-4" style={{ padding: '8px 12px', fontSize: '13px' }}>
+              {signupError}
+            </div>
+          )}
+
+          {authMode === 'signin' ? (
+            <div>
+              <button
+                type="button"
+                className="btn btn-primary btn-block btn-lg mb-3"
+                onClick={() => loginWithRedirect()}
+              >
+                <span className="btn-text">Sign In</span>
+              </button>
+              <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                  Don't have an account?{' '}
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                    onClick={() => { setAuthMode('signup'); setSignupError(''); }}
+                  >
+                    Register
+                  </button>
+                </span>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSignupSubmit}>
+              <div className="form-group mb-4" style={{ textAlign: 'left' }}>
+                <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                  Username <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-medium)',
+                    background: 'var(--bg-input)',
+                    color: 'var(--text-main)',
+                    fontSize: '14px'
+                  }}
+                  placeholder="e.g. thani"
+                  value={signupUsername}
+                  onChange={(e) => setSignupUsername(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary btn-block btn-lg mb-3"
+              >
+                <span className="btn-text">Continue to Sign Up</span>
+              </button>
+
+              <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                    onClick={() => { setAuthMode('signin'); setSignupError(''); }}
+                  >
+                    Sign In
+                  </button>
+                </span>
+              </div>
+            </form>
+          )}
+
+          <div className="auth-footer" style={{ marginTop: '24px', textAlign: 'center' }}>
           </div>
         </div>
       </div>
@@ -856,11 +994,16 @@ export default function App() {
         </nav>
 
         <div className="sidebar-profile">
-          <div className="user-avatar">{monogram}</div>
-          <div className="user-details">
+          <div className="user-avatar" style={{ cursor: 'pointer' }} onClick={handleOpenEditProfile} title="Edit Profile">
+            {monogram}
+          </div>
+          <div className="user-details" style={{ cursor: 'pointer' }} onClick={handleOpenEditProfile} title="Edit Profile">
             <span className="user-name">{userName}</span>
             <span className="user-role">{userRole === 'ADMIN' ? 'Librarian (Admin)' : 'Member'}</span>
           </div>
+          <button className="btn-signout-icon" onClick={handleOpenEditProfile} title="Edit Profile" style={{ marginRight: '4px' }}>
+            <Edit2 size={16} />
+          </button>
           <button className="btn-signout-icon" onClick={handleSignOut} title="Sign Out">
             <LogOut size={18} />
           </button>
@@ -906,6 +1049,11 @@ export default function App() {
                     <span className="dropdown-user-name">{userName}</span>
                     <span className="dropdown-user-email">{userEmail}</span>
                   </div>
+                  <div className="dropdown-divider"></div>
+                  <button className="dropdown-item" onClick={handleOpenEditProfile} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <UserIcon size={14} />
+                    <span>Edit Profile</span>
+                  </button>
                   <div className="dropdown-divider"></div>
                   <button className="dropdown-item danger" onClick={handleSignOut}>Sign Out</button>
                 </div>
@@ -1024,8 +1172,8 @@ export default function App() {
                 </div>
 
                 <div className="book-card-grid mt-4">
-                  {recentBooks.map((b) => (
-                    <div className="book-card" key={b.id}>
+                  {recentBooks.map((b, idx) => (
+                    <div className="book-card" key={b.id ?? b.uuid ?? b.isbn ?? `recent-${idx}`}>
                       <div className="book-cover-wrap">
                         {b.coverImageUrl ? (
                           <img src={getCoverUrl(b.coverImageUrl)} alt={b.title} className="book-cover-img" />
@@ -1088,8 +1236,8 @@ export default function App() {
                     {books.length === 0 ? (
                       <tr><td colSpan="5" className="empty-cell">No books found in catalog.</td></tr>
                     ) : (
-                      books.map((b) => (
-                        <tr key={b.id}>
+                      books.map((b, idx) => (
+                        <tr key={b.id ?? b.uuid ?? b.isbn ?? `book-${idx}`}>
                           <td>
                             {b.coverImageUrl ? (
                               <img src={getCoverUrl(b.coverImageUrl)} alt={b.title} className="table-thumb-img" />
@@ -1103,6 +1251,7 @@ export default function App() {
                           <td className="text-right">
                             {userRole === 'ADMIN' ? (
                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                <button className="btn btn-secondary btn-sm" title="Upload Cover" onClick={() => { setSelectedBookForCover({ id: b.id, title: b.title }); setActiveModal('uploadCover'); }}>Cover</button>
                                 <button className="btn btn-secondary btn-sm" onClick={() => { setBookForm(b); setActiveModal('editBook'); }}>Edit</button>
                                 <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBook(b.id, b.title)}>Del</button>
                               </div>
@@ -1190,9 +1339,9 @@ export default function App() {
                     {members.length === 0 ? (
                       <tr><td colSpan="5" className="empty-cell">No members found.</td></tr>
                     ) : (
-                      members.map((m) => (
-                        <tr key={m.id}>
-                          <td>#{m.id}</td>
+                      members.map((m, idx) => (
+                        <tr key={m.id ?? m.uuid ?? m.email ?? `member-${idx}`}>
+                          <td>#{m.id || '—'}</td>
                           <td><strong>{m.name || m.username}</strong></td>
                           <td>{m.email}</td>
                           <td>
@@ -1247,14 +1396,14 @@ export default function App() {
                         {adminBorrows.length === 0 ? (
                           <tr><td colSpan="7" className="empty-cell">No active borrows log found.</td></tr>
                         ) : (
-                          adminBorrows.map((b) => {
+                          adminBorrows.map((b, idx) => {
                             const title = b.bookTitle || b.book?.title || 'Untitled Book';
                             const author = b.bookAuthor || b.book?.author || 'Unknown Author';
                             const cover = b.bookCoverImageUrl || b.book?.coverImageUrl;
                             const borrowerName = b.userName || b.userEmail || b.user?.name || b.user?.email || `User #${b.userId || b.userNumericId}`;
                             const isReturned = b.status === 'RETURNED' || !!b.returnedDate || !!b.returnDate;
                             return (
-                              <tr key={b.id}>
+                              <tr key={b.id ?? b.uuid ?? `borrow-admin-${idx}`}>
                                 <td>
                                   {cover ? (
                                     <img src={getCoverUrl(cover)} alt="Cover" className="table-thumb-img" />
@@ -1314,13 +1463,13 @@ export default function App() {
                         {userBorrows.length === 0 ? (
                           <tr><td colSpan="7" className="empty-cell">You have no borrowed books currently.</td></tr>
                         ) : (
-                          userBorrows.map((b) => {
+                          userBorrows.map((b, idx) => {
                             const title = b.bookTitle || b.book?.title || 'Untitled Book';
                             const author = b.bookAuthor || b.book?.author || 'Unknown Author';
                             const cover = b.bookCoverImageUrl || b.book?.coverImageUrl;
                             const isReturned = b.status === 'RETURNED' || !!b.returnedDate || !!b.returnDate;
                             return (
-                              <tr key={b.id}>
+                              <tr key={b.id ?? b.uuid ?? `borrow-user-${idx}`}>
                                 <td>
                                   {cover ? (
                                     <img src={getCoverUrl(cover)} alt="Cover" className="table-thumb-img" />
@@ -1379,8 +1528,8 @@ export default function App() {
                         onChange={(e) => { setSelectedFineMemberId(e.target.value); loadFines(); }}
                       >
                         <option value="">-- All Library Members (All Fines) --</option>
-                        {allMembersForFines.map(m => (
-                          <option key={m.id} value={m.id}>{m.name || m.email} (#{m.id})</option>
+                        {allMembersForFines.map((m, idx) => (
+                          <option key={m.id ?? m.uuid ?? m.email ?? `fine-m-${idx}`} value={m.id || ''}>{m.name || m.email} (#{m.id || '—'})</option>
                         ))}
                       </select>
                     </div>
@@ -1414,13 +1563,13 @@ export default function App() {
                       {fines.length === 0 ? (
                         <tr><td colSpan={userRole === 'ADMIN' ? 6 : 5} className="empty-cell">No fine records found.</td></tr>
                       ) : (
-                        fines.map(f => {
+                        fines.map((f, idx) => {
                           const fineUser = f.userName || f.userEmail || f.user?.name || f.user?.email || `User #${f.userId || f.userNumericId}`;
                           const fineTitle = f.bookTitle || f.borrow?.book?.title || 'Library Title';
                           const fineAuthor = f.bookAuthor || f.borrow?.book?.author || '';
                           return (
-                            <tr key={f.id}>
-                              <td>#{f.id}</td>
+                            <tr key={f.id ?? f.uuid ?? `fine-row-${idx}`}>
+                              <td>#{f.id || '—'}</td>
                               {userRole === 'ADMIN' && <td>{fineUser}</td>}
                               <td><strong>{fineTitle}</strong>{fineAuthor ? <><br /><span className="text-muted">{fineAuthor}</span></> : null}</td>
                               <td><strong>${(f.amount || f.pendingFineAmount || 0).toFixed(2)}</strong></td>
@@ -1593,13 +1742,70 @@ export default function App() {
       </div>
 
       {/* MODALS */}
+      {/* 0. Edit Profile Modal */}
+      {activeModal === 'editProfile' && (
+        <div className="modal-backdrop open">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3>Edit Profile</h3>
+              <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
+            </div>
+            <form onSubmit={handleEditProfileSubmit}>
+              <div className="modal-body">
+                <div className="form-group mb-4">
+                  <label className="form-label">Username / Name <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    required
+                    value={profileForm.name}
+                    onChange={e => setProfileForm({ ...profileForm, name: e.target.value })}
+                    placeholder="Enter your username"
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Email Address</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    value={profileForm.email}
+                    onChange={e => setProfileForm({ ...profileForm, email: e.target.value })}
+                    placeholder="user@example.com"
+                  />
+                  <small className="text-muted" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                    Primary email address for notifications and account identifier.
+                  </small>
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Account Role & Points</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                    <span className="badge badge-primary" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                      {currentUser?.role || userRole}
+                    </span>
+                    {currentUser?.rewardPoints !== undefined && (
+                      <span className="badge badge-warning" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                        🏆 {currentUser.rewardPoints} Reward Points
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* 1. Create Book Modal */}
       {activeModal === 'createBook' && (
         <div className="modal-backdrop open">
           <div className="modal-card">
             <div className="modal-header">
               <h3>Add Book to Inventory</h3>
-              <button className="btn-close" onClick={() => { setActiveModal(null); setCoverFile(null); setCoverPreview(''); }}>&times;</button>
+              <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
             </div>
             <form onSubmit={handleCreateBookSubmit}>
               <div className="modal-body">
@@ -1615,28 +1821,9 @@ export default function App() {
                   <label className="form-label">ISBN Number</label>
                   <input type="text" className="form-input" required value={bookForm.isbn} onChange={e => setBookForm({ ...bookForm, isbn: e.target.value })} />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Cover Image (Optional)</label>
-                  <input
-                    type="file"
-                    className="form-input"
-                    accept="image/*"
-                    onChange={e => {
-                      if (e.target.files && e.target.files[0]) {
-                        setCoverFile(e.target.files[0]);
-                        setCoverPreview(URL.createObjectURL(e.target.files[0]));
-                      }
-                    }}
-                  />
-                  {coverPreview && (
-                    <div style={{ marginTop: '10px', textAlign: 'center' }}>
-                      <img src={coverPreview} alt="Cover Preview" style={{ maxHeight: '100px', borderRadius: '6px', border: '1px solid var(--border-color)' }} />
-                    </div>
-                  )}
-                </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-ghost" onClick={() => { setActiveModal(null); setCoverFile(null); setCoverPreview(''); }}>Cancel</button>
+                <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)}>Cancel</button>
                 <button type="submit" className="btn btn-primary">Save Book</button>
               </div>
             </form>
@@ -1795,8 +1982,8 @@ export default function App() {
                   <label className="form-label">Select Library Member</label>
                   <select className="form-select" required value={adminBorrowSelect.memberId} onChange={e => setAdminBorrowSelect({ ...adminBorrowSelect, memberId: e.target.value })}>
                     <option value="">-- Choose Member --</option>
-                    {allMembersForFines.map(m => (
-                      <option key={m.id} value={m.id}>{m.name || m.email}</option>
+                    {allMembersForFines.map((m, idx) => (
+                      <option key={m.id ?? m.uuid ?? m.email ?? `admin-b-m-${idx}`} value={m.id || ''}>{m.name || m.email}</option>
                     ))}
                   </select>
                 </div>
@@ -1804,8 +1991,8 @@ export default function App() {
                   <label className="form-label">Select Book Title</label>
                   <select className="form-select" required value={adminBorrowSelect.bookId} onChange={e => setAdminBorrowSelect({ ...adminBorrowSelect, bookId: e.target.value })}>
                     <option value="">-- Choose Book --</option>
-                    {books.map(b => (
-                      <option key={b.id} value={b.id}>{b.title}</option>
+                    {books.map((b, idx) => (
+                      <option key={b.id ?? b.uuid ?? b.isbn ?? `admin-b-b-${idx}`} value={b.id || ''}>{b.title}</option>
                     ))}
                   </select>
                 </div>
@@ -1833,8 +2020,8 @@ export default function App() {
                   <label className="form-label">Select Book from Catalog</label>
                   <select className="form-select" required value={userBorrowBookId} onChange={e => setUserBorrowBookId(e.target.value)}>
                     <option value="">-- Choose Book --</option>
-                    {books.map(b => (
-                      <option key={b.id} value={b.id}>{b.title} (by {b.author})</option>
+                    {books.map((b, idx) => (
+                      <option key={b.id ?? b.uuid ?? b.isbn ?? `user-b-${idx}`} value={b.id || ''}>{b.title} (by {b.author})</option>
                     ))}
                   </select>
                 </div>
@@ -1875,51 +2062,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 9. Google OAuth Manual Token Entry Modal */}
-      {activeModal === 'googleToken' && (
-        <div className="modal-backdrop open">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>Complete Google Sign In</h3>
-              <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
-            </div>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              try {
-                const parsed = JSON.parse(manualOAuthToken);
-                if (parsed.token) {
-                  setAuthToken(parsed.token);
-                  showToast('Signed in with Google successfully', 'success');
-                  setActiveModal(null);
-                } else {
-                  showToast('Invalid token format', 'error');
-                }
-              } catch (err) {
-                showToast('Invalid JSON token format', 'error');
-              }
-            }}>
-              <div className="modal-body">
-                <p className="text-subtle mb-4">Paste your token response payload below to enter the dashboard:</p>
-                <div className="form-group">
-                  <label className="form-label">Authentication Token Payload</label>
-                  <textarea
-                    className="form-input"
-                    rows={4}
-                    placeholder='{"token": "eyJhbGci..."}'
-                    required
-                    value={manualOAuthToken}
-                    onChange={e => setManualOAuthToken(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Sign In to Dashboard</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* TOAST NOTIFICATIONS */}
       <div className="toast-container">

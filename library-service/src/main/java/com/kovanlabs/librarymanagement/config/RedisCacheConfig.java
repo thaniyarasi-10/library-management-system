@@ -19,6 +19,7 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.time.Duration;
+import java.util.Objects;
 
 @Configuration
 @Slf4j
@@ -54,25 +55,25 @@ public class RedisCacheConfig implements CachingConfigurer {
                         @Override
                         public void handleCacheGetError(RuntimeException exception, Cache cache, Object key) {
                                 log.warn("Redis Cache GET error on key '{}' in cache '{}'. Falling back to database: {}",
-                                                key, cache != null ? cache.getName() : "unknown", exception.getMessage());
+                                                key, Objects.nonNull(cache) ? cache.getName() : "unknown", exception.getMessage());
                         }
 
                         @Override
                         public void handleCachePutError(RuntimeException exception, Cache cache, Object key, Object value) {
                                 log.warn("Redis Cache PUT error on key '{}' in cache '{}': {}",
-                                                key, cache != null ? cache.getName() : "unknown", exception.getMessage());
+                                                key, Objects.nonNull(cache) ? cache.getName() : "unknown", exception.getMessage());
                         }
 
                         @Override
                         public void handleCacheEvictError(RuntimeException exception, Cache cache, Object key) {
                                 log.warn("Redis Cache EVICT error on key '{}' in cache '{}': {}",
-                                                key, cache != null ? cache.getName() : "unknown", exception.getMessage());
+                                                key, Objects.nonNull(cache) ? cache.getName() : "unknown", exception.getMessage());
                         }
 
                         @Override
                         public void handleCacheClearError(RuntimeException exception, Cache cache) {
                                 log.warn("Redis Cache CLEAR error in cache '{}': {}",
-                                                cache != null ? cache.getName() : "unknown", exception.getMessage());
+                                                Objects.nonNull(cache) ? cache.getName() : "unknown", exception.getMessage());
                         }
                 };
         }

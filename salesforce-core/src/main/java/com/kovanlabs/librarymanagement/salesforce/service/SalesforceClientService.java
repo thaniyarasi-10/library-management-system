@@ -15,6 +15,7 @@ import org.springframework.web.client.RestClient;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Low-level HTTP client service for communicating with Salesforce REST APIs.
@@ -45,8 +46,8 @@ public class SalesforceClientService {
      */
     public boolean isConfigured() {
         return salesforceConfig.isEnabled()
-                && salesforceConfig.getClientId() != null && !salesforceConfig.getClientId().isBlank()
-                && salesforceConfig.getClientSecret() != null && !salesforceConfig.getClientSecret().isBlank();
+                && Objects.nonNull(salesforceConfig.getClientId()) && !salesforceConfig.getClientId().isBlank()
+                && Objects.nonNull(salesforceConfig.getClientSecret()) && !salesforceConfig.getClientSecret().isBlank();
     }
 
     /**
@@ -57,7 +58,7 @@ public class SalesforceClientService {
      *         fails
      */
     public synchronized String getAccessToken() {
-        if (accessToken != null) {
+        if (Objects.nonNull(accessToken)) {
             return accessToken;
         }
         authenticate();
@@ -70,7 +71,7 @@ public class SalesforceClientService {
      * @return The Salesforce base instance URL, or {@code null} if unauthenticated
      */
     public synchronized String getInstanceUrl() {
-        if (instanceUrl != null) {
+        if (Objects.nonNull(instanceUrl)) {
             return instanceUrl;
         }
         authenticate();
@@ -103,7 +104,7 @@ public class SalesforceClientService {
                     })
                     .body(String.class);
 
-            if (responseBody != null && !responseBody.isBlank()) {
+            if (Objects.nonNull(responseBody) && !responseBody.isBlank()) {
                 JsonNode root = objectMapper.readTree(responseBody);
                 this.accessToken = root.path("access_token").asText(null);
                 this.instanceUrl = root.path("instance_url").asText(null);
@@ -114,6 +115,41 @@ public class SalesforceClientService {
             this.accessToken = null;
             this.instanceUrl = null;
         }
+    }
+
+    /**
+     * Re-authenticates with Salesforce by invalidating the current cached session and tokens.
+     */
+    public synchronized void reauthenticate() {
+        this.accessToken = null;
+        this.instanceUrl = null;
+        authenticate();
+    }
+
+    /**
+     * Determines whether an exception indicates an expired session or unauthorized (401) error.
+     *
+     * @param t The throwable to inspect
+     * @return {@code true} if unauthorized/expired, {@code false} otherwise
+     */
+    public static boolean isUnauthorizedOrExpired(Throwable t) {
+        if (Objects.isNull(t)) return false;
+        if (t instanceof org.springframework.web.client.HttpStatusCodeException httpEx) {
+            if (httpEx.getStatusCode().value() == 401) {
+                return true;
+            }
+        }
+        String msg = t.getMessage();
+        if (Objects.nonNull(msg)) {
+            String lower = msg.toLowerCase();
+            if (lower.contains("401") || lower.contains("unauthorized") || lower.contains("invalid_session_id") || lower.contains("session expired")) {
+                return true;
+            }
+        }
+        if (Objects.nonNull(t.getCause()) && t.getCause() != t) {
+            return isUnauthorizedOrExpired(t.getCause());
+        }
+        return false;
     }
 
     /**
@@ -130,31 +166,47 @@ public class SalesforceClientService {
             return null;
         }
         try {
-            String token = getAccessToken();
-            String host = getInstanceUrl();
-            if (token == null || host == null) {
-                log.warn("[SALESFORCE QUERY] Failed to obtain access token or instance URL for SOQL: {}", soql);
-                return null;
-            }
-
-            String uri = host + "/services/data/" + salesforceConfig.getApiVersion() + "/query?q={soql}";
-
-            log.info("[SALESFORCE QUERY] Executing SOQL: {}", soql);
-            String responseBody = restClient.get()
-                    .uri(uri, soql)
-                    .headers(headers -> {
-                        headers.setBearerAuth(token);
-                        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
-                    })
-                    .retrieve()
-                    .body(String.class);
-
-            if (responseBody != null) {
-                return objectMapper.readTree(responseBody);
-            }
+            return executeQuery(soql);
         } catch (Exception e) {
+            if (isUnauthorizedOrExpired(e)) {
+                log.warn("[SALESFORCE AUTH] Session expired or unauthorized for SOQL query. Re-authenticating and retrying...");
+                reauthenticate();
+                try {
+                    return executeQuery(soql);
+                } catch (Exception retryEx) {
+                    log.error("[SALESFORCE QUERY] SOQL query failed after re-authentication [{}]: {}", soql, retryEx.getMessage());
+                    this.accessToken = null;
+                    return null;
+                }
+            }
             log.error("[SALESFORCE QUERY] SOQL query failed [{}]: {}", soql, e.getMessage());
             this.accessToken = null; // reset token on failure
+        }
+        return null;
+    }
+
+    private JsonNode executeQuery(String soql) throws Exception {
+        String token = getAccessToken();
+        String host = getInstanceUrl();
+        if (Objects.isNull(token) || Objects.isNull(host)) {
+            log.warn("[SALESFORCE QUERY] Failed to obtain access token or instance URL for SOQL: {}", soql);
+            return null;
+        }
+
+        String uri = host + "/services/data/" + salesforceConfig.getApiVersion() + "/query?q={soql}";
+
+        log.info("[SALESFORCE QUERY] Executing SOQL: {}", soql);
+        String responseBody = restClient.get()
+                .uri(uri, soql)
+                .headers(headers -> {
+                    headers.setBearerAuth(token);
+                    headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+                })
+                .retrieve()
+                .body(String.class);
+
+        if (Objects.nonNull(responseBody)) {
+            return objectMapper.readTree(responseBody);
         }
         return null;
     }
@@ -177,39 +229,122 @@ public class SalesforceClientService {
             throw new SalesforceSyncException("Salesforce is not configured or disabled");
         }
         try {
-            String token = getAccessToken();
-            String host = getInstanceUrl();
-            if (token == null || host == null) {
-                throw new SalesforceSyncException("Unable to obtain Salesforce access token or instance URL");
-            }
-
-            String uri = host + "/services/data/" + salesforceConfig.getApiVersion()
-                    + "/sobjects/" + sObjectName + "/" + externalIdFieldName + "/" + externalIdValue;
-
-            String requestJson = objectMapper.writeValueAsString(fields);
-
-            restClient.patch()
-                    .uri(uri)
-                    .headers(headers -> {
-                        headers.setBearerAuth(token);
-                        headers.setContentType(MediaType.APPLICATION_JSON);
-                    })
-                    .body(requestJson)
-                    .retrieve()
-                    .toBodilessEntity();
-
+            executeUpsert(sObjectName, externalIdFieldName, externalIdValue, fields);
             log.info("Successfully synced {} (ExternalId: {}) to Salesforce", sObjectName, externalIdValue);
-        } catch (SalesforceSyncException e) {
-            log.error("Failed to sync {} (ExternalId: {}) to Salesforce: {}", sObjectName, externalIdValue,
-                    e.getMessage());
-            this.accessToken = null;
-            throw e;
         } catch (Exception e) {
+            if (isUnauthorizedOrExpired(e)) {
+                log.warn("[SALESFORCE AUTH] Session expired or unauthorized for {} ({}). Re-authenticating and retrying...",
+                        sObjectName, externalIdValue);
+                reauthenticate();
+                try {
+                    executeUpsert(sObjectName, externalIdFieldName, externalIdValue, fields);
+                    log.info("Successfully synced {} (ExternalId: {}) to Salesforce after re-authentication", sObjectName, externalIdValue);
+                    return;
+                } catch (Exception retryEx) {
+                    log.error("Failed to sync {} (ExternalId: {}) to Salesforce after re-authentication: {}",
+                            sObjectName, externalIdValue, retryEx.getMessage());
+                    this.accessToken = null;
+                    if (retryEx instanceof SalesforceSyncException sse) {
+                        throw sse;
+                    }
+                    throw new SalesforceSyncException(
+                            "Failed to sync " + sObjectName + " (" + externalIdValue + ") to Salesforce: " + retryEx.getMessage(), retryEx);
+                }
+            }
             log.error("Failed to sync {} (ExternalId: {}) to Salesforce: {}", sObjectName, externalIdValue,
                     e.getMessage());
             this.accessToken = null;
+            if (e instanceof SalesforceSyncException sse) {
+                throw sse;
+            }
             throw new SalesforceSyncException(
                     "Failed to sync " + sObjectName + " (" + externalIdValue + ") to Salesforce: " + e.getMessage(), e);
         }
+    }
+
+    private void executeUpsert(String sObjectName, String externalIdFieldName, String externalIdValue,
+            Map<String, Object> fields) throws Exception {
+        String token = getAccessToken();
+        String host = getInstanceUrl();
+        if (Objects.isNull(token) || Objects.isNull(host)) {
+            throw new SalesforceSyncException("Unable to obtain Salesforce access token or instance URL");
+        }
+
+        String uri = host + "/services/data/" + salesforceConfig.getApiVersion()
+                + "/sobjects/" + sObjectName + "/" + externalIdFieldName + "/" + externalIdValue;
+
+        String requestJson = objectMapper.writeValueAsString(fields);
+
+        restClient.patch()
+                .uri(uri)
+                .headers(headers -> {
+                    headers.setBearerAuth(token);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body(requestJson)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    /**
+     * Deletes an SObject record in Salesforce using an external ID field (DELETE request).
+     *
+     * @param sObjectName         The API name of the target SObject (e.g. "Contact")
+     * @param externalIdFieldName The API name of the External ID field (e.g. "External_User_UUID__c")
+     * @param externalIdValue     The unique external ID value
+     */
+    public void deleteByExternalId(String sObjectName, String externalIdFieldName, String externalIdValue) {
+        if (!isConfigured()) {
+            throw new SalesforceSyncException("Salesforce is not configured or disabled");
+        }
+        try {
+            executeDelete(sObjectName, externalIdFieldName, externalIdValue);
+            log.info("Successfully deleted {} (ExternalId: {}) from Salesforce", sObjectName, externalIdValue);
+        } catch (Exception e) {
+            if (isUnauthorizedOrExpired(e)) {
+                log.warn("[SALESFORCE AUTH] Session expired or unauthorized for delete {} ({}). Re-authenticating and retrying...",
+                        sObjectName, externalIdValue);
+                reauthenticate();
+                try {
+                    executeDelete(sObjectName, externalIdFieldName, externalIdValue);
+                    log.info("Successfully deleted {} (ExternalId: {}) from Salesforce after re-authentication", sObjectName, externalIdValue);
+                    return;
+                } catch (Exception retryEx) {
+                    log.error("Failed to delete {} (ExternalId: {}) from Salesforce after re-authentication: {}",
+                            sObjectName, externalIdValue, retryEx.getMessage());
+                    this.accessToken = null;
+                    if (retryEx instanceof SalesforceSyncException sse) {
+                        throw sse;
+                    }
+                    throw new SalesforceSyncException(
+                            "Failed to delete " + sObjectName + " (" + externalIdValue + ") from Salesforce: " + retryEx.getMessage(), retryEx);
+                }
+            }
+            log.error("Failed to delete {} (ExternalId: {}) from Salesforce: {}", sObjectName, externalIdValue,
+                    e.getMessage());
+            this.accessToken = null;
+            if (e instanceof SalesforceSyncException sse) {
+                throw sse;
+            }
+            throw new SalesforceSyncException(
+                    "Failed to delete " + sObjectName + " (" + externalIdValue + ") from Salesforce: " + e.getMessage(), e);
+        }
+    }
+
+    private void executeDelete(String sObjectName, String externalIdFieldName, String externalIdValue) {
+        String token = getAccessToken();
+        String host = getInstanceUrl();
+        if (Objects.isNull(token) || Objects.isNull(host)) {
+            throw new SalesforceSyncException("Unable to obtain Salesforce access token or instance URL");
+        }
+
+        String uri = host + "/services/data/" + salesforceConfig.getApiVersion()
+                + "/sobjects/" + sObjectName + "/" + externalIdFieldName + "/" + externalIdValue;
+
+        restClient.delete()
+                .uri(uri)
+                .headers(headers -> headers.setBearerAuth(token))
+                .retrieve()
+                .toBodilessEntity();
     }
 }

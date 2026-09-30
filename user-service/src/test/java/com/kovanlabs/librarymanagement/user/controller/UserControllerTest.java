@@ -1,6 +1,8 @@
 package com.kovanlabs.librarymanagement.user.controller;
 
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import com.kovanlabs.librarymanagement.user.service.UserService;
@@ -15,14 +17,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.server.ResponseStatusException;
-
+import java.security.Principal;
 import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -36,16 +39,16 @@ class UserControllerTest {
     private UserController userController;
 
     private MockMvc mockMvc;
-    private UUID uuid1;
-    private UUID uuid2;
+    private String uuid1;
+    private String uuid2;
     private Long id1;
     private Long id2;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(userController).build();
-        uuid1 = UUID.randomUUID();
-        uuid2 = UUID.randomUUID();
+        uuid1 = UUID.randomUUID().toString();
+        uuid2 = UUID.randomUUID().toString();
         id1 = 1L;
         id2 = 2L;
     }
@@ -53,8 +56,8 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /user with default query params should return 200 OK and PagedResponse")
     void getAllUsers_WithDefaultParams_ShouldReturnPagedUsers() throws Exception {
-        UserResponse u1 = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
-        UserResponse u2 = new UserResponse(uuid2, id2, "Bob", "bob@example.com", 0);
+        UserResponse u1 = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        UserResponse u2 = new UserResponse(uuid2, id2, "Bob", "bob@example.com", "USER", 0);
         PagedResponse<UserResponse> pagedResponse = new PagedResponse<>(
                 List.of(u1, u2), 0, 10, 2L, 1, true
         );
@@ -79,14 +82,13 @@ class UserControllerTest {
     @Test
     @DisplayName("PUT /user/{id} with valid payload should return 200 OK and updated UserResponse")
     void updateUser_WithValidPayload_ShouldReturnUpdatedUser() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice Updated", "updated@example.com", 0);
+        UserResponse response = new UserResponse(uuid1, id1, "Alice Updated", "updated@example.com", "USER", 0);
 
         when(userService.updateUser(eq(id1), any(UserRequest.class))).thenReturn(response);
 
         String jsonPayload = """
                 {
                     "email": "updated@example.com",
-                    "password": "password123",
                     "name": "Alice Updated"
                 }
                 """;
@@ -115,18 +117,17 @@ class UserControllerTest {
     @Test
     @DisplayName("POST /user should create and return user")
     void createUser_ShouldReturnCreatedUser() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
         when(userService.createUser(any(UserRequest.class))).thenReturn(response);
 
         String jsonPayload = """
                 {
                     "email": "alice@example.com",
-                    "password": "Password123!",
                     "name": "Alice"
                 }
                 """;
 
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/user")
+        mockMvc.perform(post("/user")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(jsonPayload))
                 .andExpect(status().isCreated())
@@ -136,7 +137,7 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /user/{id} should return user by id")
     void getUserById_ShouldReturnUser() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
         when(userService.getUserById(id1)).thenReturn(response);
 
         mockMvc.perform(get("/user/" + id1))
@@ -147,7 +148,7 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /user/search should return paged users")
     void searchUsers_ShouldReturnPagedUsers() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
         PagedResponse<UserResponse> pagedResponse = new PagedResponse<>(
                 List.of(response), 0, 10, 1L, 1, true
         );
@@ -161,14 +162,31 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /user/me should return current user profile")
     void getCurrentUser_ShouldReturnProfile() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", 0);
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
         java.security.Principal mockPrincipal = mock(java.security.Principal.class);
-        when(mockPrincipal.getName()).thenReturn("alice@example.com");
-        when(userService.getUserByEmail("alice@example.com")).thenReturn(response);
+        when(userService.getCurrentUser(mockPrincipal)).thenReturn(response);
 
         mockMvc.perform(get("/user/me").principal(mockPrincipal))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Alice"))
                 .andExpect(jsonPath("$.email").value("alice@example.com"));
+
+        verify(userService).getCurrentUser(mockPrincipal);
+    }
+
+    @Test
+    @DisplayName("PATCH /user/{id}/role should update and return user profile")
+    void updateUserRole_ShouldReturnUpdatedProfile() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "ADMIN", 0);
+        when(userService.updateUserRole(eq(id1), eq(RoleEnum.ADMIN)))
+                .thenReturn(response);
+
+        mockMvc.perform(patch("/user/" + id1 + "/role")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\": \"ADMIN\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"));
+
+        verify(userService).updateUserRole(id1, RoleEnum.ADMIN);
     }
 }

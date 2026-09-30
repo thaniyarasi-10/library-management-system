@@ -30,9 +30,9 @@ class NotificationSchedulerTest {
         private SqsNotificationProducer sqsNotificationProducer;
         private FineService fineService;
         private NotificationScheduler scheduler;
-        private UUID userUuid;
-        private UUID bookUuid;
-        private UUID borrowUuid;
+        private String userUuid;
+        private String bookUuid;
+        private String borrowUuid;
 
         @BeforeEach
         void setUp() {
@@ -42,9 +42,9 @@ class NotificationSchedulerTest {
 
                 scheduler = new NotificationScheduler(borrowRepository, sqsNotificationProducer, fineService);
 
-                userUuid = UUID.randomUUID();
-                bookUuid = UUID.randomUUID();
-                borrowUuid = UUID.randomUUID();
+                userUuid = UUID.randomUUID().toString();
+                bookUuid = UUID.randomUUID().toString();
+                borrowUuid = UUID.randomUUID().toString();
         }
 
         @Test

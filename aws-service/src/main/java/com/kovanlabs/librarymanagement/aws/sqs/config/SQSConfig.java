@@ -8,7 +8,8 @@ import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
-import software.amazon.awssdk.services.sqs.SqsClientBuilder;
+
+import java.util.Objects;
 
 @Configuration
 public class SQSConfig {
@@ -24,18 +25,14 @@ public class SQSConfig {
 
     @Bean
     public SqsClient sqsClient() {
-        SqsClientBuilder builder = SqsClient.builder()
-                .region(Region.of(region));
+        var credentialsProvider = (Objects.nonNull(accessKey) && !accessKey.isBlank() && Objects.nonNull(secretKey) && !secretKey.isBlank())
+                ? StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
+                : DefaultCredentialsProvider.create();
 
-        if (accessKey != null && !accessKey.isBlank() && secretKey != null && !secretKey.isBlank()) {
-            builder.credentialsProvider(StaticCredentialsProvider.create(
-                    AwsBasicCredentials.create(accessKey, secretKey)
-            ));
-        } else {
-            builder.credentialsProvider(DefaultCredentialsProvider.create());
-        }
-
-        return builder.build();
+        return SqsClient.builder()
+                .region(Region.of(region))
+                .credentialsProvider(credentialsProvider)
+                .build();
     }
 }
 

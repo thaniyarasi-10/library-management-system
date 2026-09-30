@@ -18,13 +18,14 @@ import org.mapstruct.factory.Mappers;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
  * MapStruct mapper for Borrow entity conversions, DTO transformations,
  * and Salesforce Borrow SObject mappings using static INSTANCE.
  */
-@Mapper(imports = { LocalDate.class, BorrowStatus.class, SObject.class, SObjectAttributes.class })
+@Mapper(imports = { LocalDate.class, BorrowStatus.class, SObject.class, SObjectAttributes.class, Objects.class })
 public interface BorrowMapper {
 
     BorrowMapper INSTANCE = Mappers.getMapper(BorrowMapper.class);
@@ -76,6 +77,8 @@ public interface BorrowMapper {
     @Mapping(target = "rewardProcessed", ignore = true)
     @Mapping(target = "salesforceSyncStatus", ignore = true)
     @Mapping(target = "salesforceRetryCount", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
     Borrow mapToEntity(BorrowRequestDto request, Book book, User user);
 
     // --- DTO <-> SObject (Salesforce Models) ---
@@ -91,6 +94,24 @@ public interface BorrowMapper {
     BorrowSObject toBorrowSObject(BorrowResponseDto dto);
 
     /**
+     * Converts a {@link Borrow} entity to a {@link BorrowSObject} model.
+     *
+     * @param borrow The Borrow entity
+     * @return The mapped {@link BorrowSObject}
+     */
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.BORROW.getObjectName()).build())")
+    @Mapping(target = "externalBorrowUuid", source = "uuid")
+    @Mapping(target = "borrowDate", source = "borrowDate")
+    @Mapping(target = "dueDate", source = "dueDate")
+    @Mapping(target = "returnDate", source = "returnedDate")
+    @Mapping(target = "borrowStatus", source = "status")
+    @Mapping(target = "contact", source = "user")
+    @Mapping(target = "book", source = "book")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "errors", ignore = true)
+    BorrowSObject toBorrowSObject(Borrow borrow);
+
+    /**
      * Maps a {@link BorrowResponseDto} to a nested {@link ContactSObject}.
      *
      * @param dto The borrow response DTO
@@ -102,6 +123,22 @@ public interface BorrowMapper {
     @Mapping(target = "lastName", source = "userName")
     @Mapping(target = "email", source = "userEmail")
     ContactSObject toContactSObject(BorrowResponseDto dto);
+
+    /**
+     * Maps a {@link User} entity to a nested {@link ContactSObject}.
+     *
+     * @param user The user entity
+     * @return The mapped {@link ContactSObject}
+     */
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.CONTACT.getObjectName()).build())")
+    @Mapping(target = "externalUserUuid", source = "uuid")
+    @Mapping(target = "legacyUserId", source = "id")
+    @Mapping(target = "lastName", expression = "java((Objects.nonNull(user.getName()) && !user.getName().isBlank()) ? user.getName() : \"User\")")
+    @Mapping(target = "email", source = "email")
+    @Mapping(target = "role", expression = "java(Objects.nonNull(user.getRole()) ? user.getRole().name() : null)")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "errors", ignore = true)
+    ContactSObject toContactSObject(User user);
 
     /**
      * Maps a {@link BorrowResponseDto} to a nested {@link BookSObject}.
@@ -119,17 +156,34 @@ public interface BorrowMapper {
     BookSObject toBookSObject(BorrowResponseDto dto);
 
     /**
+     * Maps a {@link Book} entity to a nested {@link BookSObject}.
+     *
+     * @param book The book entity
+     * @return The mapped {@link BookSObject}
+     */
+    @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.BOOK.getObjectName()).build())")
+    @Mapping(target = "externalBookUuid", source = "uuid")
+    @Mapping(target = "name", expression = "java((Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "title", expression = "java((Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank()) ? book.getTitle() : \"Untitled\")")
+    @Mapping(target = "author", source = "author")
+    @Mapping(target = "isbn", source = "isbn")
+    @Mapping(target = "coverImageUrl", source = "coverImageUrl")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "errors", ignore = true)
+    BookSObject toBookSObject(Book book);
+
+    /**
      * Maps a Salesforce {@link BorrowSObject} to a {@link BorrowResponseDto}.
      *
      * @param sObject The borrow SObject
      * @return The mapped {@link BorrowResponseDto}
      */
-    @Mapping(target = "borrowUuid", source = "externalBorrowUuid", qualifiedByName = "parseUUID")
+    @Mapping(target = "borrowUuid", source = "externalBorrowUuid")
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "userId", source = "contact.externalUserUuid", qualifiedByName = "parseUUID")
+    @Mapping(target = "userId", source = "contact.externalUserUuid")
     @Mapping(target = "userName", source = "contact.lastName")
     @Mapping(target = "userEmail", source = "contact.email")
-    @Mapping(target = "bookId", source = "book.externalBookUuid", qualifiedByName = "parseUUID")
+    @Mapping(target = "bookId", source = "book.externalBookUuid")
     @Mapping(target = "bookNumericId", ignore = true)
     @Mapping(target = "bookTitle", source = "book", qualifiedByName = "resolveBookTitle")
     @Mapping(target = "bookAuthor", source = "book.author")
@@ -161,26 +215,9 @@ public interface BorrowMapper {
      */
     @Named("resolveBookTitle")
     default String resolveBookTitle(BookSObject book) {
-        if (book == null)
-            return null;
-        return (book.getTitle() != null && !book.getTitle().isBlank()) ? book.getTitle() : book.getName();
-    }
-
-    /**
-     * Safely parses a UUID string into a {@link UUID}.
-     *
-     * @param str The UUID string
-     * @return Parsed {@link UUID} or {@code null}
-     */
-    @Named("parseUUID")
-    default UUID parseUUID(String str) {
-        if (str == null || str.isBlank())
-            return null;
-        try {
-            return UUID.fromString(str);
-        } catch (Exception e) {
-            return null;
-        }
+        return Objects.isNull(book)
+                ? null
+                : ((Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank()) ? book.getTitle() : book.getName());
     }
 
     /**
@@ -191,7 +228,7 @@ public interface BorrowMapper {
      */
     @Named("parseLocalDate")
     default LocalDate parseLocalDate(String str) {
-        if (str == null || str.isBlank())
+        if (Objects.isNull(str) || str.isBlank())
             return null;
         try {
             return LocalDate.parse(str);
@@ -208,7 +245,7 @@ public interface BorrowMapper {
      */
     @Named("parseBorrowStatus")
     default BorrowStatus parseBorrowStatus(String statusStr) {
-        if (statusStr == null || statusStr.isBlank())
+        if (Objects.isNull(statusStr) || statusStr.isBlank())
             return null;
         try {
             return BorrowStatus.valueOf(statusStr);

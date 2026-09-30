@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.dto.BorrowResponseDto;
 import com.kovanlabs.librarymanagement.service.BorrowService;
@@ -49,8 +50,8 @@ class BorrowControllerTest {
         BorrowRequestDto request = new BorrowRequestDto(bookId, userId);
         BorrowResponseDto response = BorrowResponseDto.builder()
                 .id(1L)
-                .borrowUuid(UUID.randomUUID())
-                .status(com.kovanlabs.librarymanagement.database.enums.BorrowStatus.BORROWED)
+                .borrowUuid(UUID.randomUUID().toString())
+                .status(BorrowStatus.BORROWED)
                 .build();
 
         when(borrowService.borrowBook(any(BorrowRequestDto.class))).thenReturn(response);
@@ -67,7 +68,7 @@ class BorrowControllerTest {
     void returnBook_shouldReturnUpdatedBorrowResponse() throws Exception {
         BorrowResponseDto response = BorrowResponseDto.builder()
                 .id(1L)
-                .borrowUuid(UUID.randomUUID())
+                .borrowUuid(UUID.randomUUID().toString())
                 .status(com.kovanlabs.librarymanagement.database.enums.BorrowStatus.RETURNED)
                 .build();
 

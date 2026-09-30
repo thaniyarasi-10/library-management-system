@@ -10,6 +10,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.util.Objects;
 
 @Slf4j
 @Component
@@ -29,7 +30,7 @@ public class BookReturnedEventListener {
         LocalDate dueDate = borrow.getDueDate();
         LocalDate returnedDate = borrow.getReturnedDate();
 
-        if (returnedDate != null && dueDate != null && returnedDate.isAfter(dueDate)) {
+        if (Objects.nonNull(returnedDate) && Objects.nonNull(dueDate) && returnedDate.isAfter(dueDate)) {
             log.info("Book return is overdue (dueDate: {}, returnedDate: {}). Processing fine for borrowId: {}", dueDate, returnedDate, event.borrowId());
             fineService.processFineForBorrow(borrow);
         } else {

@@ -2,7 +2,6 @@ package com.kovanlabs.librarymanagement.salesforce.model.sobjects;
 
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
@@ -14,6 +13,7 @@ import lombok.experimental.SuperBuilder;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Base class for all Salesforce SObjects containing common Salesforce API response fields,
@@ -49,7 +49,7 @@ public class SObjectBase {
      */
     @JsonAnySetter
     public void setAdditionalAttribute(String key, Object value) {
-        if (additionalAttributes == null) {
+        if (Objects.isNull(additionalAttributes)) {
             additionalAttributes = new HashMap<>();
         }
         additionalAttributes.put(key, value);

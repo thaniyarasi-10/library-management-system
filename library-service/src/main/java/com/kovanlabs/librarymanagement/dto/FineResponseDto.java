@@ -3,21 +3,19 @@ package com.kovanlabs.librarymanagement.dto;
 import com.kovanlabs.librarymanagement.database.enums.FineStatus;
 import lombok.Builder;
 
-import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Builder
 public record FineResponseDto(
-        UUID uuid,
+        String uuid,
         Long id,
-        UUID bookUuid,
+        String bookUuid,
         Long bookNumericId,
         String bookTitle,
         String bookAuthor,
         String bookCoverImageUrl,
-        UUID userUuid,
+        String userUuid,
         Long userNumericId,
         String userName,
         String userEmail,
@@ -26,10 +24,5 @@ public record FineResponseDto(
         FineStatus status,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
-) implements Serializable {
-    public FineResponseDto(UUID uuid, Long id, UUID bookUuid, UUID userUuid, BigDecimal pendingFineAmount,
-                           FineStatus status, LocalDateTime createdAt, LocalDateTime updatedAt) {
-        this(uuid, id, bookUuid, null, null, null, null, userUuid, null, null, null, pendingFineAmount, pendingFineAmount, status, createdAt, updatedAt);
-    }
-}
+) {}
 
