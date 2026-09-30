@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.authentication.service;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.Objects;
@@ -9,6 +10,9 @@ import java.util.Objects;
  */
 @Component
 public class Auth0UrlHelper {
+
+    @Value("${auth0.domain}")
+    private String defaultDomain;
 
     /**
      * Resolves the full /userinfo endpoint URL given optional explicit URL and token issuer URL.
@@ -34,7 +38,7 @@ public class Auth0UrlHelper {
      */
     public String normalizeDomain(String rawDomain) {
         if (Objects.isNull(rawDomain)) {
-            return "dev-etrfpmdm1sjiuggl.us.auth0.com";
+            return defaultDomain;
         }
         String d = rawDomain.trim();
         String withoutProtocol = d.startsWith("https://")
@@ -45,6 +49,6 @@ public class Auth0UrlHelper {
         String clean = withoutProtocol.endsWith("/")
                 ? withoutProtocol.substring(0, withoutProtocol.length() - 1)
                 : withoutProtocol;
-        return clean.isBlank() ? "dev-etrfpmdm1sjiuggl.us.auth0.com" : clean;
+        return clean.isBlank() ? defaultDomain  : clean;
     }
 }

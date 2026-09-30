@@ -11,9 +11,9 @@ import org.springframework.context.annotation.Configuration;
 @Setter
 public class Auth0Properties {
 
-    private String domain = "dev-default.us.auth0.com";
+    private String domain;
 
-    private String audience = "https://library-api.kovanlabs.com";
+    private String audience;
 
-    private String rolesClaim = "https://library.kovanlabs.com/roles";
+    private String rolesClaim;
 }
