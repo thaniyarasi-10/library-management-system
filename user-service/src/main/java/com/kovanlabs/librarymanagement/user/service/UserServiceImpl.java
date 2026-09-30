@@ -436,13 +436,18 @@ public class UserServiceImpl implements UserService {
 
         // 2. Lookup by raw provider ID if sub has a provider prefix (e.g. sub =
         // "google-oauth2|115993863360458947065", raw = "115993863360458947065")
-        if (sub.contains("|")) {
-            String rawId = sub.substring(sub.indexOf('|') + 1);
+        if (Objects.nonNull(sub) && sub.contains("|")) {
+            int firstPipeIndex = sub.indexOf('|');
+            int lastPipeIndex = sub.lastIndexOf('|');
+            String rawId = (firstPipeIndex >= 0 && firstPipeIndex < sub.length() - 1)
+                    ? sub.substring(firstPipeIndex + 1).trim()
+                    : "";
+
             if (!rawId.isBlank()) {
                 var rawProviderOpt = userProviderRepository.findByProviderId(rawId);
-                if (rawProviderOpt.isEmpty() && sub.lastIndexOf('|') != sub.indexOf('|')) {
-                    String lastRawId = sub.substring(sub.lastIndexOf('|') + 1);
-                    if (!lastRawId.isBlank()) {
+                if (rawProviderOpt.isEmpty() && lastPipeIndex > firstPipeIndex && lastPipeIndex < sub.length() - 1) {
+                    String lastRawId = sub.substring(lastPipeIndex + 1).trim();
+                    if (!lastRawId.isBlank() && !lastRawId.equals(rawId)) {
                         rawProviderOpt = userProviderRepository.findByProviderId(lastRawId);
                     }
                 }

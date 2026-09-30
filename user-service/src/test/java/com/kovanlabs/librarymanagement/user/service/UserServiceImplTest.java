@@ -440,6 +440,18 @@ class UserServiceImplTest {
     }
 
     @Test
+    void syncAuth0User_whenSubHasUnexpectedPipeFormat_shouldFallbackToEmailGracefully() {
+        // sub ends with pipe, no rawId
+        when(userProviderRepository.findByProviderId("auth0|")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(user1));
+
+        User result = userService.syncAuth0User("auth0|", "test@example.com", "Test", RoleEnum.USER);
+        assertNotNull(result);
+        assertEquals(user1.getUuid(), result.getUuid());
+        verify(userProviderRepository).save(argThat(up -> "auth0|".equals(up.getProviderId())));
+    }
+
+    @Test
     void syncAuth0User_whenNewUserAndEmailMissing_shouldThrowException() {
         when(userProviderRepository.findByProviderId("auth0|new-no-email")).thenReturn(Optional.empty());
         assertThrows(IllegalArgumentException.class,
