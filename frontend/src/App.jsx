@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
+import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
@@ -203,8 +204,7 @@ export default function App() {
         try {
           const token = await getAccessTokenSilently();
           if (token && token.includes('.')) {
-            const payloadBase64 = token.split('.')[1];
-            const decoded = JSON.parse(atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/')));
+            const decoded = jwtDecode(token);
             if (findRoleFromUser(decoded)) {
               isAdmin = true;
               setUserRole('ADMIN');

@@ -12,6 +12,7 @@ import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -21,7 +22,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Collections;
 
-import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -40,7 +40,7 @@ public class BorrowServiceImpl implements BorrowService {
     private final UserProviderRepository userProviderRepository;
     private final UserFineChecker userFineChecker;
     private final MembershipService membershipService;
-    private final SalesforceSyncImpl salesforceSyncService;
+    private final SalesforceSync salesforceSyncService;
 
     /**
      * Validates membership status and pending fines, persists borrow record, and syncs with Salesforce.
