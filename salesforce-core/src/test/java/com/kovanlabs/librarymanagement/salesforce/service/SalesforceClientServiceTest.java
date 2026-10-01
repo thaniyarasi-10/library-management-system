@@ -411,4 +411,38 @@ class SalesforceClientServiceTest {
         assertThrows(SalesforceSyncException.class,
                 () -> clientService.upsertByExternalId("Book__c", "External_Book_UUID__c", "uuid-123", Map.of("Name", "Book")));
     }
+
+    @Test
+    void query_whenUnauthorizedAndRetryFails_returnsNull() {
+        mockValidConfig();
+        mockSuccessfulAuth();
+
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/query?q=SELECT%20Name%20FROM%20Book__c"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED));
+
+        String authResponseBody = "{\"access_token\":\"new-mock-access-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
+        mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(authResponseBody, MediaType.APPLICATION_JSON));
+
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/query?q=SELECT%20Name%20FROM%20Book__c"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withServerError());
+
+        JsonNode result = clientService.query("SELECT Name FROM Book__c");
+
+        assertNull(result);
+        mockServer.verify();
+    }
+
+    @Test
+    void isUnauthorizedOrExpired_tests() {
+        assertFalse(SalesforceClientService.isUnauthorizedOrExpired(null));
+        assertTrue(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException("invalid_session_id expired")));
+        assertTrue(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException(new RuntimeException("session expired"))));
+        assertFalse(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException("random error")));
+    }
 }

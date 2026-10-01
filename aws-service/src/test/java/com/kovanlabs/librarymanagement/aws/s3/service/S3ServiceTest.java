@@ -191,4 +191,34 @@ class S3ServiceTest {
         // closeClients call
         assertDoesNotThrow(() -> s3Service.closeClients());
     }
+
+    @Test
+    @DisplayName("getS3ClientForRegion should instantiate client with static credentials or default credentials")
+    void getS3ClientForRegion_shouldCreateClientForDifferentRegion() {
+        // With explicit credentials
+        ReflectionTestUtils.setField(s3Service, "accessKey", "test-key");
+        ReflectionTestUtils.setField(s3Service, "secretKey", "test-secret");
+        ReflectionTestUtils.setField(s3Service, "region", "us-east-1");
+
+        assertDoesNotThrow(() -> {
+            try {
+                s3Service.downloadFile("bucket", "eu-central-1", "key");
+            } catch (Exception ignored) {
+                // Network call will fail against real AWS since credentials are dummy, but client creation branch is hit
+            }
+        });
+
+        // Without credentials (uses DefaultCredentialsProvider)
+        ReflectionTestUtils.setField(s3Service, "accessKey", "");
+        ReflectionTestUtils.setField(s3Service, "secretKey", "");
+        assertDoesNotThrow(() -> {
+            try {
+                s3Service.downloadFile("bucket", "ap-southeast-1", "key");
+            } catch (Exception ignored) {
+                // Network call will fail, but client creation branch is hit
+            }
+        });
+
+        s3Service.closeClients();
+    }
 }

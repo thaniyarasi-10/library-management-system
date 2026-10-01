@@ -343,7 +343,6 @@ class MembershipServiceImplTest {
         com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
                 .userUuid(userUuid)
                 .build();
-        when(userRepository.findByEmail(providerId)).thenReturn(Optional.empty());
         when(userProviderRepository.findByProviderId(providerId)).thenReturn(Optional.of(up));
         when(userRepository.findByUuid(userUuid)).thenReturn(Optional.of(user));
 

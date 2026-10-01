@@ -21,6 +21,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.*;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -1001,5 +1002,135 @@ class UserServiceImplTest {
 
         assertNotNull(created);
         verify(salesforceSyncDelegate, never()).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("syncAuth0User when raw provider exists but user missing in DB should throw 404")
+    void syncAuth0User_whenRawProviderFoundButUserMissing_shouldThrowNotFound() {
+        String sub = "google-oauth2|999888777";
+        UserProvider rawProvider = UserProvider.builder()
+                .providerId("999888777")
+                .provider(AuthProvider.AUTH0)
+                .userUuid("missing-uuid-123")
+                .build();
+
+        when(userProviderRepository.findByProviderId(sub)).thenReturn(Optional.empty());
+        when(userProviderRepository.findByProviderId("999888777")).thenReturn(Optional.of(rawProvider));
+        when(userRepository.findByUuid("missing-uuid-123")).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                userService.syncAuth0User(sub, "missing@example.com", "Missing", RoleEnum.USER));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("User not found for raw providerId: 999888777"));
+    }
+
+    @Test
+    @DisplayName("syncAuth0User when sub has multiple pipe characters should parse last raw ID")
+    void syncAuth0User_whenSubHasMultiplePipes_shouldTryLastRawId() {
+        String sub = "provider|subprefix|unique123";
+        UserProvider rawProvider = UserProvider.builder()
+                .providerId("unique123")
+                .provider(AuthProvider.AUTH0)
+                .userUuid(user1.getUuid())
+                .build();
+
+        when(userProviderRepository.findByProviderId(sub)).thenReturn(Optional.empty());
+        when(userProviderRepository.findByProviderId("subprefix|unique123")).thenReturn(Optional.empty());
+        when(userProviderRepository.findByProviderId("unique123")).thenReturn(Optional.of(rawProvider));
+        when(userRepository.findByUuid(user1.getUuid())).thenReturn(Optional.of(user1));
+
+        User result = userService.syncAuth0User(sub, "alice@example.com", "Alice Smith", RoleEnum.USER);
+
+        assertNotNull(result);
+        assertEquals(user1.getUuid(), result.getUuid());
+        verify(userProviderRepository).save(argThat(up -> sub.equals(up.getProviderId())));
+    }
+
+    @Test
+    @DisplayName("getCurrentUser when JWT role claim specifies USER or ROLE_USER should extract RoleEnum.USER")
+    void getCurrentUser_whenJwtHasUserRole_shouldAssignRoleUser() {
+        Jwt jwt = Jwt.withTokenValue("mock-jwt-user")
+                .header("alg", "none")
+                .claim("sub", "auth0|user-role-test")
+                .claim("email", "user-role@example.com")
+                .claim("name", "Standard User")
+                .claim("roles", List.of("ROLE_USER"))
+                .build();
+
+        JwtAuthenticationToken jwtAuth = new JwtAuthenticationToken(
+                jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        when(userProviderRepository.findByProviderId("auth0|user-role-test")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("user-role@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(20L);
+            u.setUuid(UUID.randomUUID().toString());
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.getCurrentUser(jwtAuth);
+
+        assertNotNull(response);
+        assertEquals("USER", response.role());
+    }
+
+    @Test
+    @DisplayName("getAllUsers with duplicate reward records should handle map merge gracefully")
+    void getAllUsers_withDuplicateRewardRecords_shouldMergePoints() {
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenThrow(new RuntimeException("SF down"));
+
+        com.kovanlabs.librarymanagement.database.entity.Reward r1 = com.kovanlabs.librarymanagement.database.entity.Reward.builder()
+                .userUuid(user1.getUuid())
+                .points(10)
+                .build();
+        com.kovanlabs.librarymanagement.database.entity.Reward r2 = com.kovanlabs.librarymanagement.database.entity.Reward.builder()
+                .userUuid(user1.getUuid())
+                .points(20)
+                .build();
+
+        when(userRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(user1)));
+        when(rewardRepository.findByUserUuidIn(List.of(user1.getUuid())))
+                .thenReturn(List.of(r1, r2));
+
+        PagedResponse<UserResponse> result = userService.getAllUsers(0, 10, "id", "asc");
+
+        assertNotNull(result);
+        assertEquals(1, result.content().size());
+        assertEquals(10, result.content().get(0).rewardPoints());
+    }
+
+    @Test
+    @DisplayName("syncAuth0User when mapped provider has missing user in DB should throw 404")
+    void syncAuth0User_whenUserProviderMappedButUserMissingInDb_shouldThrowNotFound() {
+        UserProvider up = UserProvider.builder()
+                .providerId("auth0|mapped-but-missing-user")
+                .provider(AuthProvider.AUTH0)
+                .userUuid("missing-uuid-404")
+                .build();
+
+        when(userProviderRepository.findByProviderId("auth0|mapped-but-missing-user")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid("missing-uuid-404")).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                userService.syncAuth0User("auth0|mapped-but-missing-user", "test@example.com", "Test", RoleEnum.USER));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("User not found for providerId: auth0|mapped-but-missing-user"));
+    }
+
+    @Test
+    @DisplayName("updateUser when user ID not found should throw 404")
+    void updateUser_whenUserNotFound_shouldThrowNotFound() {
+        when(userRepository.findById(9999L)).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                userService.updateUser(9999L, new UserRequest("test@example.com", "Test")));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("User not found with ID: 9999"));
     }
 }
