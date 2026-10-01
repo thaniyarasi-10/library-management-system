@@ -1,29 +1,26 @@
 package com.kovanlabs.librarymanagement.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.dto.BorrowResponseDto;
 import com.kovanlabs.librarymanagement.service.BorrowService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
-import java.time.LocalDate;
+import java.security.Principal;
+import java.util.List;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class BorrowControllerTest {
@@ -31,52 +28,115 @@ class BorrowControllerTest {
     @Mock
     private BorrowService borrowService;
 
+    @Mock
+    private Principal principal;
+
     @InjectMocks
     private BorrowController borrowController;
 
-    private MockMvc mockMvc;
-    private ObjectMapper objectMapper;
+    private String borrowUuid;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(borrowController).build();
-        objectMapper = new ObjectMapper();
+        borrowUuid = UUID.randomUUID().toString();
     }
 
     @Test
-    void borrowBook_shouldReturnCreated() throws Exception {
-        Long bookId = 10L;
-        Long userId = 1L;
-        BorrowRequestDto request = new BorrowRequestDto(bookId, userId);
-        BorrowResponseDto response = BorrowResponseDto.builder()
+    @DisplayName("getAllBorrows should return list of borrows")
+    void getAllBorrows_shouldReturnList() {
+        BorrowResponseDto dto = BorrowResponseDto.builder()
                 .id(1L)
-                .borrowUuid(UUID.randomUUID().toString())
+                .borrowUuid(borrowUuid)
                 .status(BorrowStatus.BORROWED)
                 .build();
+        when(borrowService.getAllBorrows()).thenReturn(List.of(dto));
 
-        when(borrowService.borrowBook(any(BorrowRequestDto.class))).thenReturn(response);
+        List<BorrowResponseDto> result = borrowController.getAllBorrows();
 
-        mockMvc.perform(post("/borrow")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(1))
-                .andExpect(jsonPath("$.status").value("BORROWED"));
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(borrowUuid, result.get(0).borrowUuid());
+        verify(borrowService).getAllBorrows();
     }
 
     @Test
-    void returnBook_shouldReturnUpdatedBorrowResponse() throws Exception {
+    @DisplayName("getBorrowsByUserId should return borrows for user")
+    void getBorrowsByUserId_shouldReturnList() {
+        BorrowResponseDto dto = BorrowResponseDto.builder()
+                .id(1L)
+                .borrowUuid(borrowUuid)
+                .status(BorrowStatus.BORROWED)
+                .build();
+        when(borrowService.getBorrowsByUserId(10L)).thenReturn(List.of(dto));
+
+        List<BorrowResponseDto> result = borrowController.getBorrowsByUserId(10L);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        verify(borrowService).getBorrowsByUserId(10L);
+    }
+
+    @Test
+    @DisplayName("getMyBorrows with principal should return user's borrows")
+    void getMyBorrows_withPrincipal_shouldReturnList() {
+        when(principal.getName()).thenReturn("test@example.com");
+        BorrowResponseDto dto = BorrowResponseDto.builder()
+                .id(1L)
+                .borrowUuid(borrowUuid)
+                .status(BorrowStatus.BORROWED)
+                .build();
+        when(borrowService.getBorrowsByUserEmail("test@example.com")).thenReturn(List.of(dto));
+
+        List<BorrowResponseDto> result = borrowController.getMyBorrows(principal);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        verify(borrowService).getBorrowsByUserEmail("test@example.com");
+    }
+
+    @Test
+    @DisplayName("getMyBorrows with null principal should return empty list")
+    void getMyBorrows_withNullPrincipal_shouldReturnEmptyList() {
+        List<BorrowResponseDto> result = borrowController.getMyBorrows(null);
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+        verifyNoInteractions(borrowService);
+    }
+
+    @Test
+    @DisplayName("borrowBook should call service and return 201 Created")
+    void borrowBook_shouldReturnCreated() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
         BorrowResponseDto response = BorrowResponseDto.builder()
                 .id(1L)
-                .borrowUuid(UUID.randomUUID().toString())
-                .status(com.kovanlabs.librarymanagement.database.enums.BorrowStatus.RETURNED)
+                .borrowUuid(borrowUuid)
+                .status(BorrowStatus.BORROWED)
                 .build();
+        when(borrowService.borrowBook(any(BorrowRequestDto.class))).thenReturn(response);
 
+        ResponseEntity<BorrowResponseDto> result = borrowController.borrowBook(request);
+
+        assertEquals(HttpStatus.CREATED, result.getStatusCode());
+        assertNotNull(result.getBody());
+        assertEquals(1L, result.getBody().id());
+        verify(borrowService).borrowBook(request);
+    }
+
+    @Test
+    @DisplayName("returnBook should return updated borrow response")
+    void returnBook_shouldReturnUpdatedBorrowResponse() {
+        BorrowResponseDto response = BorrowResponseDto.builder()
+                .id(1L)
+                .borrowUuid(borrowUuid)
+                .status(BorrowStatus.RETURNED)
+                .build();
         when(borrowService.returnBook(1L)).thenReturn(response);
 
-        mockMvc.perform(patch("/borrow/1"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(1))
-                .andExpect(jsonPath("$.status").value("RETURNED"));
+        BorrowResponseDto result = borrowController.returnBook(1L);
+
+        assertNotNull(result);
+        assertEquals(BorrowStatus.RETURNED, result.status());
+        verify(borrowService).returnBook(1L);
     }
 }

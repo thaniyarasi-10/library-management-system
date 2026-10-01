@@ -251,4 +251,28 @@ class UserControllerTest {
 
         verify(userService).updateUserRole(id1, RoleEnum.ADMIN);
     }
+
+    @Test
+    @DisplayName("PUT /user/me should update current user and return profile")
+    void updateCurrentUser_ShouldReturnUpdatedProfile() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice Updated", "alice@example.com", "USER", 0);
+        java.security.Principal mockPrincipal = mock(java.security.Principal.class);
+        when(userService.updateCurrentUser(eq(mockPrincipal), any(UserRequest.class))).thenReturn(response);
+
+        String jsonPayload = """
+                {
+                    "email": "alice@example.com",
+                    "name": "Alice Updated"
+                }
+                """;
+
+        mockMvc.perform(put("/user/me")
+                        .principal(mockPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice Updated"));
+
+        verify(userService).updateCurrentUser(eq(mockPrincipal), any(UserRequest.class));
+    }
 }

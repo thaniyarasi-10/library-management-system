@@ -9,8 +9,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.server.ResponseStatusException;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -86,5 +90,105 @@ class S3ServiceTest {
 
         assertNotNull(response);
         assertTrue(response.coverImageKey().contains("empty.png"));
+    }
+
+    @Test
+    @DisplayName("downloadFile should return byte array when successful")
+    void downloadFile_shouldReturnBytes() {
+        byte[] expected = "PDF agreement content".getBytes();
+        GetObjectResponse getObjectResponse = GetObjectResponse.builder().build();
+        ResponseBytes<GetObjectResponse> responseBytes = ResponseBytes.fromByteArray(getObjectResponse, expected);
+
+        when(s3Client.getObjectAsBytes(any(GetObjectRequest.class))).thenReturn(responseBytes);
+
+        byte[] result = s3Service.downloadFile("my-test-bucket", "us-east-1", "templates/agreement.pdf");
+
+        assertArrayEquals(expected, result);
+        verify(s3Client).getObjectAsBytes(any(GetObjectRequest.class));
+    }
+
+    @Test
+    @DisplayName("downloadFile should throw ResponseStatusException on failure")
+    void downloadFile_whenFails_shouldThrowException() {
+        when(s3Client.getObjectAsBytes(any(GetObjectRequest.class)))
+                .thenThrow(S3Exception.builder().message("NoSuchKey").build());
+
+        assertThrows(ResponseStatusException.class, () ->
+                s3Service.downloadFile("my-test-bucket", "us-east-1", "missing.pdf"));
+    }
+
+    @Test
+    @DisplayName("downloadFileAsString should return string content when successful")
+    void downloadFileAsString_shouldReturnString() {
+        String expected = "<html><body>Agreement</body></html>";
+        GetObjectResponse getObjectResponse = GetObjectResponse.builder().build();
+        ResponseBytes<GetObjectResponse> responseBytes = ResponseBytes.fromByteArray(getObjectResponse, expected.getBytes());
+
+        when(s3Client.getObjectAsBytes(any(GetObjectRequest.class))).thenReturn(responseBytes);
+
+        String result = s3Service.downloadFileAsString("my-test-bucket", "us-east-1", "templates/agreement.html");
+
+        assertEquals(expected, result);
+        verify(s3Client).getObjectAsBytes(any(GetObjectRequest.class));
+    }
+
+    @Test
+    @DisplayName("downloadFileAsString should throw IllegalArgumentException when bucket or key is null")
+    void downloadFileAsString_withNullBucketOrKey_shouldThrowException() {
+        assertThrows(IllegalArgumentException.class, () ->
+                s3Service.downloadFileAsString(null, "us-east-1", "key"));
+        assertThrows(IllegalArgumentException.class, () ->
+                s3Service.downloadFileAsString("bucket", "us-east-1", null));
+    }
+
+    @Test
+    @DisplayName("downloadFileAsString should throw ResponseStatusException when S3 fails")
+    void downloadFileAsString_whenFails_shouldThrowException() {
+        when(s3Client.getObjectAsBytes(any(GetObjectRequest.class)))
+                .thenThrow(new RuntimeException("S3 Error"));
+
+        assertThrows(ResponseStatusException.class, () ->
+                s3Service.downloadFileAsString("bucket", "us-east-1", "key"));
+    }
+
+    @Test
+    @DisplayName("uploadFileBytes should upload bytes and return key")
+    void uploadFileBytes_shouldSucceed() {
+        byte[] bytes = "agreement pdf bytes".getBytes();
+
+        String key = s3Service.uploadFileBytes("my-test-bucket", "us-east-1", "agreements/123.pdf", bytes, "application/pdf");
+
+        assertEquals("agreements/123.pdf", key);
+        verify(s3Client).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+    }
+
+    @Test
+    @DisplayName("uploadFileBytes should throw ResponseStatusException on failure")
+    void uploadFileBytes_whenFails_shouldThrowException() {
+        doThrow(S3Exception.builder().message("Access Denied").build())
+                .when(s3Client).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+
+        assertThrows(ResponseStatusException.class, () ->
+                s3Service.uploadFileBytes("bucket", "us-east-1", "key", new byte[10], "application/pdf"));
+    }
+
+    @Test
+    @DisplayName("closeClients and custom region creation should execute gracefully")
+    void closeClients_andCustomRegion_shouldWorkGracefully() {
+        ReflectionTestUtils.setField(s3Service, "accessKey", "test-key");
+        ReflectionTestUtils.setField(s3Service, "secretKey", "test-secret");
+
+        // getS3ClientForRegion with null or same region uses default client
+        byte[] bytes = "test".getBytes();
+        GetObjectResponse getObjectResponse = GetObjectResponse.builder().build();
+        when(s3Client.getObjectAsBytes(any(GetObjectRequest.class)))
+                .thenReturn(ResponseBytes.fromByteArray(getObjectResponse, bytes));
+
+        assertNotNull(s3Service.downloadFile("bucket", null, "key"));
+        assertNotNull(s3Service.downloadFile("bucket", "", "key"));
+        assertNotNull(s3Service.downloadFile("bucket", "us-east-1", "key"));
+
+        // closeClients call
+        assertDoesNotThrow(() -> s3Service.closeClients());
     }
 }

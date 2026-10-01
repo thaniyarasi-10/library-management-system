@@ -221,6 +221,23 @@ class UserServiceImplTest {
     }
 
     @Test
+    void deleteUser_whenUserNotFound_shouldThrowNotFound() {
+        when(userRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> userService.deleteUser(999L));
+        verify(userRepository, never()).delete(any());
+    }
+
+    @Test
+    void deleteUser_whenSalesforceDeleteThrows_shouldLogAndNotFail() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+        doThrow(new RuntimeException("SF delete error")).when(salesforceSyncDelegate).deleteUser(uuid1);
+
+        assertDoesNotThrow(() -> userService.deleteUser(1L));
+        verify(userRepository, times(1)).delete(user1);
+    }
+
+    @Test
     void syncAuth0User_whenExistingProviderId_shouldReturnExistingUserWithoutUpdatingUserOrSalesforce() {
         LocalDateTime created = LocalDateTime.of(2025, 1, 1, 10, 0);
         LocalDateTime updated = LocalDateTime.of(2025, 1, 1, 10, 0);
@@ -499,6 +516,47 @@ class UserServiceImplTest {
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThrows(ResponseStatusException.class, () -> userService.updateUserRole(99L, RoleEnum.ADMIN));
+    }
+
+    @Test
+    void updateUserRole_whenRoleNull_shouldThrowBadRequest() {
+        assertThrows(ResponseStatusException.class, () -> userService.updateUserRole(1L, null));
+    }
+
+    @Test
+    void updateUserRole_whenSalesforceSyncThrows_shouldMarkPending() {
+        User testUser = User.builder()
+                .uuid(uuid1)
+                .id(1L)
+                .name("Alice Smith")
+                .email("alice@example.com")
+                .role(RoleEnum.USER)
+                .salesforceRetryCount(0)
+                .build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("SF dual-write fail")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+
+        UserResponse response = userService.updateUserRole(1L, RoleEnum.ADMIN);
+
+        assertNotNull(response);
+        assertEquals(SalesforceSyncStatus.PENDING, testUser.getSalesforceSyncStatus());
+        assertEquals(1, testUser.getSalesforceRetryCount());
+    }
+
+    @Test
+    void syncAuth0User_whenNewUserAndSalesforceFails_shouldCatchExceptionAndMarkPending() {
+        when(userProviderRepository.findByProviderId("auth0|new-error-sf")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("new-sf-error@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("SF sync error")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+
+        User created = userService.syncAuth0User("auth0|new-error-sf", "new-sf-error@example.com", "New User", RoleEnum.USER);
+
+        assertNotNull(created);
+        assertEquals(SalesforceSyncStatus.PENDING, created.getSalesforceSyncStatus());
+        assertEquals(1, created.getSalesforceRetryCount());
     }
 
     @Test
