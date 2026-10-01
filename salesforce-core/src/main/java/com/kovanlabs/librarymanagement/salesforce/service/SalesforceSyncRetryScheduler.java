@@ -162,6 +162,7 @@ public class SalesforceSyncRetryScheduler {
                 .lastName(Objects.nonNull(user.getName()) && !user.getName().isBlank() ? user.getName() : "User")
                 .email(user.getEmail())
                 .role(Objects.nonNull(user.getRole()) ? user.getRole().name() : null)
+                .phone(user.getPhone())
                 .build();
     }
 

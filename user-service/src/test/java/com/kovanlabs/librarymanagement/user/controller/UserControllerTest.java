@@ -104,6 +104,68 @@ class UserControllerTest {
     }
 
     @Test
+    @DisplayName("PUT /user/{id} with valid phone should return 200 OK and updated phone")
+    void updateUser_WithValidPhone_ShouldReturnUpdatedUser() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice Updated", "updated@example.com", "USER", 0, "+15555555555");
+
+        when(userService.updateUser(eq(id1), any(UserRequest.class))).thenReturn(response);
+
+        String jsonPayload = """
+                {
+                    "email": "updated@example.com",
+                    "name": "Alice Updated",
+                    "phone": "+12025550123"
+                }
+                """;
+
+        mockMvc.perform(put("/user/" + id1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phone").value("+15555555555"));
+
+        verify(userService, times(1)).updateUser(eq(id1), any(UserRequest.class));
+    }
+
+    @Test
+    @DisplayName("PUT /user/{id} with invalid phone should return 400 Bad Request")
+    void updateUser_WithInvalidPhone_ShouldReturnBadRequest() throws Exception {
+        String jsonPayload = """
+                {
+                    "email": "updated@example.com",
+                    "name": "Alice Updated",
+                    "phone": "invalid-phone-number"
+                }
+                """;
+
+        mockMvc.perform(put("/user/" + id1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isBadRequest());
+
+        verify(userService, never()).updateUser(any(), any());
+    }
+
+    @Test
+    @DisplayName("PUT /user/{id} with 9-digit Indian phone +91987654321 should return 400 Bad Request")
+    void updateUser_WithNineDigitPhone_ShouldReturnBadRequest() throws Exception {
+        String jsonPayload = """
+                {
+                    "email": "updated@example.com",
+                    "name": "Alice Updated",
+                    "phone": "+91987654321"
+                }
+                """;
+
+        mockMvc.perform(put("/user/" + id1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isBadRequest());
+
+        verify(userService, never()).updateUser(any(), any());
+    }
+
+    @Test
     @DisplayName("DELETE /user/{id} when user exists should return 204 No Content")
     void deleteUser_WhenUserExists_ShouldReturn204NoContent() throws Exception {
         doNothing().when(userService).deleteUser(id1);

@@ -90,6 +90,7 @@ class UserMapperTest {
                 .name("Alice")
                 .email("alice@example.com")
                 .role(com.kovanlabs.librarymanagement.database.enums.RoleEnum.ADMIN)
+                .phone("+15555555555")
                 .build();
 
         var sObject = userMapper.toContactSObject(user);
@@ -99,6 +100,7 @@ class UserMapperTest {
         assertEquals("Alice", sObject.getLastName());
         assertEquals("alice@example.com", sObject.getEmail());
         assertEquals("ADMIN", sObject.getRole());
+        assertEquals("+15555555555", sObject.getPhone());
 
         assertNull(userMapper.toContactSObject((User) null));
     }
@@ -106,7 +108,7 @@ class UserMapperTest {
     @Test
     void testToContactSObject_withUserResponse() {
         String uuid = UUID.randomUUID().toString();
-        UserResponse dto = new UserResponse(uuid, 2L, "Bob", "bob@example.com", "USER", 10);
+        UserResponse dto = new UserResponse(uuid, 2L, "Bob", "bob@example.com", "USER", 10, "+15555555555");
 
         var sObject = userMapper.toContactSObject(dto);
         assertNotNull(sObject);
@@ -115,6 +117,7 @@ class UserMapperTest {
         assertEquals("Bob", sObject.getLastName());
         assertEquals("bob@example.com", sObject.getEmail());
         assertEquals("USER", sObject.getRole());
+        assertEquals("+15555555555", sObject.getPhone());
 
         assertNull(userMapper.toContactSObject((UserResponse) null));
     }
@@ -128,6 +131,7 @@ class UserMapperTest {
                 .lastName("Charlie")
                 .email("charlie@example.com")
                 .role("ADMIN")
+                .phone("+15555555555")
                 .build();
 
         UserResponse res = userMapper.toUserResponse(contact);
@@ -137,9 +141,11 @@ class UserMapperTest {
         assertEquals("Charlie", res.name());
         assertEquals("charlie@example.com", res.email());
         assertEquals("ADMIN", res.role());
+        assertEquals("+15555555555", res.phone());
 
         List<UserResponse> list = userMapper.toUserResponseList(List.of(contact));
         assertEquals(1, list.size());
+        assertEquals("+15555555555", list.get(0).phone());
         assertNull(userMapper.toUserResponseList(null));
     }
 }

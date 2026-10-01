@@ -65,6 +65,7 @@ public interface UserMapper {
     @Mapping(target = "lastName", expression = "java((Objects.nonNull(user.name()) && !user.name().isBlank()) ? user.name() : \"User\")")
     @Mapping(target = "email", source = "email")
     @Mapping(target = "role", source = "role")
+    @Mapping(target = "phone", source = "phone")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     ContactSObject toContactSObject(UserResponse user);
@@ -78,6 +79,7 @@ public interface UserMapper {
     @Mapping(target = "lastName", expression = "java((Objects.nonNull(user.getName()) && !user.getName().isBlank()) ? user.getName() : \"User\")")
     @Mapping(target = "email", source = "email")
     @Mapping(target = "role", expression = "java(Objects.nonNull(user.getRole()) ? user.getRole().name() : null)")
+    @Mapping(target = "phone", source = "phone")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     ContactSObject toContactSObject(User user);
@@ -90,6 +92,7 @@ public interface UserMapper {
     @Mapping(target = "name", source = "lastName")
     @Mapping(target = "email", source = "email")
     @Mapping(target = "role", source = "role")
+    @Mapping(target = "phone", source = "phone")
     @Mapping(target = "rewardPoints", expression = "java(0)")
     UserResponse toUserResponse(ContactSObject contact);
 

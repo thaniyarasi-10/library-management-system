@@ -142,7 +142,7 @@ public class SalesforceSyncImpl implements SalesforceSync {
     @Override
     public List<ContactSObject> fetchContactsFromSalesforce() {
         String soql = new SOQLBuilder<>()
-                .select(ContactFields.EXTERNAL_USER_UUID, ContactFields.LEGACY_USER_ID, ContactFields.LAST_NAME, ContactFields.EMAIL, ContactFields.ROLE)
+                .select(ContactFields.EXTERNAL_USER_UUID, ContactFields.LEGACY_USER_ID, ContactFields.LAST_NAME, ContactFields.EMAIL, ContactFields.ROLE, ContactFields.PHONE)
                 .from(SObject.CONTACT)
                 .whereNotNull(ContactSObject.EXTERNAL_ID_FIELD)
                 .build();

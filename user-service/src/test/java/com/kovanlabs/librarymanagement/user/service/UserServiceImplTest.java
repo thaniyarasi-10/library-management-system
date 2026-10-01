@@ -183,6 +183,20 @@ class UserServiceImplTest {
     }
 
     @Test
+    void updateUser_whenUserExists_shouldUpdatePhoneAndSave() {
+        UserRequest request = new UserRequest("updated@example.com", "Alice Smith", "+15555555555");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.updateUser(1L, request);
+
+        assertEquals("+15555555555", response.phone());
+        assertEquals("+15555555555", user1.getPhone());
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+        assertEquals(SalesforceSyncStatus.SUCCESS, user1.getSalesforceSyncStatus());
+    }
+
+    @Test
     void updateUser_whenSalesforceSyncFails_shouldIncrementRetryAndKeepPending() {
         UserRequest request = new UserRequest("updated@example.com", "Alice Smith");
         when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
