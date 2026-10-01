@@ -21,6 +21,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.*;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -183,6 +184,20 @@ class UserServiceImplTest {
     }
 
     @Test
+    void updateUser_whenUserExists_shouldUpdatePhoneAndSave() {
+        UserRequest request = new UserRequest("updated@example.com", "Alice Smith", "+15555555555");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.updateUser(1L, request);
+
+        assertEquals("+15555555555", response.phone());
+        assertEquals("+15555555555", user1.getPhone());
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+        assertEquals(SalesforceSyncStatus.SUCCESS, user1.getSalesforceSyncStatus());
+    }
+
+    @Test
     void updateUser_whenSalesforceSyncFails_shouldIncrementRetryAndKeepPending() {
         UserRequest request = new UserRequest("updated@example.com", "Alice Smith");
         when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
@@ -204,6 +219,23 @@ class UserServiceImplTest {
         assertDoesNotThrow(() -> userService.deleteUser(1L));
         verify(userRepository, times(1)).delete(user1);
         verify(salesforceSyncDelegate, times(1)).deleteUser(uuid1);
+    }
+
+    @Test
+    void deleteUser_whenUserNotFound_shouldThrowNotFound() {
+        when(userRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> userService.deleteUser(999L));
+        verify(userRepository, never()).delete(any());
+    }
+
+    @Test
+    void deleteUser_whenSalesforceDeleteThrows_shouldLogAndNotFail() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+        doThrow(new RuntimeException("SF delete error")).when(salesforceSyncDelegate).deleteUser(uuid1);
+
+        assertDoesNotThrow(() -> userService.deleteUser(1L));
+        verify(userRepository, times(1)).delete(user1);
     }
 
     @Test
@@ -485,6 +517,47 @@ class UserServiceImplTest {
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThrows(ResponseStatusException.class, () -> userService.updateUserRole(99L, RoleEnum.ADMIN));
+    }
+
+    @Test
+    void updateUserRole_whenRoleNull_shouldThrowBadRequest() {
+        assertThrows(ResponseStatusException.class, () -> userService.updateUserRole(1L, null));
+    }
+
+    @Test
+    void updateUserRole_whenSalesforceSyncThrows_shouldMarkPending() {
+        User testUser = User.builder()
+                .uuid(uuid1)
+                .id(1L)
+                .name("Alice Smith")
+                .email("alice@example.com")
+                .role(RoleEnum.USER)
+                .salesforceRetryCount(0)
+                .build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("SF dual-write fail")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+
+        UserResponse response = userService.updateUserRole(1L, RoleEnum.ADMIN);
+
+        assertNotNull(response);
+        assertEquals(SalesforceSyncStatus.PENDING, testUser.getSalesforceSyncStatus());
+        assertEquals(1, testUser.getSalesforceRetryCount());
+    }
+
+    @Test
+    void syncAuth0User_whenNewUserAndSalesforceFails_shouldCatchExceptionAndMarkPending() {
+        when(userProviderRepository.findByProviderId("auth0|new-error-sf")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("new-sf-error@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("SF sync error")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+
+        User created = userService.syncAuth0User("auth0|new-error-sf", "new-sf-error@example.com", "New User", RoleEnum.USER);
+
+        assertNotNull(created);
+        assertEquals(SalesforceSyncStatus.PENDING, created.getSalesforceSyncStatus());
+        assertEquals(1, created.getSalesforceRetryCount());
     }
 
     @Test
@@ -785,5 +858,279 @@ class UserServiceImplTest {
         assertEquals(1, result.content().size());
         assertEquals("Alice Smith", result.content().get(0).name());
         verify(userRepository).findAll(any(Pageable.class));
+    }
+
+    // --- Tests for getHeaderFromRequestContext ---
+
+    @Test
+    @DisplayName("getHeaderFromRequestContext should read X-User-Username and X-User-Name from RequestContextHolder when present")
+    void getHeaderFromRequestContext_shouldExtractHeaderWhenPresent() {
+        org.springframework.mock.web.MockHttpServletRequest mockRequest = new org.springframework.mock.web.MockHttpServletRequest();
+        mockRequest.addHeader("X-User-Username", "CustomHeaderUser");
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(mockRequest)
+        );
+
+        try {
+            Jwt jwt = mock(Jwt.class);
+            when(jwt.getSubject()).thenReturn("auth0|header-test");
+            when(jwt.getClaimAsString("email")).thenReturn("header-user@example.com");
+
+            org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+            when(auth.getPrincipal()).thenReturn(jwt);
+
+            when(userProviderRepository.findByProviderId("auth0|header-test")).thenReturn(Optional.empty());
+            when(userRepository.findByEmail("header-user@example.com")).thenReturn(Optional.empty());
+            when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+            when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+            UserResponse response = userService.getCurrentUser(auth);
+
+            assertNotNull(response);
+            assertEquals("CustomHeaderUser", response.name());
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    @Test
+    @DisplayName("getHeaderFromRequestContext should fallback to X-User-Name if X-User-Username is missing")
+    void getHeaderFromRequestContext_shouldFallbackToXUserName() {
+        org.springframework.mock.web.MockHttpServletRequest mockRequest = new org.springframework.mock.web.MockHttpServletRequest();
+        mockRequest.addHeader("X-User-Name", "FallbackHeaderName");
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(mockRequest)
+        );
+
+        try {
+            Jwt jwt = mock(Jwt.class);
+            when(jwt.getSubject()).thenReturn("auth0|header-fallback");
+            when(jwt.getClaimAsString("email")).thenReturn("header-fallback@example.com");
+
+            org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+            when(auth.getPrincipal()).thenReturn(jwt);
+
+            when(userProviderRepository.findByProviderId("auth0|header-fallback")).thenReturn(Optional.empty());
+            when(userRepository.findByEmail("header-fallback@example.com")).thenReturn(Optional.empty());
+            when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+            when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+            UserResponse response = userService.getCurrentUser(auth);
+
+            assertNotNull(response);
+            assertEquals("FallbackHeaderName", response.name());
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    @Test
+    @DisplayName("getHeaderFromRequestContext should return null safely when RequestContextHolder has no attributes")
+    void getHeaderFromRequestContext_whenNoRequestContext_shouldSafelyReturnNull() {
+        org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+
+        Jwt jwt = mock(Jwt.class);
+        when(jwt.getSubject()).thenReturn("auth0|no-ctx");
+        when(jwt.getClaimAsString("email")).thenReturn("no-ctx@example.com");
+        when(jwt.getClaimAsString("name")).thenReturn("JwtName");
+
+        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        when(auth.getPrincipal()).thenReturn(jwt);
+
+        when(userProviderRepository.findByProviderId("auth0|no-ctx")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("no-ctx@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("JwtName", response.name());
+    }
+
+    // --- Tests for syncUserToSalesforce ---
+
+    @Test
+    @DisplayName("syncUserToSalesforce should execute and mark SUCCESS on new user registration")
+    void syncUserToSalesforce_whenNewUserCreated_shouldSyncAndMarkSuccess() {
+        when(userProviderRepository.findByProviderId("auth0|sf-success")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("sf-success@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        User created = userService.syncAuth0User("auth0|sf-success", "sf-success@example.com", "SF Success User", RoleEnum.USER);
+
+        assertNotNull(created);
+        assertEquals(SalesforceSyncStatus.SUCCESS, created.getSalesforceSyncStatus());
+        verify(salesforceSyncDelegate, times(1)).syncContact(any(ContactSObject.class));
+        verify(userRepository, atLeast(2)).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("syncUserToSalesforce should increment retry count and mark PENDING when Salesforce throws exception")
+    void syncUserToSalesforce_whenSalesforceThrows_shouldCatchErrorAndMarkPending() {
+        when(userProviderRepository.findByProviderId("auth0|sf-fail")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("sf-fail@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("Salesforce service connection error")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+
+        User created = userService.syncAuth0User("auth0|sf-fail", "sf-fail@example.com", "SF Fail User", RoleEnum.USER);
+
+        assertNotNull(created);
+        assertEquals(SalesforceSyncStatus.PENDING, created.getSalesforceSyncStatus());
+        assertEquals(1, created.getSalesforceRetryCount());
+        verify(salesforceSyncDelegate, times(1)).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("syncUserToSalesforce should not invoke Salesforce when salesforceSyncDelegate is null")
+    void syncUserToSalesforce_whenDelegateIsNull_shouldDoNothing() {
+        UserServiceImpl serviceWithoutSF = new UserServiceImpl(
+                userRepository,
+                userProviderRepository,
+                rewardRepository,
+                null
+        );
+
+        when(userProviderRepository.findByProviderId("auth0|no-sf")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("no-sf@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        User created = serviceWithoutSF.syncAuth0User("auth0|no-sf", "no-sf@example.com", "No SF", RoleEnum.USER);
+
+        assertNotNull(created);
+        verify(salesforceSyncDelegate, never()).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("syncAuth0User when raw provider exists but user missing in DB should throw 404")
+    void syncAuth0User_whenRawProviderFoundButUserMissing_shouldThrowNotFound() {
+        String sub = "google-oauth2|999888777";
+        UserProvider rawProvider = UserProvider.builder()
+                .providerId("999888777")
+                .provider(AuthProvider.AUTH0)
+                .userUuid("missing-uuid-123")
+                .build();
+
+        when(userProviderRepository.findByProviderId(sub)).thenReturn(Optional.empty());
+        when(userProviderRepository.findByProviderId("999888777")).thenReturn(Optional.of(rawProvider));
+        when(userRepository.findByUuid("missing-uuid-123")).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                userService.syncAuth0User(sub, "missing@example.com", "Missing", RoleEnum.USER));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("User not found for raw providerId: 999888777"));
+    }
+
+    @Test
+    @DisplayName("syncAuth0User when sub has multiple pipe characters should parse last raw ID")
+    void syncAuth0User_whenSubHasMultiplePipes_shouldTryLastRawId() {
+        String sub = "provider|subprefix|unique123";
+        UserProvider rawProvider = UserProvider.builder()
+                .providerId("unique123")
+                .provider(AuthProvider.AUTH0)
+                .userUuid(user1.getUuid())
+                .build();
+
+        when(userProviderRepository.findByProviderId(sub)).thenReturn(Optional.empty());
+        when(userProviderRepository.findByProviderId("subprefix|unique123")).thenReturn(Optional.empty());
+        when(userProviderRepository.findByProviderId("unique123")).thenReturn(Optional.of(rawProvider));
+        when(userRepository.findByUuid(user1.getUuid())).thenReturn(Optional.of(user1));
+
+        User result = userService.syncAuth0User(sub, "alice@example.com", "Alice Smith", RoleEnum.USER);
+
+        assertNotNull(result);
+        assertEquals(user1.getUuid(), result.getUuid());
+        verify(userProviderRepository).save(argThat(up -> sub.equals(up.getProviderId())));
+    }
+
+    @Test
+    @DisplayName("getCurrentUser when JWT role claim specifies USER or ROLE_USER should extract RoleEnum.USER")
+    void getCurrentUser_whenJwtHasUserRole_shouldAssignRoleUser() {
+        Jwt jwt = Jwt.withTokenValue("mock-jwt-user")
+                .header("alg", "none")
+                .claim("sub", "auth0|user-role-test")
+                .claim("email", "user-role@example.com")
+                .claim("name", "Standard User")
+                .claim("roles", List.of("ROLE_USER"))
+                .build();
+
+        JwtAuthenticationToken jwtAuth = new JwtAuthenticationToken(
+                jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        when(userProviderRepository.findByProviderId("auth0|user-role-test")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("user-role@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(20L);
+            u.setUuid(UUID.randomUUID().toString());
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.getCurrentUser(jwtAuth);
+
+        assertNotNull(response);
+        assertEquals("USER", response.role());
+    }
+
+    @Test
+    @DisplayName("getAllUsers with duplicate reward records should handle map merge gracefully")
+    void getAllUsers_withDuplicateRewardRecords_shouldMergePoints() {
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenThrow(new RuntimeException("SF down"));
+
+        com.kovanlabs.librarymanagement.database.entity.Reward r1 = com.kovanlabs.librarymanagement.database.entity.Reward.builder()
+                .userUuid(user1.getUuid())
+                .points(10)
+                .build();
+        com.kovanlabs.librarymanagement.database.entity.Reward r2 = com.kovanlabs.librarymanagement.database.entity.Reward.builder()
+                .userUuid(user1.getUuid())
+                .points(20)
+                .build();
+
+        when(userRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(user1)));
+        when(rewardRepository.findByUserUuidIn(List.of(user1.getUuid())))
+                .thenReturn(List.of(r1, r2));
+
+        PagedResponse<UserResponse> result = userService.getAllUsers(0, 10, "id", "asc");
+
+        assertNotNull(result);
+        assertEquals(1, result.content().size());
+        assertEquals(10, result.content().get(0).rewardPoints());
+    }
+
+    @Test
+    @DisplayName("syncAuth0User when mapped provider has missing user in DB should throw 404")
+    void syncAuth0User_whenUserProviderMappedButUserMissingInDb_shouldThrowNotFound() {
+        UserProvider up = UserProvider.builder()
+                .providerId("auth0|mapped-but-missing-user")
+                .provider(AuthProvider.AUTH0)
+                .userUuid("missing-uuid-404")
+                .build();
+
+        when(userProviderRepository.findByProviderId("auth0|mapped-but-missing-user")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid("missing-uuid-404")).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                userService.syncAuth0User("auth0|mapped-but-missing-user", "test@example.com", "Test", RoleEnum.USER));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("User not found for providerId: auth0|mapped-but-missing-user"));
+    }
+
+    @Test
+    @DisplayName("updateUser when user ID not found should throw 404")
+    void updateUser_whenUserNotFound_shouldThrowNotFound() {
+        when(userRepository.findById(9999L)).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                userService.updateUser(9999L, new UserRequest("test@example.com", "Test")));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("User not found with ID: 9999"));
     }
 }

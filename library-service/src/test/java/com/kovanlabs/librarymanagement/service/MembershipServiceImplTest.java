@@ -336,4 +336,58 @@ class MembershipServiceImplTest {
     void testEvictActiveMembershipCache() {
         assertDoesNotThrow(() -> membershipService.evictActiveMembershipCache(userUuid));
     }
+
+    @Test
+    void testFindUserByIdentifier_withProviderIdFallback() {
+        String providerId = "auth0|provider123";
+        com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
+                .userUuid(userUuid)
+                .build();
+        when(userProviderRepository.findByProviderId(providerId)).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid(userUuid)).thenReturn(Optional.of(user));
+
+        Membership activeMembership = Membership.builder()
+                .uuid(UUID.randomUUID().toString())
+                .userUuid(userUuid)
+                .status(MembershipStatus.ACTIVE)
+                .build();
+        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+                .thenReturn(Optional.of(activeMembership));
+
+        MembershipResponseDto result = membershipService.getMyMembership(providerId);
+        assertNotNull(result);
+    }
+
+    @Test
+    void testDownloadAgreementPdf_errors() {
+        Long memId = 123L;
+        // Membership not found
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+        when(membershipRepository.findByMembershipId(memId)).thenReturn(Optional.empty());
+        assertThrows(ResponseStatusException.class, () -> membershipService.downloadAgreementPdf(memId, email));
+
+        // Forbidden access for another user
+        Membership otherMembership = Membership.builder()
+                .userUuid(UUID.randomUUID().toString())
+                .build();
+        when(membershipRepository.findByMembershipId(memId)).thenReturn(Optional.of(otherMembership));
+        assertThrows(ResponseStatusException.class, () -> membershipService.downloadAgreementPdf(memId, email));
+
+        // PDF not available yet
+        Membership pendingMembership = Membership.builder()
+                .userUuid(userUuid)
+                .status(MembershipStatus.PENDING)
+                .signedPdfKey(null)
+                .build();
+        when(membershipRepository.findByMembershipId(memId)).thenReturn(Optional.of(pendingMembership));
+        assertThrows(ResponseStatusException.class, () -> membershipService.downloadAgreementPdf(memId, email));
+    }
+
+    @Test
+    void testCancelMembership_whenAlreadyCancelledOrNotFound() {
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+                .thenReturn(Optional.empty());
+        assertThrows(ResponseStatusException.class, () -> membershipService.cancelMembership(email));
+    }
 }

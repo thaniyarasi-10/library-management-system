@@ -8,7 +8,11 @@ public record UserResponse(
         String name,
         String email,
         String role,
-        Integer rewardPoints
+        Integer rewardPoints,
+        String phone
 ) implements Serializable {
 
+    public UserResponse(String uuid, Long id, String name, String email, String role, Integer rewardPoints) {
+        this(uuid, id, name, email, role, rewardPoints, null);
+    }
 }

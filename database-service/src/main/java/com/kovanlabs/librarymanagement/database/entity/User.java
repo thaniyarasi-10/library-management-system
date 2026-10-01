@@ -42,4 +42,7 @@ public class User extends BaseEntity {
     @Column(name = "salesforce_retry_count", nullable = false)
     @Builder.Default
     private int salesforceRetryCount = 0;
+
+    @Column(name = "phone", nullable = true)
+    private String phone;
 }

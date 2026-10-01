@@ -334,4 +334,115 @@ class SalesforceClientServiceTest {
         assertThrows(SalesforceSyncException.class, () -> clientService.deleteByExternalId("Contact",
                 "External_User_UUID__c", "uuid-123"));
     }
+
+    @Test
+    void deleteByExternalId_whenUnauthorized_reauthenticatesAndRetriesSuccessfully() {
+        mockValidConfig();
+        mockSuccessfulAuth();
+
+        // 1. Initial DELETE returns 401 Unauthorized
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/sobjects/Contact/External_User_UUID__c/uuid-123"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer mock-access-token"))
+                .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED));
+
+        // 2. Re-authentication OAuth call
+        String authResponseBody = "{\"access_token\":\"new-mock-access-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
+        mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(authResponseBody, MediaType.APPLICATION_JSON));
+
+        // 3. Retried DELETE with new token succeeds
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/sobjects/Contact/External_User_UUID__c/uuid-123"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer new-mock-access-token"))
+                .andRespond(withNoContent());
+
+        assertDoesNotThrow(() -> clientService.deleteByExternalId("Contact", "External_User_UUID__c", "uuid-123"));
+        mockServer.verify();
+    }
+
+    @Test
+    void deleteByExternalId_whenUnauthorizedAndRetryFails_throwsSalesforceSyncException() {
+        mockValidConfig();
+        mockSuccessfulAuth();
+
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/sobjects/Contact/External_User_UUID__c/uuid-123"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED));
+
+        String authResponseBody = "{\"access_token\":\"new-mock-access-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
+        mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(authResponseBody, MediaType.APPLICATION_JSON));
+
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/sobjects/Contact/External_User_UUID__c/uuid-123"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withServerError());
+
+        assertThrows(SalesforceSyncException.class,
+                () -> clientService.deleteByExternalId("Contact", "External_User_UUID__c", "uuid-123"));
+    }
+
+    @Test
+    void upsertByExternalId_whenUnauthorizedAndRetryFails_throwsSalesforceSyncException() {
+        mockValidConfig();
+        mockSuccessfulAuth();
+
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/sobjects/Book__c/External_Book_UUID__c/uuid-123"))
+                .andExpect(method(HttpMethod.PATCH))
+                .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED));
+
+        String authResponseBody = "{\"access_token\":\"new-mock-access-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
+        mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(authResponseBody, MediaType.APPLICATION_JSON));
+
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/sobjects/Book__c/External_Book_UUID__c/uuid-123"))
+                .andExpect(method(HttpMethod.PATCH))
+                .andRespond(withServerError());
+
+        assertThrows(SalesforceSyncException.class,
+                () -> clientService.upsertByExternalId("Book__c", "External_Book_UUID__c", "uuid-123", Map.of("Name", "Book")));
+    }
+
+    @Test
+    void query_whenUnauthorizedAndRetryFails_returnsNull() {
+        mockValidConfig();
+        mockSuccessfulAuth();
+
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/query?q=SELECT%20Name%20FROM%20Book__c"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED));
+
+        String authResponseBody = "{\"access_token\":\"new-mock-access-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
+        mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(authResponseBody, MediaType.APPLICATION_JSON));
+
+        mockServer.expect(requestTo(
+                "https://mock.salesforce.com/services/data/v58.0/query?q=SELECT%20Name%20FROM%20Book__c"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withServerError());
+
+        JsonNode result = clientService.query("SELECT Name FROM Book__c");
+
+        assertNull(result);
+        mockServer.verify();
+    }
+
+    @Test
+    void isUnauthorizedOrExpired_tests() {
+        assertFalse(SalesforceClientService.isUnauthorizedOrExpired(null));
+        assertTrue(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException("invalid_session_id expired")));
+        assertTrue(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException(new RuntimeException("session expired"))));
+        assertFalse(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException("random error")));
+    }
 }

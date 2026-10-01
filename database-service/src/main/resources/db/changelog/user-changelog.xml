@@ -59,5 +59,10 @@
         <dropColumn tableName="user" columnName="password"/>
     </changeSet>
 
+    <changeSet id="21-add-phone-column-to-user" author="thani">
+        <addColumn tableName="user">
+            <column name="phone" type="varchar(30)"/>
+        </addColumn>
+    </changeSet>
 
 </databaseChangeLog>

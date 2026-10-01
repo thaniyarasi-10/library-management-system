@@ -38,7 +38,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -71,7 +70,8 @@ public class UserServiceImpl implements UserService {
                 user.getName(),
                 user.getEmail(),
                 user.getRole().name(),
-                points);
+                points,
+                user.getPhone());
     }
 
     /**
@@ -101,7 +101,8 @@ public class UserServiceImpl implements UserService {
                 user.getName(),
                 user.getEmail(),
                 user.getRole().name(),
-                Objects.nonNull(user.getUuid()) ? rewardMap.getOrDefault(user.getUuid(), 0) : 0)).toList();
+                Objects.nonNull(user.getUuid()) ? rewardMap.getOrDefault(user.getUuid(), 0) : 0,
+                user.getPhone())).toList();
     }
 
     /**
@@ -280,6 +281,9 @@ public class UserServiceImpl implements UserService {
         }
         if (Objects.nonNull(request.email()) && !request.email().isBlank()) {
             user.setEmail(request.email());
+        }
+        if (Objects.nonNull(request.phone())) {
+            user.setPhone(request.phone().isBlank() ? null : request.phone().trim());
         }
 
         User updatedUser = userRepository.save(user);

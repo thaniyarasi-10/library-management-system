@@ -18,6 +18,7 @@
         <lombok.version>1.18.32</lombok.version>
         <mapstruct.version>1.5.5.Final</mapstruct.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
+        <libphonenumber.version>8.13.55</libphonenumber.version>
     </properties>
 
     <modules>
@@ -96,6 +97,12 @@
                 <artifactId>mapstruct</artifactId>
                 <version>${mapstruct.version}</version>
             </dependency>
+
+            <dependency>
+                <groupId>com.googlecode.libphonenumber</groupId>
+                <artifactId>libphonenumber</artifactId>
+                <version>${libphonenumber.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -141,6 +148,19 @@
 
                     <executions>
                         <execution>
+                            <id>prepare-agent</id>
+                            <goals>
+                                <goal>prepare-agent</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>report</id>
+                            <phase>test</phase>
+                            <goals>
+                                <goal>report</goal>
+                            </goals>
+                        </execution>
+                        <execution>
                             <id>aggregate-report</id>
                             <phase>verify</phase>
 
@@ -175,12 +195,13 @@
                             database-service/src/main/resources/db/changelog/db.changelog-master.xml
                         </changeLogFile>
 
-                        <url>${env:DB_URL}</url>
-                        <username>${env:DB_USERNAME}</username>
-                        <password>${env:DB_PASSWORD}</password>
+                        <url>${env.DB_URL}</url>
+                        <username>${env.DB_USERNAME}</username>
+                        <password>${env.DB_PASSWORD}</password>
                         <driver>com.mysql.cj.jdbc.Driver</driver>
                     </configuration>
                 </plugin>
+
 
             </plugins>
         </pluginManagement>

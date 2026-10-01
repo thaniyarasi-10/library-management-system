@@ -4,9 +4,78 @@ import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
-  User as UserIcon, Edit2
+  User as UserIcon, Edit2, Phone
 } from 'lucide-react';
 import './styles.css';
+
+// Supported country codes for mobile number capture with country-specific validation rules
+const COUNTRY_CODES = [
+  { code: 'US', dial: '+1', name: 'United States', min: 10, max: 10, regex: /^[2-9]\d{9}$/, hint: '10 digits (e.g. 555 555 5555)' },
+  { code: 'CA', dial: '+1', name: 'Canada', min: 10, max: 10, regex: /^[2-9]\d{9}$/, hint: '10 digits (e.g. 555 555 5555)' },
+  { code: 'IN', dial: '+91', name: 'India', min: 10, max: 10, regex: /^[6-9]\d{9}$/, hint: '10 digits starting with 6-9' },
+  { code: 'GB', dial: '+44', name: 'United Kingdom', min: 10, max: 10, regex: /^7\d{9}$/, hint: '10 digits starting with 7' },
+  { code: 'AU', dial: '+61', name: 'Australia', min: 9, max: 9, regex: /^4\d{8}$/, hint: '9 digits starting with 4' },
+  { code: 'DE', dial: '+49', name: 'Germany', min: 10, max: 11, regex: /^1[5-7]\d{8,9}$/, hint: '10-11 digits starting with 15/16/17' },
+  { code: 'FR', dial: '+33', name: 'France', min: 9, max: 9, regex: /^[67]\d{8}$/, hint: '9 digits starting with 6 or 7' },
+  { code: 'JP', dial: '+81', name: 'Japan', min: 10, max: 10, regex: /^[789]0\d{8}$/, hint: '10 digits starting with 70, 80 or 90' },
+  { code: 'SG', dial: '+65', name: 'Singapore', min: 8, max: 8, regex: /^[89]\d{7}$/, hint: '8 digits starting with 8 or 9' },
+  { code: 'AE', dial: '+971', name: 'UAE', min: 9, max: 9, regex: /^5\d{8}$/, hint: '9 digits starting with 5' }
+];
+
+const validatePhoneNumber = (countryCodeDial, localDigits) => {
+  const cleanDigits = (localDigits || '').replace(/\D/g, '');
+  if (!cleanDigits) {
+    return { isValid: false, error: 'Mobile number is required', cleanDigits: '' };
+  }
+
+  const country = COUNTRY_CODES.find(c => c.dial === countryCodeDial);
+  if (!country) {
+    if (cleanDigits.length < 7 || cleanDigits.length > 15) {
+      return { isValid: false, error: 'Please enter a valid phone number (7-15 digits)', cleanDigits };
+    }
+    return { isValid: true, error: '', cleanDigits };
+  }
+
+  if (country.min === country.max && cleanDigits.length !== country.min) {
+    return {
+      isValid: false,
+      error: `Please enter a valid ${country.name} mobile number (${country.min} digits). You entered ${cleanDigits.length} digit${cleanDigits.length === 1 ? '' : 's'}.`,
+      cleanDigits
+    };
+  }
+
+  if (cleanDigits.length < country.min || cleanDigits.length > country.max) {
+    return {
+      isValid: false,
+      error: `Please enter a valid ${country.name} mobile number (${country.min}-${country.max} digits). You entered ${cleanDigits.length} digit${cleanDigits.length === 1 ? '' : 's'}.`,
+      cleanDigits
+    };
+  }
+
+  if (country.regex && !country.regex.test(cleanDigits)) {
+    return {
+      isValid: false,
+      error: `Invalid ${country.name} mobile number format. Expected: ${country.hint}.`,
+      cleanDigits
+    };
+  }
+
+  return { isValid: true, error: '', cleanDigits };
+};
+
+const parsePhoneNumber = (fullPhone) => {
+  if (!fullPhone || !fullPhone.startsWith('+')) {
+    return { countryDial: '+1', localNumber: fullPhone ? fullPhone.replace(/\D/g, '') : '' };
+  }
+  // Try longest matching prefix from COUNTRY_CODES
+  const sorted = [...COUNTRY_CODES].sort((a, b) => b.dial.length - a.dial.length);
+  for (const c of sorted) {
+    if (fullPhone.startsWith(c.dial)) {
+      return { countryDial: c.dial, localNumber: fullPhone.slice(c.dial.length) };
+    }
+  }
+  return { countryDial: '+1', localNumber: fullPhone.slice(1) };
+};
 
 export default function App() {
   // Theme state
@@ -76,8 +145,9 @@ export default function App() {
 
   // Form models
   const [bookForm, setBookForm] = useState({ id: '', title: '', author: '', isbn: '' });
-  const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '' });
-  const [profileForm, setProfileForm] = useState({ name: '', email: '' });
+  const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
+  const [profileForm, setProfileForm] = useState({ name: '', email: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
+  const [promptPhoneForm, setPromptPhoneForm] = useState({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
   const [selectedBookForCover, setSelectedBookForCover] = useState({ id: '', title: '' });
   const [coverFile, setCoverFile] = useState(null);
   const [coverPreview, setCoverPreview] = useState('');
@@ -226,6 +296,10 @@ export default function App() {
       if (res.ok && res.data) {
         setCurrentUser(res.data);
         sessionStorage.removeItem('auth0_pending_username');
+        if (!res.data.phone && !sessionStorage.getItem('phone_prompt_dismissed')) {
+          setPromptPhoneForm({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
+          setActiveModal('missingPhonePrompt');
+        }
       } else if (auth0User) {
         setCurrentUser({
           email: auth0User.email || '',
@@ -413,23 +487,58 @@ export default function App() {
 
   const handleCreateUserSubmit = async (e) => {
     e.preventDefault();
+    let formattedPhone = null;
+    if (userForm.phoneNumber && userForm.phoneNumber.trim()) {
+      const validation = validatePhoneNumber(userForm.countryCode, userForm.phoneNumber);
+      if (!validation.isValid) {
+        setUserForm(prev => ({ ...prev, phoneError: validation.error }));
+        return;
+      }
+      formattedPhone = `${userForm.countryCode}${validation.cleanDigits}`;
+    }
+
+    const payload = {
+      name: userForm.name,
+      email: userForm.email,
+      password: userForm.password,
+      ...(formattedPhone ? { phone: formattedPhone } : {})
+    };
+
     const res = await fetchApi('/user', {
       method: 'POST',
-      body: JSON.stringify(userForm)
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
       showToast('Member registered successfully', 'success');
       setActiveModal(null);
-      setUserForm({ id: '', name: '', email: '', password: '' });
+      setUserForm({ id: '', name: '', email: '', password: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
       loadMembers(membersPage, memberSearchQuery);
     } else {
-      showToast(res.data?.message || 'Failed to register member', 'error');
+      const errMsg = res.data?.message || 'Failed to register member';
+      if (errMsg.toLowerCase().includes('phone') || errMsg.toLowerCase().includes('mobile')) {
+        setUserForm(prev => ({ ...prev, phoneError: errMsg }));
+      }
+      showToast(errMsg, 'error');
     }
   };
 
   const handleEditUserSubmit = async (e) => {
     e.preventDefault();
-    const payload = { name: userForm.name, email: userForm.email };
+    let formattedPhone = null;
+    if (userForm.phoneNumber && userForm.phoneNumber.trim()) {
+      const validation = validatePhoneNumber(userForm.countryCode, userForm.phoneNumber);
+      if (!validation.isValid) {
+        setUserForm(prev => ({ ...prev, phoneError: validation.error }));
+        return;
+      }
+      formattedPhone = `${userForm.countryCode}${validation.cleanDigits}`;
+    }
+
+    const payload = {
+      name: userForm.name,
+      email: userForm.email,
+      phone: formattedPhone
+    };
     if (userForm.password) payload.password = userForm.password;
     const res = await fetchApi(`/user/${userForm.id}`, {
       method: 'PUT',
@@ -440,7 +549,11 @@ export default function App() {
       setActiveModal(null);
       loadMembers(membersPage, memberSearchQuery);
     } else {
-      showToast(res.data?.message || 'Failed to update member', 'error');
+      const errMsg = res.data?.message || 'Failed to update member';
+      if (errMsg.toLowerCase().includes('phone') || errMsg.toLowerCase().includes('mobile')) {
+        setUserForm(prev => ({ ...prev, phoneError: errMsg }));
+      }
+      showToast(errMsg, 'error');
     }
   };
 
@@ -701,9 +814,13 @@ export default function App() {
 
   const handleOpenEditProfile = () => {
     if (currentUser) {
+      const parsed = parsePhoneNumber(currentUser.phone || '');
       setProfileForm({
         name: currentUser.name || '',
-        email: currentUser.email || ''
+        email: currentUser.email || '',
+        countryCode: parsed.countryDial,
+        phoneNumber: parsed.localNumber,
+        phoneError: ''
       });
       setShowUserDropdown(false);
       setActiveModal('editProfile');
@@ -717,9 +834,20 @@ export default function App() {
       return;
     }
 
+    let formattedPhone = null;
+    if (profileForm.phoneNumber && profileForm.phoneNumber.trim()) {
+      const validation = validatePhoneNumber(profileForm.countryCode, profileForm.phoneNumber);
+      if (!validation.isValid) {
+        setProfileForm(prev => ({ ...prev, phoneError: validation.error }));
+        return;
+      }
+      formattedPhone = `${profileForm.countryCode}${validation.cleanDigits}`;
+    }
+
     const payload = {
       name: profileForm.name.trim(),
-      email: profileForm.email.trim() || (currentUser ? currentUser.email : '')
+      email: profileForm.email.trim() || (currentUser ? currentUser.email : ''),
+      phone: formattedPhone
     };
 
     const endpoint = (currentUser && currentUser.id) ? `/user/${currentUser.id}` : '/user/me';
@@ -734,7 +862,48 @@ export default function App() {
       showToast('Profile updated successfully', 'success');
       setActiveModal(null);
     } else {
-      showToast(res.data?.message || 'Failed to update profile', 'error');
+      const errMsg = res.data?.message || 'Failed to update profile';
+      if (errMsg.toLowerCase().includes('phone') || errMsg.toLowerCase().includes('mobile')) {
+        setProfileForm(prev => ({ ...prev, phoneError: errMsg }));
+      }
+      showToast(errMsg, 'error');
+    }
+  };
+
+  const handlePromptPhoneSubmit = async (e) => {
+    e.preventDefault();
+    const validation = validatePhoneNumber(promptPhoneForm.countryCode, promptPhoneForm.phoneNumber);
+    if (!validation.isValid) {
+      setPromptPhoneForm(prev => ({ ...prev, phoneError: validation.error }));
+      return;
+    }
+
+    const formattedPhone = `${promptPhoneForm.countryCode}${validation.cleanDigits}`;
+    setPromptPhoneForm(prev => ({ ...prev, isSubmitting: true, phoneError: '' }));
+
+    const payload = {
+      name: currentUser?.name || 'User',
+      email: currentUser?.email || '',
+      phone: formattedPhone
+    };
+
+    const endpoint = (currentUser && currentUser.id) ? `/user/${currentUser.id}` : '/user/me';
+    const res = await fetchApi(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+
+    setPromptPhoneForm(prev => ({ ...prev, isSubmitting: false }));
+
+    if (res.ok && res.data) {
+      setCurrentUser(res.data);
+      sessionStorage.setItem('phone_prompt_dismissed', 'true');
+      showToast('Mobile number verified and saved successfully', 'success');
+      setActiveModal(null);
+    } else {
+      const errMsg = res.data?.message || 'Failed to save phone number';
+      setPromptPhoneForm(prev => ({ ...prev, phoneError: errMsg }));
+      showToast(errMsg, 'error');
     }
   };
 
@@ -1318,7 +1487,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <button className="btn btn-primary" onClick={() => { setUserForm({ id: '', name: '', email: '', password: '' }); setActiveModal('createUser'); }}>
+                <button className="btn btn-primary" onClick={() => { setUserForm({ id: '', name: '', email: '', password: '', countryCode: '+1', phoneNumber: '', phoneError: '' }); setActiveModal('createUser'); }}>
                   <Plus size={16} />
                   <span>Register Member</span>
                 </button>
@@ -1331,13 +1500,14 @@ export default function App() {
                       <th width="60">ID</th>
                       <th>Member Name</th>
                       <th>Email Address</th>
-                      <th width="140">Reward Points</th>
-                      <th width="180" className="text-right">Actions</th>
+                      <th width="150">Phone Number</th>
+                      <th width="130">Reward Points</th>
+                      <th width="170" className="text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {members.length === 0 ? (
-                      <tr><td colSpan="5" className="empty-cell">No members found.</td></tr>
+                      <tr><td colSpan="6" className="empty-cell">No members found.</td></tr>
                     ) : (
                       members.map((m, idx) => (
                         <tr key={m.id ?? m.uuid ?? m.email ?? `member-${idx}`}>
@@ -1345,13 +1515,35 @@ export default function App() {
                           <td><strong>{m.name || m.username}</strong></td>
                           <td>{m.email}</td>
                           <td>
+                            {m.phone ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', fontWeight: '500' }}>
+                                <Phone size={13} style={{ color: 'var(--accent-primary)', opacity: 0.8 }} />
+                                <code>{m.phone}</code>
+                              </span>
+                            ) : (
+                              <span className="text-subtle" style={{ fontSize: '12px' }}>—</span>
+                            )}
+                          </td>
+                          <td>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '12px' }}>
                               🏆 {m.rewardPoints || 0} pts
                             </span>
                           </td>
                           <td className="text-right">
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                              <button className="btn btn-secondary btn-sm" onClick={() => { setUserForm({ id: m.id, name: m.name || m.username, email: m.email, password: '' }); setActiveModal('editUser'); }}>Edit</button>
+                              <button className="btn btn-secondary btn-sm" onClick={() => {
+                                const parsed = parsePhoneNumber(m.phone || '');
+                                setUserForm({
+                                  id: m.id,
+                                  name: m.name || m.username,
+                                  email: m.email,
+                                  password: '',
+                                  countryCode: parsed.countryDial,
+                                  phoneNumber: parsed.localNumber,
+                                  phoneError: ''
+                                });
+                                setActiveModal('editUser');
+                              }}>Edit</button>
                               <button className="btn btn-danger btn-sm" onClick={() => handleDeleteUser(m.id, m.name || m.email)}>Delete</button>
                             </div>
                           </td>
@@ -1741,7 +1933,109 @@ export default function App() {
         </main>
       </div>
 
-      {/* MODALS */}
+      {/* -1. Prompt Mobile Number Onboarding Modal */}
+      {activeModal === 'missingPhonePrompt' && (
+        <div className="modal-backdrop open">
+          <div className="modal-card max-w-sm" style={{ padding: '28px 24px', borderRadius: '20px' }}>
+            <div className="modal-header border-none" style={{ padding: 0, marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h3 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '4px' }}>Add Mobile Number</h3>
+                <p className="text-subtle" style={{ fontSize: '13px', margin: 0 }}>
+                  Please add your phone number with country code to complete your profile.
+                </p>
+              </div>
+              <button
+                className="btn-close"
+                onClick={() => {
+                  sessionStorage.setItem('phone_prompt_dismissed', 'true');
+                  setActiveModal(null);
+                }}
+              >
+                &times;
+              </button>
+            </div>
+            <form onSubmit={handlePromptPhoneSubmit}>
+              <div className="modal-body" style={{ padding: 0 }}>
+                <div className="form-group mb-4">
+                  <label className="form-label" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-subtle)', marginBottom: '8px' }}>
+                    Phone number
+                  </label>
+                  <div className={`phone-input-control ${promptPhoneForm.phoneError ? 'has-error' : ''}`}>
+                    <select
+                      className="phone-country-select"
+                      value={promptPhoneForm.countryCode}
+                      onChange={e => setPromptPhoneForm({ ...promptPhoneForm, countryCode: e.target.value, phoneError: '' })}
+                    >
+                      {COUNTRY_CODES.map(c => (
+                        <option key={`prompt-${c.code}-${c.dial}`} value={c.dial}>
+                          {c.code} {c.dial}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="tel"
+                      className="phone-number-field"
+                      placeholder="555 555 5555"
+                      required
+                      value={promptPhoneForm.phoneNumber}
+                      onChange={e => {
+                        const val = e.target.value.replace(/[^\d\s-]/g, '');
+                        setPromptPhoneForm(prev => {
+                          const res = prev.phoneError ? validatePhoneNumber(prev.countryCode, val) : null;
+                          return {
+                            ...prev,
+                            phoneNumber: val,
+                            phoneError: (res && res.isValid) ? '' : prev.phoneError
+                          };
+                        });
+                      }}
+                      onBlur={() => {
+                        if (promptPhoneForm.phoneNumber.trim()) {
+                          const res = validatePhoneNumber(promptPhoneForm.countryCode, promptPhoneForm.phoneNumber);
+                          setPromptPhoneForm(prev => ({ ...prev, phoneError: res.isValid ? '' : res.error }));
+                        }
+                      }}
+                    />
+                  </div>
+                  {promptPhoneForm.phoneError && (
+                    <small className="text-danger" style={{ display: 'block', marginTop: '6px', fontSize: '12px' }}>
+                      {promptPhoneForm.phoneError}
+                    </small>
+                  )}
+                </div>
+              </div>
+              <div className="modal-footer border-none" style={{ padding: '12px 0 0 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <button
+                  type="submit"
+                  className="btn-continue-pill"
+                  disabled={promptPhoneForm.isSubmitting || !promptPhoneForm.phoneNumber.trim()}
+                >
+                  {promptPhoneForm.isSubmitting ? (
+                    <>
+                      <RefreshCw className="animate-spin" size={16} />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    'Continue'
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: '100%', color: 'var(--text-subtle)' }}
+                  onClick={() => {
+                    sessionStorage.setItem('phone_prompt_dismissed', 'true');
+                    setActiveModal(null);
+                  }}
+                >
+                  Remind Me Later
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* 0. Edit Profile Modal */}
       {activeModal === 'editProfile' && (
         <div className="modal-backdrop open">
@@ -1775,6 +2069,54 @@ export default function App() {
                   <small className="text-muted" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
                     Primary email address for notifications and account identifier.
                   </small>
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Phone number</label>
+                  <div className={`phone-input-control ${profileForm.phoneError ? 'has-error' : ''}`}>
+                    <select
+                      className="phone-country-select"
+                      value={profileForm.countryCode}
+                      onChange={e => setProfileForm({ ...profileForm, countryCode: e.target.value, phoneError: '' })}
+                    >
+                      {COUNTRY_CODES.map(c => (
+                        <option key={`profile-${c.code}-${c.dial}`} value={c.dial}>
+                          {c.code} {c.dial}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="tel"
+                      className="phone-number-field"
+                      placeholder="555 555 5555"
+                      value={profileForm.phoneNumber}
+                      onChange={e => {
+                        const val = e.target.value.replace(/[^\d\s-]/g, '');
+                        setProfileForm(prev => {
+                          const res = prev.phoneError ? validatePhoneNumber(prev.countryCode, val) : null;
+                          return {
+                            ...prev,
+                            phoneNumber: val,
+                            phoneError: (res && res.isValid) ? '' : prev.phoneError
+                          };
+                        });
+                      }}
+                      onBlur={() => {
+                        if (profileForm.phoneNumber.trim()) {
+                          const res = validatePhoneNumber(profileForm.countryCode, profileForm.phoneNumber);
+                          setProfileForm(prev => ({ ...prev, phoneError: res.isValid ? '' : res.error }));
+                        }
+                      }}
+                    />
+                  </div>
+                  {profileForm.phoneError ? (
+                    <small className="text-danger" style={{ display: 'block', marginTop: '6px', fontSize: '12px' }}>
+                      {profileForm.phoneError}
+                    </small>
+                  ) : (
+                    <small className="text-muted" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                      Select your country code and enter mobile digits (e.g. US +1 555 555 5555).
+                    </small>
+                  )}
                 </div>
                 <div className="form-group mb-4">
                   <label className="form-label">Account Role & Points</label>
@@ -1923,6 +2265,54 @@ export default function App() {
                   <input type="email" className="form-input" required value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })} />
                 </div>
                 <div className="form-group">
+                  <label className="form-label">Phone number</label>
+                  <div className={`phone-input-control ${userForm.phoneError ? 'has-error' : ''}`}>
+                    <select
+                      className="phone-country-select"
+                      value={userForm.countryCode}
+                      onChange={e => setUserForm({ ...userForm, countryCode: e.target.value, phoneError: '' })}
+                    >
+                      {COUNTRY_CODES.map(c => (
+                        <option key={`create-u-${c.code}-${c.dial}`} value={c.dial}>
+                          {c.code} {c.dial}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="tel"
+                      className="phone-number-field"
+                      placeholder="555 555 5555"
+                      value={userForm.phoneNumber}
+                      onChange={e => {
+                        const val = e.target.value.replace(/[^\d\s-]/g, '');
+                        setUserForm(prev => {
+                          const res = prev.phoneError ? validatePhoneNumber(prev.countryCode, val) : null;
+                          return {
+                            ...prev,
+                            phoneNumber: val,
+                            phoneError: (res && res.isValid) ? '' : prev.phoneError
+                          };
+                        });
+                      }}
+                      onBlur={() => {
+                        if (userForm.phoneNumber.trim()) {
+                          const res = validatePhoneNumber(userForm.countryCode, userForm.phoneNumber);
+                          setUserForm(prev => ({ ...prev, phoneError: res.isValid ? '' : res.error }));
+                        }
+                      }}
+                    />
+                  </div>
+                  {userForm.phoneError ? (
+                    <small className="text-danger" style={{ display: 'block', marginTop: '6px', fontSize: '12px' }}>
+                      {userForm.phoneError}
+                    </small>
+                  ) : (
+                    <small className="text-muted" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                      Optional: Country code and digits for notifications and Salesforce sync.
+                    </small>
+                  )}
+                </div>
+                <div className="form-group">
                   <label className="form-label">Password</label>
                   <input type="password" className="form-input" required minLength="8" value={userForm.password} onChange={e => setUserForm({ ...userForm, password: e.target.value })} />
                 </div>
@@ -1953,6 +2343,54 @@ export default function App() {
                 <div className="form-group">
                   <label className="form-label">Email Address</label>
                   <input type="email" className="form-input" required value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Phone number</label>
+                  <div className={`phone-input-control ${userForm.phoneError ? 'has-error' : ''}`}>
+                    <select
+                      className="phone-country-select"
+                      value={userForm.countryCode}
+                      onChange={e => setUserForm({ ...userForm, countryCode: e.target.value, phoneError: '' })}
+                    >
+                      {COUNTRY_CODES.map(c => (
+                        <option key={`edit-u-${c.code}-${c.dial}`} value={c.dial}>
+                          {c.code} {c.dial}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="tel"
+                      className="phone-number-field"
+                      placeholder="555 555 5555"
+                      value={userForm.phoneNumber}
+                      onChange={e => {
+                        const val = e.target.value.replace(/[^\d\s-]/g, '');
+                        setUserForm(prev => {
+                          const res = prev.phoneError ? validatePhoneNumber(prev.countryCode, val) : null;
+                          return {
+                            ...prev,
+                            phoneNumber: val,
+                            phoneError: (res && res.isValid) ? '' : prev.phoneError
+                          };
+                        });
+                      }}
+                      onBlur={() => {
+                        if (userForm.phoneNumber.trim()) {
+                          const res = validatePhoneNumber(userForm.countryCode, userForm.phoneNumber);
+                          setUserForm(prev => ({ ...prev, phoneError: res.isValid ? '' : res.error }));
+                        }
+                      }}
+                    />
+                  </div>
+                  {userForm.phoneError ? (
+                    <small className="text-danger" style={{ display: 'block', marginTop: '6px', fontSize: '12px' }}>
+                      {userForm.phoneError}
+                    </small>
+                  ) : (
+                    <small className="text-muted" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                      Optional: Country code and digits for notifications and Salesforce sync.
+                    </small>
+                  )}
                 </div>
                 <div className="form-group">
                   <label className="form-label">Change Password (optional)</label>

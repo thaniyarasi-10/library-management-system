@@ -7,37 +7,94 @@ import com.kovanlabs.librarymanagement.service.FineService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.math.BigDecimal;
+import java.security.Principal;
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 class FineControllerTest {
 
+    @Mock
     private FineService fineService;
+
+    @Mock
+    private Principal principal;
+
+    @InjectMocks
     private FineController fineController;
+
     private String fineUuid;
     private String bookUuid;
     private String userUuid;
     private Long fineId;
-    private Long bookId;
     private Long userId;
 
     @BeforeEach
     void setUp() {
-        fineService = mock(FineService.class);
-        fineController = new FineController(fineService);
         fineUuid = UUID.randomUUID().toString();
         bookUuid = UUID.randomUUID().toString();
         userUuid = UUID.randomUUID().toString();
         fineId = 1L;
-        bookId = 10L;
         userId = 20L;
+    }
+
+    @Test
+    @DisplayName("getAllFines should return all fines DTO list")
+    void testGetAllFines() {
+        FineResponseDto dto = FineResponseDto.builder()
+                .id(fineId)
+                .amount(BigDecimal.TEN)
+                .status(FineStatus.PENDING)
+                .build();
+        when(fineService.getAllFinesDto()).thenReturn(List.of(dto));
+
+        ResponseEntity<List<FineResponseDto>> response = fineController.getAllFines();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(1, response.getBody().size());
+        verify(fineService).getAllFinesDto();
+    }
+
+    @Test
+    @DisplayName("getMyFines with principal should return user's fines")
+    void testGetMyFines_withPrincipal() {
+        when(principal.getName()).thenReturn("test@example.com");
+        FineResponseDto dto = FineResponseDto.builder()
+                .id(fineId)
+                .amount(BigDecimal.TEN)
+                .status(FineStatus.PENDING)
+                .build();
+        when(fineService.getFinesDtoByUserEmail("test@example.com")).thenReturn(List.of(dto));
+
+        ResponseEntity<List<FineResponseDto>> response = fineController.getMyFines(principal);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(1, response.getBody().size());
+        verify(fineService).getFinesDtoByUserEmail("test@example.com");
+    }
+
+    @Test
+    @DisplayName("getMyFines with null principal should return empty list")
+    void testGetMyFines_withNullPrincipal() {
+        ResponseEntity<List<FineResponseDto>> response = fineController.getMyFines(null);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody().isEmpty());
+        verifyNoInteractions(fineService);
     }
 
     @Test
@@ -83,7 +140,6 @@ class FineControllerTest {
         assertEquals(expectedTotal, response.getBody());
         verify(fineService, times(1)).calculateTotalPendingFineForUser(userId);
     }
-
 
     @Test
     @DisplayName("Should get fines and pending fines by user ID")

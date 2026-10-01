@@ -239,4 +239,126 @@ class FineServiceTest {
 
         assertFalse(fineService.hasPendingFines(userId));
     }
+
+    @Test
+    @DisplayName("getAllFinesDto should return mapped DTOs")
+    void testGetAllFinesDto() {
+        String bookUuid = UUID.randomUUID().toString();
+        String userUuid = UUID.randomUUID().toString();
+        Fine fine = Fine.builder()
+                .id(1L)
+                .uuid(UUID.randomUUID().toString())
+                .bookUuid(bookUuid)
+                .userUuid(userUuid)
+                .pendingFineAmount(BigDecimal.TEN)
+                .status(FineStatus.PENDING)
+                .build();
+        Book book = Book.builder().id(10L).uuid(bookUuid).title("Test Book").author("Test Author").build();
+        User user = User.builder().id(20L).uuid(userUuid).name("Test User").email("test@example.com").build();
+
+        when(fineRepository.findAllByOrderByIdDesc()).thenReturn(List.of(fine));
+        when(bookRepository.findByUuid(bookUuid)).thenReturn(Optional.of(book));
+        when(userRepository.findByUuid(userUuid)).thenReturn(Optional.of(user));
+
+        var dtos = fineService.getAllFinesDto();
+        assertNotNull(dtos);
+        assertEquals(1, dtos.size());
+        assertEquals("Test Book", dtos.get(0).bookTitle());
+        assertEquals("Test User", dtos.get(0).userName());
+    }
+
+    @Test
+    @DisplayName("getFinesDtoByUserId should return mapped DTOs for user")
+    void testGetFinesDtoByUserId() {
+        Long userId = 20L;
+        String userUuid = UUID.randomUUID().toString();
+        User user = User.builder().id(userId).uuid(userUuid).name("Test User").email("test@example.com").build();
+        Fine fine = Fine.builder()
+                .id(1L)
+                .bookUuid(UUID.randomUUID().toString())
+                .userUuid(userUuid)
+                .pendingFineAmount(BigDecimal.TEN)
+                .status(FineStatus.PENDING)
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(fineRepository.findByUserUuidOrderByIdDesc(userUuid)).thenReturn(List.of(fine));
+
+        var dtos = fineService.getFinesDtoByUserId(userId);
+        assertNotNull(dtos);
+        assertEquals(1, dtos.size());
+    }
+
+    @Test
+    @DisplayName("getFinesDtoByUserEmail should handle null, provider match, or email match")
+    void testGetFinesDtoByUserEmail() {
+        // null email
+        assertTrue(fineService.getFinesDtoByUserEmail(null).isEmpty());
+
+        // provider match
+        String email = "member@example.com";
+        String userUuid = UUID.randomUUID().toString();
+        User user = User.builder().id(20L).uuid(userUuid).build();
+        com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
+                .userUuid(userUuid)
+                .build();
+        when(userProviderRepository.findByProviderId(email)).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid(userUuid)).thenReturn(Optional.of(user));
+        when(userRepository.findById(20L)).thenReturn(Optional.of(user));
+        when(fineRepository.findByUserUuidOrderByIdDesc(userUuid)).thenReturn(List.of());
+
+        var result = fineService.getFinesDtoByUserEmail(email);
+        assertNotNull(result);
+
+        // email match fallback
+        when(userProviderRepository.findByProviderId("direct@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("direct@example.com")).thenReturn(Optional.of(user));
+        var result2 = fineService.getFinesDtoByUserEmail("direct@example.com");
+        assertNotNull(result2);
+
+        // no match
+        when(userProviderRepository.findByProviderId("missing@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
+        assertTrue(fineService.getFinesDtoByUserEmail("missing@example.com").isEmpty());
+    }
+
+    @Test
+    @DisplayName("getFinesByUserId and getPendingFinesByUserId should return entity lists")
+    void testGetFinesAndPendingFinesByUserId() {
+        Long userId = 20L;
+        String userUuid = UUID.randomUUID().toString();
+        User user = User.builder().id(userId).uuid(userUuid).build();
+        Fine fine = Fine.builder().id(1L).userUuid(userUuid).build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(fineRepository.findByUserUuid(userUuid)).thenReturn(List.of(fine));
+        when(fineRepository.findByUserUuidAndStatus(userUuid, FineStatus.PENDING)).thenReturn(List.of(fine));
+
+        assertEquals(1, fineService.getFinesByUserId(userId).size());
+        assertEquals(1, fineService.getPendingFinesByUserId(userId).size());
+    }
+
+    @Test
+    @DisplayName("mapToDtoWithDetails heals zeroed fine amount from borrow record if available")
+    void testMapToDtoWithDetails_healsZeroAmount() {
+        String bookUuid = UUID.randomUUID().toString();
+        String userUuid = UUID.randomUUID().toString();
+        Fine fine = Fine.builder()
+                .id(1L)
+                .bookUuid(bookUuid)
+                .userUuid(userUuid)
+                .pendingFineAmount(BigDecimal.ZERO)
+                .status(FineStatus.PAID)
+                .build();
+        Borrow borrow = Borrow.builder()
+                .dueDate(LocalDate.now().minusDays(3))
+                .build();
+
+        when(borrowRepository.findFirstByBook_UuidAndUser_UuidOrderByDueDateDesc(bookUuid, userUuid))
+                .thenReturn(Optional.of(borrow));
+
+        var dto = fineService.mapToDtoWithDetails(fine);
+        assertNotNull(dto);
+        assertEquals(BigDecimal.valueOf(15.0), dto.pendingFineAmount());
+    }
 }
