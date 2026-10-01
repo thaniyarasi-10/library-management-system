@@ -221,6 +221,23 @@ class UserServiceImplTest {
     }
 
     @Test
+    void deleteUser_whenUserNotFound_shouldThrowNotFound() {
+        when(userRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> userService.deleteUser(999L));
+        verify(userRepository, never()).delete(any());
+    }
+
+    @Test
+    void deleteUser_whenSalesforceDeleteThrows_shouldLogAndNotFail() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+        doThrow(new RuntimeException("SF delete error")).when(salesforceSyncDelegate).deleteUser(uuid1);
+
+        assertDoesNotThrow(() -> userService.deleteUser(1L));
+        verify(userRepository, times(1)).delete(user1);
+    }
+
+    @Test
     void syncAuth0User_whenExistingProviderId_shouldReturnExistingUserWithoutUpdatingUserOrSalesforce() {
         LocalDateTime created = LocalDateTime.of(2025, 1, 1, 10, 0);
         LocalDateTime updated = LocalDateTime.of(2025, 1, 1, 10, 0);
@@ -499,6 +516,47 @@ class UserServiceImplTest {
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThrows(ResponseStatusException.class, () -> userService.updateUserRole(99L, RoleEnum.ADMIN));
+    }
+
+    @Test
+    void updateUserRole_whenRoleNull_shouldThrowBadRequest() {
+        assertThrows(ResponseStatusException.class, () -> userService.updateUserRole(1L, null));
+    }
+
+    @Test
+    void updateUserRole_whenSalesforceSyncThrows_shouldMarkPending() {
+        User testUser = User.builder()
+                .uuid(uuid1)
+                .id(1L)
+                .name("Alice Smith")
+                .email("alice@example.com")
+                .role(RoleEnum.USER)
+                .salesforceRetryCount(0)
+                .build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("SF dual-write fail")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+
+        UserResponse response = userService.updateUserRole(1L, RoleEnum.ADMIN);
+
+        assertNotNull(response);
+        assertEquals(SalesforceSyncStatus.PENDING, testUser.getSalesforceSyncStatus());
+        assertEquals(1, testUser.getSalesforceRetryCount());
+    }
+
+    @Test
+    void syncAuth0User_whenNewUserAndSalesforceFails_shouldCatchExceptionAndMarkPending() {
+        when(userProviderRepository.findByProviderId("auth0|new-error-sf")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("new-sf-error@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("SF sync error")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+
+        User created = userService.syncAuth0User("auth0|new-error-sf", "new-sf-error@example.com", "New User", RoleEnum.USER);
+
+        assertNotNull(created);
+        assertEquals(SalesforceSyncStatus.PENDING, created.getSalesforceSyncStatus());
+        assertEquals(1, created.getSalesforceRetryCount());
     }
 
     @Test
@@ -799,5 +857,149 @@ class UserServiceImplTest {
         assertEquals(1, result.content().size());
         assertEquals("Alice Smith", result.content().get(0).name());
         verify(userRepository).findAll(any(Pageable.class));
+    }
+
+    // --- Tests for getHeaderFromRequestContext ---
+
+    @Test
+    @DisplayName("getHeaderFromRequestContext should read X-User-Username and X-User-Name from RequestContextHolder when present")
+    void getHeaderFromRequestContext_shouldExtractHeaderWhenPresent() {
+        org.springframework.mock.web.MockHttpServletRequest mockRequest = new org.springframework.mock.web.MockHttpServletRequest();
+        mockRequest.addHeader("X-User-Username", "CustomHeaderUser");
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(mockRequest)
+        );
+
+        try {
+            Jwt jwt = mock(Jwt.class);
+            when(jwt.getSubject()).thenReturn("auth0|header-test");
+            when(jwt.getClaimAsString("email")).thenReturn("header-user@example.com");
+
+            org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+            when(auth.getPrincipal()).thenReturn(jwt);
+
+            when(userProviderRepository.findByProviderId("auth0|header-test")).thenReturn(Optional.empty());
+            when(userRepository.findByEmail("header-user@example.com")).thenReturn(Optional.empty());
+            when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+            when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+            UserResponse response = userService.getCurrentUser(auth);
+
+            assertNotNull(response);
+            assertEquals("CustomHeaderUser", response.name());
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    @Test
+    @DisplayName("getHeaderFromRequestContext should fallback to X-User-Name if X-User-Username is missing")
+    void getHeaderFromRequestContext_shouldFallbackToXUserName() {
+        org.springframework.mock.web.MockHttpServletRequest mockRequest = new org.springframework.mock.web.MockHttpServletRequest();
+        mockRequest.addHeader("X-User-Name", "FallbackHeaderName");
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(mockRequest)
+        );
+
+        try {
+            Jwt jwt = mock(Jwt.class);
+            when(jwt.getSubject()).thenReturn("auth0|header-fallback");
+            when(jwt.getClaimAsString("email")).thenReturn("header-fallback@example.com");
+
+            org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+            when(auth.getPrincipal()).thenReturn(jwt);
+
+            when(userProviderRepository.findByProviderId("auth0|header-fallback")).thenReturn(Optional.empty());
+            when(userRepository.findByEmail("header-fallback@example.com")).thenReturn(Optional.empty());
+            when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+            when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+            UserResponse response = userService.getCurrentUser(auth);
+
+            assertNotNull(response);
+            assertEquals("FallbackHeaderName", response.name());
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    @Test
+    @DisplayName("getHeaderFromRequestContext should return null safely when RequestContextHolder has no attributes")
+    void getHeaderFromRequestContext_whenNoRequestContext_shouldSafelyReturnNull() {
+        org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+
+        Jwt jwt = mock(Jwt.class);
+        when(jwt.getSubject()).thenReturn("auth0|no-ctx");
+        when(jwt.getClaimAsString("email")).thenReturn("no-ctx@example.com");
+        when(jwt.getClaimAsString("name")).thenReturn("JwtName");
+
+        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        when(auth.getPrincipal()).thenReturn(jwt);
+
+        when(userProviderRepository.findByProviderId("auth0|no-ctx")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("no-ctx@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("JwtName", response.name());
+    }
+
+    // --- Tests for syncUserToSalesforce ---
+
+    @Test
+    @DisplayName("syncUserToSalesforce should execute and mark SUCCESS on new user registration")
+    void syncUserToSalesforce_whenNewUserCreated_shouldSyncAndMarkSuccess() {
+        when(userProviderRepository.findByProviderId("auth0|sf-success")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("sf-success@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        User created = userService.syncAuth0User("auth0|sf-success", "sf-success@example.com", "SF Success User", RoleEnum.USER);
+
+        assertNotNull(created);
+        assertEquals(SalesforceSyncStatus.SUCCESS, created.getSalesforceSyncStatus());
+        verify(salesforceSyncDelegate, times(1)).syncContact(any(ContactSObject.class));
+        verify(userRepository, atLeast(2)).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("syncUserToSalesforce should increment retry count and mark PENDING when Salesforce throws exception")
+    void syncUserToSalesforce_whenSalesforceThrows_shouldCatchErrorAndMarkPending() {
+        when(userProviderRepository.findByProviderId("auth0|sf-fail")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("sf-fail@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("Salesforce service connection error")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+
+        User created = userService.syncAuth0User("auth0|sf-fail", "sf-fail@example.com", "SF Fail User", RoleEnum.USER);
+
+        assertNotNull(created);
+        assertEquals(SalesforceSyncStatus.PENDING, created.getSalesforceSyncStatus());
+        assertEquals(1, created.getSalesforceRetryCount());
+        verify(salesforceSyncDelegate, times(1)).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("syncUserToSalesforce should not invoke Salesforce when salesforceSyncDelegate is null")
+    void syncUserToSalesforce_whenDelegateIsNull_shouldDoNothing() {
+        UserServiceImpl serviceWithoutSF = new UserServiceImpl(
+                userRepository,
+                userProviderRepository,
+                rewardRepository,
+                null
+        );
+
+        when(userProviderRepository.findByProviderId("auth0|no-sf")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("no-sf@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        User created = serviceWithoutSF.syncAuth0User("auth0|no-sf", "no-sf@example.com", "No SF", RoleEnum.USER);
+
+        assertNotNull(created);
+        verify(salesforceSyncDelegate, never()).syncContact(any(ContactSObject.class));
     }
 }

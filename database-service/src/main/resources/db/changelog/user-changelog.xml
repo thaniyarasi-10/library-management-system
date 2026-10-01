@@ -50,7 +50,7 @@
                 <constraints nullable="false"/>
             </column>
         </addColumn>
-    </changeSet>;u
+    </changeSet>
 
     <changeSet id="20-drop-password-column-from-user" author="thani">
         <preConditions onFail="CONTINUE">

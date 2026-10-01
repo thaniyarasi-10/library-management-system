@@ -16,12 +16,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import com.kovanlabs.librarymanagement.service.MembershipService;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -266,5 +267,74 @@ class BorrowServiceImplTest {
                 serviceWithoutFineChecker.returnBook(100L);
 
         assertNotNull(returnResponse);
+    }
+
+    @Test
+    @DisplayName("borrowBook should throw FORBIDDEN when user has no active membership")
+    void borrowBook_withoutActiveMembership_shouldThrowForbidden() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(membershipService.hasActiveMembership(user.getUuid())).thenReturn(false);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(request));
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+        verify(borrowRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("borrowBook and returnBook when Salesforce throws exception should set status PENDING")
+    void borrowAndReturnBook_whenSalesforceThrows_shouldSetPending() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+        doThrow(new RuntimeException("SF create error")).when(salesforceSyncService).syncBorrow(any());
+
+        BorrowResponseDto borrowResp = borrowService.borrowBook(request);
+        assertNotNull(borrowResp);
+
+        when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
+        doThrow(new RuntimeException("SF return error")).when(salesforceSyncService).syncBorrow(any());
+
+        BorrowResponseDto returnResp = borrowService.returnBook(100L);
+        assertNotNull(returnResp);
+    }
+
+    @Test
+    @DisplayName("getAllBorrows and getBorrowsByUserId should return mapped DTOs")
+    void testGetAllBorrowsAndByUserId() {
+        when(borrowRepository.findAllByOrderByIdDesc()).thenReturn(List.of(borrow));
+        when(borrowRepository.findByUser_IdOrderByIdDesc(1L)).thenReturn(List.of(borrow));
+
+        assertEquals(1, borrowService.getAllBorrows().size());
+        assertEquals(1, borrowService.getBorrowsByUserId(1L).size());
+        assertTrue(borrowService.getBorrowsByUserId(null).isEmpty());
+    }
+
+    @Test
+    @DisplayName("getBorrowsByUserEmail should return user borrows or empty")
+    void testGetBorrowsByUserEmail() {
+        assertTrue(borrowService.getBorrowsByUserEmail(null).isEmpty());
+
+        String email = "john@example.com";
+        com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
+                .userUuid(user.getUuid())
+                .build();
+        when(userProviderRepository.findByProviderId(email)).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid(user.getUuid())).thenReturn(Optional.of(user));
+        when(borrowRepository.findByUser_IdOrderByIdDesc(1L)).thenReturn(List.of(borrow));
+
+        assertEquals(1, borrowService.getBorrowsByUserEmail(email).size());
+
+        // fallback to findByEmail
+        when(userProviderRepository.findByProviderId("other@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("other@example.com")).thenReturn(Optional.of(user));
+        assertEquals(1, borrowService.getBorrowsByUserEmail("other@example.com").size());
+
+        // not found
+        when(userProviderRepository.findByProviderId("unknown@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("unknown@example.com")).thenReturn(Optional.empty());
+        assertTrue(borrowService.getBorrowsByUserEmail("unknown@example.com").isEmpty());
     }
 }

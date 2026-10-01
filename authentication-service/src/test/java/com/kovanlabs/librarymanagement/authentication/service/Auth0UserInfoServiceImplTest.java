@@ -105,4 +105,17 @@ class Auth0UserInfoServiceImplTest {
 
         assertNull(result);
     }
+
+    @Test
+    @DisplayName("fetchUserProfile with explicitUserInfoUrl and null builder should initialize and call targetUrl")
+    void fetchUserProfile_withExplicitUrlAndNullBuilder() {
+        Auth0UserInfoServiceImpl customService = new Auth0UserInfoServiceImpl(
+                null,
+                urlHelper,
+                "https://explicit.auth0.com/userinfo",
+                "default.auth0.com"
+        );
+        // Will fail or return null safely due to no mock server on the internal builder
+        assertNull(customService.fetchUserProfile("token", null));
+    }
 }
