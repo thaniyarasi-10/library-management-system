@@ -8,13 +8,10 @@ import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.SObjectAttributes;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
-import org.mapstruct.Named;
 import org.mapstruct.factory.Mappers;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
-
 /**
  * MapStruct mapper for Book entity conversions, DTO transformations,
  * and Salesforce Book SObject mappings.
@@ -73,6 +70,7 @@ public interface BookMapper {
     @Mapping(target = "author", source = "author")
     @Mapping(target = "isbn", source = "isbn")
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
+    @Mapping(target = "bookCount", source = "bookCount")
     BookSObject toBookSObject(BookResponse dto);
 
     /**
@@ -88,6 +86,7 @@ public interface BookMapper {
     @Mapping(target = "author", source = "author")
     @Mapping(target = "isbn", source = "isbn")
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
+    @Mapping(target = "bookCount", source = "bookCount")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     BookSObject toBookSObject(Book book);
@@ -104,6 +103,7 @@ public interface BookMapper {
     @Mapping(target = "author", source = "author")
     @Mapping(target = "isbn", source = "isbn")
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
+    @Mapping(target = "bookCount", source = "bookCount")
     BookResponse toBookResponse(BookSObject sObject);
 
     /**

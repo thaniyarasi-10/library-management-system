@@ -599,9 +599,22 @@ export default function App() {
 
   const handleAdminIssueLoan = async (e) => {
     e.preventDefault();
+    const memberUuidOrId = adminBorrowSelect.memberId;
+    const bookUuidOrId = adminBorrowSelect.bookId;
+
+    if (!memberUuidOrId || !bookUuidOrId) {
+      showToast('Please select both a member and a book', 'error');
+      return;
+    }
+
+    const payload = {
+      ...(typeof memberUuidOrId === 'string' && memberUuidOrId.includes('-') ? { userUuid: memberUuidOrId } : { userId: Number(memberUuidOrId) || undefined, userUuid: memberUuidOrId }),
+      ...(typeof bookUuidOrId === 'string' && bookUuidOrId.includes('-') ? { bookUuid: bookUuidOrId } : { bookId: Number(bookUuidOrId) || undefined, bookUuid: bookUuidOrId })
+    };
+
     const res = await fetchApi('/borrow', {
       method: 'POST',
-      body: JSON.stringify({ userId: adminBorrowSelect.memberId, bookId: adminBorrowSelect.bookId })
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
       showToast('Book borrow issued', 'success');
@@ -614,7 +627,15 @@ export default function App() {
 
   const handleUserSelfBorrow = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
-    if (!currentUser || !currentUser.id) return;
+    if (!isAuthenticated) {
+      showToast('Please sign in to borrow books', 'error');
+      return;
+    }
+
+    if (!userBorrowBookId) {
+      showToast('Please select a book to borrow', 'error');
+      return;
+    }
 
     // Check membership
     const resMem = await fetchApi('/memberships/me');
@@ -625,9 +646,19 @@ export default function App() {
       return;
     }
 
+    const matchedBook = books.find(b => b.uuid === userBorrowBookId || b.id === userBorrowBookId || String(b.uuid) === String(userBorrowBookId) || String(b.id) === String(userBorrowBookId));
+    const targetUuid = matchedBook?.uuid || userBorrowBookId;
+
+    const payload = {
+      bookUuid: targetUuid,
+      ...(matchedBook?.id ? { bookId: Number(matchedBook.id) } : {}),
+      ...(currentUser?.uuid ? { userUuid: currentUser.uuid } : {}),
+      ...(currentUser?.id ? { userId: Number(currentUser.id) } : {})
+    };
+
     const res = await fetchApi('/borrow', {
       method: 'POST',
-      body: JSON.stringify({ userId: currentUser.id, bookId: userBorrowBookId })
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
       showToast('Book checked out successfully!', 'success');
@@ -640,9 +671,14 @@ export default function App() {
     }
   };
 
-  const handleDirectBorrow = async (bookId, bookTitle) => {
-    if (!currentUser || !currentUser.id) {
+  const handleDirectBorrow = async (bookUuidOrId, bookTitle) => {
+    if (!isAuthenticated) {
       showToast('Please sign in to borrow books', 'error');
+      return;
+    }
+
+    if (!bookUuidOrId) {
+      showToast('Invalid book selected', 'error');
       return;
     }
 
@@ -654,12 +690,22 @@ export default function App() {
       return;
     }
 
+    const matchedBook = books.find(b => b.uuid === bookUuidOrId || b.id === bookUuidOrId || String(b.uuid) === String(bookUuidOrId) || String(b.id) === String(bookUuidOrId));
+    const targetUuid = matchedBook?.uuid || (typeof bookUuidOrId === 'string' ? bookUuidOrId : String(bookUuidOrId));
+
+    const payload = {
+      bookUuid: targetUuid,
+      ...(matchedBook?.id ? { bookId: Number(matchedBook.id) } : {}),
+      ...(currentUser?.uuid ? { userUuid: currentUser.uuid } : {}),
+      ...(currentUser?.id ? { userId: Number(currentUser.id) } : {})
+    };
+
     const res = await fetchApi('/borrow', {
       method: 'POST',
-      body: JSON.stringify({ userId: currentUser.id, bookId: bookId })
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
-      showToast(`Successfully checked out "${bookTitle || 'book'}"!`, 'success');
+      showToast(`Successfully checked out "${bookTitle || matchedBook?.title || 'book'}"!`, 'success');
       loadBorrows();
       loadDashboard();
       setCurrentPage('borrow');
@@ -1420,12 +1466,12 @@ export default function App() {
                           <td className="text-right">
                             {userRole === 'ADMIN' ? (
                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                <button className="btn btn-secondary btn-sm" title="Upload Cover" onClick={() => { setSelectedBookForCover({ id: b.id, title: b.title }); setActiveModal('uploadCover'); }}>Cover</button>
+                                <button className="btn btn-secondary btn-sm" title="Upload Cover" onClick={() => { setSelectedBookForCover({ id: b.id ?? b.uuid, title: b.title }); setActiveModal('uploadCover'); }}>Cover</button>
                                 <button className="btn btn-secondary btn-sm" onClick={() => { setBookForm(b); setActiveModal('editBook'); }}>Edit</button>
                                 <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBook(b.id, b.title)}>Del</button>
                               </div>
                             ) : (
-                              <button className="btn btn-primary btn-sm" onClick={() => handleDirectBorrow(b.id, b.title)}>Borrow</button>
+                              <button className="btn btn-primary btn-sm" onClick={() => handleDirectBorrow(b.id ?? b.uuid, b.title)}>Borrow</button>
                             )}
                           </td>
                         </tr>
@@ -2430,7 +2476,7 @@ export default function App() {
                   <select className="form-select" required value={adminBorrowSelect.bookId} onChange={e => setAdminBorrowSelect({ ...adminBorrowSelect, bookId: e.target.value })}>
                     <option value="">-- Choose Book --</option>
                     {books.map((b, idx) => (
-                      <option key={b.id ?? b.uuid ?? b.isbn ?? `admin-b-b-${idx}`} value={b.id || ''}>{b.title}</option>
+                      <option key={b.id ?? b.uuid ?? b.isbn ?? `admin-b-b-${idx}`} value={b.id ?? b.uuid ?? ''}>{b.title}</option>
                     ))}
                   </select>
                 </div>
@@ -2459,7 +2505,7 @@ export default function App() {
                   <select className="form-select" required value={userBorrowBookId} onChange={e => setUserBorrowBookId(e.target.value)}>
                     <option value="">-- Choose Book --</option>
                     {books.map((b, idx) => (
-                      <option key={b.id ?? b.uuid ?? b.isbn ?? `user-b-${idx}`} value={b.id || ''}>{b.title} (by {b.author})</option>
+                      <option key={b.id ?? b.uuid ?? b.isbn ?? `user-b-${idx}`} value={b.id ?? b.uuid ?? ''}>{b.title} (by {b.author})</option>
                     ))}
                   </select>
                 </div>

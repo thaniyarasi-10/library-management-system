@@ -196,6 +196,9 @@ public class BookServiceImpl implements BookService {
         book.setTitle(request.title());
         book.setAuthor(request.author());
         book.setIsbn(request.isbn());
+        if (Objects.nonNull(request.bookCount())) {
+            book.setBookCount(request.bookCount());
+        }
         
         Book updatedBook = bookRepository.save(book);
         BookResponse response = BookMapper.INSTANCE.mapToResponse(updatedBook);
@@ -227,8 +230,7 @@ public class BookServiceImpl implements BookService {
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
     public void deleteBook(Long id) {
-        Book book = bookRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
+        Book book = bookRepository.findById(id)                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
         bookRepository.delete(book);
     }
 

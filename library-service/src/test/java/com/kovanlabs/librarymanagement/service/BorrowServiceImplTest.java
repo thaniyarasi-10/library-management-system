@@ -74,6 +74,7 @@ class BorrowServiceImplTest {
                 .title("Clean Architecture")
                 .author("Robert C. Martin")
                 .isbn("9780134494166")
+                .bookCount(5)
                 .build();
 
         borrow = Borrow.builder()
@@ -87,6 +88,7 @@ class BorrowServiceImplTest {
                 .build();
 
         lenient().when(membershipService.hasActiveMembership(any())).thenReturn(true);
+        lenient().when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
     @Test
@@ -147,7 +149,7 @@ class BorrowServiceImplTest {
     }
 
     @Test
-    @DisplayName("returnBook should succeed when user has no pending fines")
+    @DisplayName("returnBook should succeed when user has no pending fines and increment bookCount")
     void returnBook_WhenNoPendingFines_ShouldSucceed() {
         when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
         when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
@@ -158,9 +160,29 @@ class BorrowServiceImplTest {
         assertNotNull(response);
         assertEquals(BorrowStatus.RETURNED, response.status());
         assertNotNull(response.returnedDate());
+        assertEquals(6, book.getBookCount());
+        verify(bookRepository, times(2)).save(book);
+        verify(salesforceSyncService).syncBook(any());
         verify(userFineChecker, times(1)).hasPendingFines(1L);
         verify(borrowRepository, times(2)).save(borrow);
         assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.SUCCESS, borrow.getSalesforceSyncStatus());
+    }
+
+    @Test
+    @DisplayName("returnBook when already returned should throw BAD_REQUEST")
+    void returnBook_whenAlreadyReturned_shouldThrowBadRequest() {
+        Borrow alreadyReturned = Borrow.builder()
+                .uuid(UUID.randomUUID().toString())
+                .id(101L)
+                .book(book)
+                .user(user)
+                .status(BorrowStatus.RETURNED)
+                .build();
+        when(borrowRepository.findById(101L)).thenReturn(Optional.of(alreadyReturned));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> borrowService.returnBook(101L));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getMessage().contains("already been returned"));
     }
 
     @Test
@@ -210,18 +232,98 @@ class BorrowServiceImplTest {
         assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(null));
         // Null bookId
         assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(null, 1L)));
-        // Null userId
+        // Null userId and null userIdentifier
         assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, null)));
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, null), ""));
 
-        // User not found
+        // User not found by ID
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
         assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, 99L)));
 
+        // User not found by userIdentifier
+        when(userProviderRepository.findByProviderId("unknown@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("unknown@example.com")).thenReturn(Optional.empty());
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, null), "unknown@example.com"));
+
         // Book not found
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
         when(bookRepository.findById(99L)).thenReturn(Optional.empty());
         assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(99L, 1L)));
+    }
+
+    @Test
+    @DisplayName("borrowBook should resolve user from userIdentifier when userId is null")
+    void borrowBook_WhenUserIdNull_ShouldResolveFromUserIdentifier() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, null);
+        String email = "john@example.com";
+
+        when(userProviderRepository.findByProviderId(email)).thenReturn(Optional.empty());
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> {
+            Borrow b = inv.getArgument(0);
+            b.setUuid(UUID.randomUUID().toString());
+            b.setId(100L);
+            return b;
+        });
+
+        BorrowResponseDto response = borrowService.borrowBook(request, email);
+
+        assertNotNull(response);
+        assertEquals(BorrowStatus.BORROWED, response.status());
+        verify(userRepository).findByEmail(email);
+        verify(userFineChecker).hasPendingFines(1L);
+    }
+
+    @Test
+    @DisplayName("borrowBook should throw BAD_REQUEST when book_count is 0 or null")
+    void borrowBook_WhenBookCountZeroOrNull_ShouldThrowBadRequest() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        Book outOfStockBook = Book.builder()
+                .uuid(UUID.randomUUID().toString())
+                .id(10L)
+                .title("Zero Stock Book")
+                .author("Author")
+                .isbn("12345")
+                .bookCount(0)
+                .build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(bookRepository.findById(10L)).thenReturn(Optional.of(outOfStockBook));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(request));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("out of stock"));
+        verify(borrowRepository, never()).save(any());
+        verify(salesforceSyncService, never()).syncBook(any());
+
+        // Test with null bookCount
+        outOfStockBook.setBookCount(null);
+        ResponseStatusException exNull = assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(request));
+        assertEquals(HttpStatus.BAD_REQUEST, exNull.getStatusCode());
+        assertTrue(exNull.getReason().contains("out of stock"));
+    }
+
+    @Test
+    @DisplayName("borrowBook should decrement book_count by 1 and sync to Salesforce")
+    void borrowBook_ShouldDecrementBookCountAndSyncSalesforce() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        book.setBookCount(3);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
+        when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BorrowResponseDto response = borrowService.borrowBook(request);
+
+        assertNotNull(response);
+        assertEquals(2, book.getBookCount());
+        verify(bookRepository, atLeastOnce()).save(book);
+        verify(salesforceSyncService).syncBook(argThat(sObj -> sObj.getBookCount() == 2));
     }
 
     @Test
@@ -336,5 +438,62 @@ class BorrowServiceImplTest {
         when(userProviderRepository.findByProviderId("unknown@example.com")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("unknown@example.com")).thenReturn(Optional.empty());
         assertTrue(borrowService.getBorrowsByUserEmail("unknown@example.com").isEmpty());
+    }
+
+    @Test
+    @DisplayName("borrowBook with bookUuid and userUuid directly should succeed")
+    void borrowBook_withBookUuidAndUserUuid_shouldSucceed() {
+        BorrowRequestDto request = new BorrowRequestDto(null, null, book.getUuid(), user.getUuid());
+
+        when(userRepository.findByUuid(user.getUuid())).thenReturn(Optional.of(user));
+        when(membershipService.hasActiveMembership(user.getUuid())).thenReturn(true);
+        when(userFineChecker.hasPendingFines(user.getId())).thenReturn(false);
+        when(bookRepository.findByUuid(book.getUuid())).thenReturn(Optional.of(book));
+        when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> {
+            Borrow b = inv.getArgument(0);
+            b.setUuid(UUID.randomUUID().toString());
+            b.setId(101L);
+            return b;
+        });
+
+        BorrowResponseDto response = borrowService.borrowBook(request);
+
+        assertNotNull(response);
+        assertEquals(BorrowStatus.BORROWED, response.status());
+        verify(userRepository).findByUuid(user.getUuid());
+        verify(bookRepository).findByUuid(book.getUuid());
+    }
+
+    @Test
+    @DisplayName("borrowBook should throw NOT_FOUND when userUuid or bookUuid does not exist")
+    void borrowBook_whenUuidNotFound_shouldThrowNotFound() {
+        // User UUID not found
+        BorrowRequestDto userNotFoundReq = new BorrowRequestDto(null, null, book.getUuid(), "non-existent-user");
+        when(userRepository.findByUuid("non-existent-user")).thenReturn(Optional.empty());
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(userNotFoundReq));
+
+        // Book UUID not found
+        BorrowRequestDto bookNotFoundReq = new BorrowRequestDto(null, null, "non-existent-book", user.getUuid());
+        when(userRepository.findByUuid(user.getUuid())).thenReturn(Optional.of(user));
+        when(bookRepository.findByUuid("non-existent-book")).thenReturn(Optional.empty());
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(bookNotFoundReq));
+    }
+
+    @Test
+    @DisplayName("borrowBook when book sync to salesforce throws exception should continue and mark pending")
+    void borrowBook_whenBookSalesforceSyncThrows_shouldContinueAndMarkPending() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
+        doThrow(new RuntimeException("SF book sync error")).when(salesforceSyncService).syncBook(any());
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BorrowResponseDto response = borrowService.borrowBook(request);
+
+        assertNotNull(response);
+        verify(bookRepository, atLeast(2)).save(book);
     }
 }

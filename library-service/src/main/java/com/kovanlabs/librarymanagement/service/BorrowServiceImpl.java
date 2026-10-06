@@ -2,6 +2,7 @@ package com.kovanlabs.librarymanagement.service;
 
 import com.kovanlabs.librarymanagement.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.dto.BorrowResponseDto;
+import com.kovanlabs.librarymanagement.mapping.BookMapper;
 import com.kovanlabs.librarymanagement.mapping.BorrowMapper;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
@@ -13,17 +14,16 @@ import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.Collections;
-
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
 /**
  * Implementation of {@link BorrowService} enforcing membership checks, fine checks,
@@ -42,66 +42,48 @@ public class BorrowServiceImpl implements BorrowService {
     private final MembershipService membershipService;
     private final SalesforceSync salesforceSyncService;
 
-    /**
-     * Validates membership status and pending fines, persists borrow record, and syncs with Salesforce.
-     *
-     * @param borrowRequestDto The borrow payload
-     * @return Created {@link BorrowResponseDto}
-     */
     @Override
     public BorrowResponseDto borrowBook(BorrowRequestDto borrowRequestDto) {
-        if (Objects.isNull(borrowRequestDto) || Objects.isNull(borrowRequestDto.userId()) || Objects.isNull(borrowRequestDto.bookId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bookId and userId are required");
+        return borrowBook(borrowRequestDto, null);
+    }
+
+    @Override
+    public BorrowResponseDto borrowBook(BorrowRequestDto borrowRequestDto, String userIdentifier) {
+        if (Objects.isNull(borrowRequestDto)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Borrow request cannot be null");
         }
 
-        User user = userRepository.findById(borrowRequestDto.userId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "User not found with id: " + borrowRequestDto.userId()));
+        User user = resolveUser(borrowRequestDto, userIdentifier);
 
         if (!membershipService.hasActiveMembership(user.getUuid())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Only users with an ACTIVE membership can perform borrow operations");
         }
 
-        if (Objects.nonNull(userFineChecker) && userFineChecker.hasPendingFines(borrowRequestDto.userId())) {
+        if (Objects.nonNull(userFineChecker) && userFineChecker.hasPendingFines(user.getId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "User has pending fines. Please pay outstanding fines before borrowing books.");
         }
 
-        Book book = bookRepository.findById(borrowRequestDto.bookId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "Book not found with id: " + borrowRequestDto.bookId()));
+        Book book = resolveBook(borrowRequestDto);
 
-        Borrow borrow = BorrowMapper.INSTANCE.mapToEntity(borrowRequestDto, book, user);
+        if (Objects.isNull(book.getBookCount()) || book.getBookCount() <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Book is out of stock and cannot be borrowed");
+        }
 
+        book.setBookCount(book.getBookCount() - 1);
+        Book updatedBook = bookRepository.save(book);
+
+        syncBookToSalesforce(updatedBook);
+
+        Borrow borrow = BorrowMapper.INSTANCE.mapToEntity(borrowRequestDto, updatedBook, user);
         Borrow savedBorrow = borrowRepository.save(borrow);
 
-        // Salesforce Sync
-        if (Objects.nonNull(salesforceSyncService)) {
-            try {
-                salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(BorrowMapper.INSTANCE.mapToResponse(savedBorrow)));
-                savedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
-                borrowRepository.save(savedBorrow);
-            } catch (Exception e) {
-                int retryCount = savedBorrow.getSalesforceRetryCount() + 1;
-                savedBorrow.setSalesforceRetryCount(retryCount);
-                savedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
-                borrowRepository.save(savedBorrow);
-                log.error(
-                        "Salesforce dual-write failed for borrow creation [Borrow ID: {}, UUID: {}, Operation: CREATE, RetryCount: {}]: {}",
-                        savedBorrow.getId(), savedBorrow.getUuid(), retryCount, e.getMessage());
-            }
-        }
+        syncBorrowToSalesforce(savedBorrow, "CREATE");
 
         return BorrowMapper.INSTANCE.mapToResponse(savedBorrow);
     }
 
-    /**
-     * Returns a borrowed book, updates return timestamp, and syncs status with Salesforce.
-     *
-     * @param borrowId ID of the borrow record
-     * @return Updated {@link BorrowResponseDto}
-     */
     @Override
     public BorrowResponseDto returnBook(Long borrowId) {
         if (Objects.isNull(borrowId)) {
@@ -111,41 +93,32 @@ public class BorrowServiceImpl implements BorrowService {
         Borrow borrow = borrowRepository.findById(borrowId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Borrow record not found"));
 
+        if (BorrowStatus.RETURNED.equals(borrow.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Book has already been returned");
+        }
+
         if (Objects.nonNull(userFineChecker) && Objects.nonNull(borrow.getUser()) && userFineChecker.hasPendingFines(borrow.getUser().getId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "User has pending fines. Please pay outstanding fines before returning books.");
         }
 
+        Book book = borrow.getBook();
+        if (Objects.nonNull(book)) {
+            int currentCount = Objects.nonNull(book.getBookCount()) ? book.getBookCount() : 0;
+            book.setBookCount(currentCount + 1);
+            Book updatedBook = bookRepository.save(book);
+            syncBookToSalesforce(updatedBook);
+        }
+
         borrow.setReturnedDate(LocalDate.now());
         borrow.setStatus(BorrowStatus.RETURNED);
-
         Borrow updatedBorrow = borrowRepository.save(borrow);
 
-        // Salesforce Sync
-        if (Objects.nonNull(salesforceSyncService)) {
-            try {
-                salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(BorrowMapper.INSTANCE.mapToResponse(updatedBorrow)));
-                updatedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
-                borrowRepository.save(updatedBorrow);
-            } catch (Exception e) {
-                int retryCount = updatedBorrow.getSalesforceRetryCount() + 1;
-                updatedBorrow.setSalesforceRetryCount(retryCount);
-                updatedBorrow.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
-                borrowRepository.save(updatedBorrow);
-                log.error(
-                        "Salesforce dual-write failed for borrow return [Borrow ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
-                        updatedBorrow.getId(), updatedBorrow.getUuid(), retryCount, e.getMessage());
-            }
-        }
+        syncBorrowToSalesforce(updatedBorrow, "UPDATE");
 
         return BorrowMapper.INSTANCE.mapToResponse(updatedBorrow);
     }
 
-    /**
-     * Retrieves all borrow records across the system in descending order of ID.
-     *
-     * @return List of {@link BorrowResponseDto}s
-     */
     @Override
     public List<BorrowResponseDto> getAllBorrows() {
         return borrowRepository.findAllByOrderByIdDesc().stream()
@@ -153,12 +126,6 @@ public class BorrowServiceImpl implements BorrowService {
                 .toList();
     }
 
-    /**
-     * Retrieves all borrow records for a specific user ID.
-     *
-     * @param userId The user's ID
-     * @return List of {@link BorrowResponseDto}s
-     */
     @Override
     public List<BorrowResponseDto> getBorrowsByUserId(Long userId) {
         return Objects.isNull(userId)
@@ -168,14 +135,8 @@ public class BorrowServiceImpl implements BorrowService {
                         .toList();
     }
 
-    /**
-     * Retrieves all borrow records for a specific user identified by email or providerId.
-     *
-     * @param email The user's email or provider ID
-     * @return List of {@link BorrowResponseDto}s
-     */
     @Override
-    public java.util.List<BorrowResponseDto> getBorrowsByUserEmail(String email) {
+    public List<BorrowResponseDto> getBorrowsByUserEmail(String email) {
         if (Objects.isNull(email)) {
             return Collections.emptyList();
         }
@@ -186,5 +147,74 @@ public class BorrowServiceImpl implements BorrowService {
         return (Objects.isNull(user) || Objects.isNull(user.getId()))
                 ? Collections.emptyList()
                 : getBorrowsByUserId(user.getId());
+    }
+
+    private User resolveUser(BorrowRequestDto request, String userIdentifier) {
+        if (Objects.nonNull(request.userUuid()) && !request.userUuid().isBlank()) {
+            return userRepository.findByUuid(request.userUuid())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "User not found with uuid: " + request.userUuid()));
+        }
+        if (Objects.nonNull(request.userId())) {
+            return userRepository.findById(request.userId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "User not found with id: " + request.userId()));
+        }
+        if (Objects.nonNull(userIdentifier) && !userIdentifier.isBlank()) {
+            return userProviderRepository.findByProviderId(userIdentifier)
+                    .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
+                    .or(() -> userRepository.findByEmail(userIdentifier))
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "User not found for identifier: " + userIdentifier));
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User identifier (userId or userUuid) is required");
+    }
+
+    private Book resolveBook(BorrowRequestDto request) {
+        if (Objects.nonNull(request.bookUuid()) && !request.bookUuid().isBlank()) {
+            return bookRepository.findByUuid(request.bookUuid())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "Book not found with uuid: " + request.bookUuid()));
+        }
+        if (Objects.nonNull(request.bookId())) {
+            return bookRepository.findById(request.bookId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "Book not found with id: " + request.bookId()));
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Book identifier (bookId or bookUuid) is required");
+    }
+
+    private void syncBookToSalesforce(Book book) {
+        if (Objects.nonNull(salesforceSyncService)) {
+            try {
+                salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(book));
+                book.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                bookRepository.save(book);
+            } catch (Exception e) {
+                int retryCount = book.getSalesforceRetryCount() + 1;
+                book.setSalesforceRetryCount(retryCount);
+                book.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+                bookRepository.save(book);
+                log.error("Salesforce dual-write failed for book count update [Book ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
+                        book.getId(), book.getUuid(), retryCount, e.getMessage());
+            }
+        }
+    }
+
+    private void syncBorrowToSalesforce(Borrow borrow, String operation) {
+        if (Objects.nonNull(salesforceSyncService)) {
+            try {
+                salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(BorrowMapper.INSTANCE.mapToResponse(borrow)));
+                borrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                borrowRepository.save(borrow);
+            } catch (Exception e) {
+                int retryCount = borrow.getSalesforceRetryCount() + 1;
+                borrow.setSalesforceRetryCount(retryCount);
+                borrow.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+                borrowRepository.save(borrow);
+                log.error("Salesforce dual-write failed for borrow {} [Borrow ID: {}, UUID: {}, Operation: {}, RetryCount: {}]: {}",
+                        operation.toLowerCase(), borrow.getId(), borrow.getUuid(), operation, retryCount, e.getMessage());
+            }
+        }
     }
 }

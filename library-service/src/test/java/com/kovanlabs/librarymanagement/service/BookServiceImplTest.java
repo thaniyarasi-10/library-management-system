@@ -47,7 +47,6 @@ class BookServiceImplTest {
     private BookServiceImpl bookService;
 
     private Book book1;
-    private Book book2;
     private String uuid1;
 
     @BeforeEach
@@ -101,7 +100,7 @@ class BookServiceImplTest {
     @Test
     void getAllBooks_paginated_withSalesforce_shouldReturnPagedResponse() {
         BookSObject sfBook = BookSObject.builder()
-                .externalBookUuid(uuid1.toString())
+                .externalBookUuid(uuid1)
                 .name("Clean Code")
                 .title("Clean Code")
                 .author("Robert C. Martin")
@@ -161,7 +160,7 @@ class BookServiceImplTest {
 
     @Test
     void updateBook_whenBookExists_shouldUpdateAndReturnResponse() {
-        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166");
+        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 12);
         when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
         when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -169,6 +168,8 @@ class BookServiceImplTest {
 
         assertEquals("Clean Architecture", response.title());
         assertEquals("9780134494166", response.isbn());
+        assertEquals(12, book1.getBookCount());
+        assertEquals(12, response.bookCount());
         verify(salesforceSyncService).syncBook(any());
         assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.SUCCESS, book1.getSalesforceSyncStatus());
     }

@@ -34,4 +34,7 @@ public class BookSObject extends SObjectBase {
 
     @JsonProperty(BookFields.COVER_IMAGE_URL)
     private String coverImageUrl;
+
+    @JsonProperty(BookFields.BOOK_COUNT)
+    private Integer bookCount;
 }

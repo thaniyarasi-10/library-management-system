@@ -78,4 +78,12 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="22-add-book-count-to-book" author="thani">
+        <addColumn tableName="book">
+            <column name="book_count" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

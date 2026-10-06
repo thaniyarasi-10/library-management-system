@@ -86,19 +86,21 @@ class BookMapperTest {
     @Test
     void testToBookSObject_and_toBookResponse() {
         String uuid = UUID.randomUUID().toString();
-        BookResponse dto = new BookResponse(uuid, 1L, "Clean Architecture", "Uncle Bob", "1234567890", "http://img.png");
+        BookResponse dto = new BookResponse(uuid, 1L, "Clean Architecture", "Uncle Bob", "1234567890", "http://img.png", 15);
 
         var sObject = bookMapper.toBookSObject(dto);
         assertNotNull(sObject);
         assertEquals(uuid, sObject.getExternalBookUuid());
         assertEquals("Clean Architecture", sObject.getTitle());
         assertEquals("Clean Architecture", sObject.getName());
+        assertEquals(15, sObject.getBookCount());
 
         BookResponse mappedBack = bookMapper.toBookResponse(sObject);
         assertNotNull(mappedBack);
         assertEquals(uuid, mappedBack.uuid());
         assertEquals("Clean Architecture", mappedBack.title());
         assertEquals("Uncle Bob", mappedBack.author());
+        assertEquals(15, mappedBack.bookCount());
     }
 
     @Test
@@ -110,6 +112,7 @@ class BookMapperTest {
                 .author("Uncle Bob")
                 .isbn("1234567890")
                 .coverImageUrl("http://img.png")
+                .bookCount(25)
                 .build();
 
         var sObject = bookMapper.toBookSObject(book);
@@ -120,6 +123,7 @@ class BookMapperTest {
         assertEquals("Uncle Bob", sObject.getAuthor());
         assertEquals("1234567890", sObject.getIsbn());
         assertEquals("http://img.png", sObject.getCoverImageUrl());
+        assertEquals(25, sObject.getBookCount());
 
         assertNull(bookMapper.toBookSObject((Book) null));
     }

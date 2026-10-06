@@ -157,7 +157,7 @@ public class SalesforceSyncRetryScheduler {
         }
         return ContactSObject.builder()
                 .attributes(SObjectAttributes.builder().type(SObject.CONTACT.getObjectName()).build())
-                .externalUserUuid(Objects.nonNull(user.getUuid()) ? user.getUuid().toString() : null)
+                .externalUserUuid(Objects.nonNull(user.getUuid()) ? user.getUuid() : null)
                 .legacyUserId(user.getId())
                 .lastName(Objects.nonNull(user.getName()) && !user.getName().isBlank() ? user.getName() : "User")
                 .email(user.getEmail())
@@ -172,12 +172,13 @@ public class SalesforceSyncRetryScheduler {
         }
         return BookSObject.builder()
                 .attributes(SObjectAttributes.builder().type(SObject.BOOK.getObjectName()).build())
-                .externalBookUuid(Objects.nonNull(book.getUuid()) ? book.getUuid().toString() : null)
+                .externalBookUuid(Objects.nonNull(book.getUuid()) ? book.getUuid(): null)
                 .name(Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank() ? book.getTitle() : "Untitled")
                 .title(Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank() ? book.getTitle() : "Untitled")
                 .author(book.getAuthor())
                 .isbn(book.getIsbn())
                 .coverImageUrl(book.getCoverImageUrl())
+                .bookCount(book.getBookCount())
                 .build();
     }
 
@@ -188,18 +189,18 @@ public class SalesforceSyncRetryScheduler {
         ContactSObject contact = null;
         if (Objects.nonNull(borrow.getUser())) {
             contact = ContactSObject.builder()
-                    .externalUserUuid(Objects.nonNull(borrow.getUser().getUuid()) ? borrow.getUser().getUuid().toString() : null)
+                    .externalUserUuid(Objects.nonNull(borrow.getUser().getUuid()) ? borrow.getUser().getUuid() : null)
                     .build();
         }
         BookSObject book = null;
         if (Objects.nonNull(borrow.getBook())) {
             book = BookSObject.builder()
-                    .externalBookUuid(Objects.nonNull(borrow.getBook().getUuid()) ? borrow.getBook().getUuid().toString() : null)
+                    .externalBookUuid(Objects.nonNull(borrow.getBook().getUuid()) ? borrow.getBook().getUuid() : null)
                     .build();
         }
         return BorrowSObject.builder()
                 .attributes(SObjectAttributes.builder().type(SObject.BORROW.getObjectName()).build())
-                .externalBorrowUuid(Objects.nonNull(borrow.getUuid()) ? borrow.getUuid().toString() : null)
+                .externalBorrowUuid(Objects.nonNull(borrow.getUuid()) ? borrow.getUuid(): null)
                 .borrowDate(Objects.nonNull(borrow.getBorrowDate()) ? borrow.getBorrowDate().toString() : null)
                 .dueDate(Objects.nonNull(borrow.getDueDate()) ? borrow.getDueDate().toString() : null)
                 .returnDate(Objects.nonNull(borrow.getReturnedDate()) ? borrow.getReturnedDate().toString() : null)

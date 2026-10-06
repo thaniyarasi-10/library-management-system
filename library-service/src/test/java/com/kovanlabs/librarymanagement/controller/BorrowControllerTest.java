@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -105,22 +104,42 @@ class BorrowControllerTest {
     }
 
     @Test
-    @DisplayName("borrowBook should call service and return 201 Created")
-    void borrowBook_shouldReturnCreated() {
+    @DisplayName("borrowBook with principal should call service with identifier and return 201 Created")
+    void borrowBook_withPrincipal_shouldReturnCreated() {
         BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
         BorrowResponseDto response = BorrowResponseDto.builder()
                 .id(1L)
                 .borrowUuid(borrowUuid)
                 .status(BorrowStatus.BORROWED)
                 .build();
-        when(borrowService.borrowBook(any(BorrowRequestDto.class))).thenReturn(response);
+        when(principal.getName()).thenReturn("test@example.com");
+        when(borrowService.borrowBook(eq(request), eq("test@example.com"))).thenReturn(response);
 
-        ResponseEntity<BorrowResponseDto> result = borrowController.borrowBook(request);
+        ResponseEntity<BorrowResponseDto> result = borrowController.borrowBook(request, principal);
 
         assertEquals(HttpStatus.CREATED, result.getStatusCode());
         assertNotNull(result.getBody());
         assertEquals(1L, result.getBody().id());
-        verify(borrowService).borrowBook(request);
+        verify(borrowService).borrowBook(request, "test@example.com");
+    }
+
+    @Test
+    @DisplayName("borrowBook with null principal should call service with null identifier and return 201 Created")
+    void borrowBook_withNullPrincipal_shouldReturnCreated() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowResponseDto response = BorrowResponseDto.builder()
+                .id(1L)
+                .borrowUuid(borrowUuid)
+                .status(BorrowStatus.BORROWED)
+                .build();
+        when(borrowService.borrowBook(eq(request), isNull())).thenReturn(response);
+
+        ResponseEntity<BorrowResponseDto> result = borrowController.borrowBook(request, null);
+
+        assertEquals(HttpStatus.CREATED, result.getStatusCode());
+        assertNotNull(result.getBody());
+        assertEquals(1L, result.getBody().id());
+        verify(borrowService).borrowBook(request, null);
     }
 
     @Test

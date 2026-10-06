@@ -8,7 +8,8 @@ public record BookResponse(
         String title,
         String author,
         String isbn,
-        String coverImageUrl
+        String coverImageUrl,
+        Integer bookCount
 ) implements Serializable {
 }
 
