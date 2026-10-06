@@ -607,9 +607,10 @@ export default function App() {
       return;
     }
 
+    const isUuid = (val) => typeof val === 'string' && val.includes('-');
     const payload = {
-      ...(typeof memberUuidOrId === 'string' && memberUuidOrId.includes('-') ? { userUuid: memberUuidOrId } : { userId: Number(memberUuidOrId) || undefined, userUuid: memberUuidOrId }),
-      ...(typeof bookUuidOrId === 'string' && bookUuidOrId.includes('-') ? { bookUuid: bookUuidOrId } : { bookId: Number(bookUuidOrId) || undefined, bookUuid: bookUuidOrId })
+      ...(isUuid(memberUuidOrId) ? { userUuid: memberUuidOrId } : { userId: Number(memberUuidOrId) || undefined }),
+      ...(isUuid(bookUuidOrId) ? { bookUuid: bookUuidOrId } : { bookId: Number(bookUuidOrId) || undefined })
     };
 
     const res = await fetchApi('/borrow', {
