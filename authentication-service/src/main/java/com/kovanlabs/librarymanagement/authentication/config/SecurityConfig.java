@@ -88,7 +88,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
@@ -132,15 +132,23 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/user", "/user/**")
                         .hasAnyAuthority("users:delete", "ROLE_ADMIN")
 
-                        // Borrow Endpoints (Permission or Role)
+                        // Borrow Endpoints (Permission, Role, or Authenticated User)
+                        .requestMatchers(HttpMethod.GET, "/borrow/me").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/borrow").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/borrow/*").authenticated()
                         .requestMatchers("/borrow", "/borrow/**")
                         .hasAnyAuthority("borrow:read", "borrow:create", "borrow:update", "borrow:write", "ROLE_USER", "ROLE_ADMIN")
 
-                        // Membership Endpoints (Permission or Role)
+                        // Membership Endpoints (Permission, Role, or Authenticated User)
+                        .requestMatchers(HttpMethod.GET, "/memberships/me").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/memberships/apply").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/memberships/sign").authenticated()
                         .requestMatchers("/memberships", "/memberships/**")
                         .hasAnyAuthority("memberships:read", "memberships:write", "ROLE_USER", "ROLE_ADMIN")
 
-                        // Fine Endpoints (Permission or Role)
+                        // Fine Endpoints (Permission, Role, or Authenticated User)
+                        .requestMatchers(HttpMethod.GET, "/fines/me").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/fines/*/pay").authenticated()
                         .requestMatchers("/fines", "/fines/**")
                         .hasAnyAuthority("fines:read", "fines:write", "fines:pay", "ROLE_USER", "ROLE_ADMIN")
 

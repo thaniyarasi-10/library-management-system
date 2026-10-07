@@ -144,7 +144,7 @@ export default function App() {
   const [confirmConfig, setConfirmConfig] = useState({ title: '', message: '', actionBtnText: 'Confirm', onConfirm: null });
 
   // Form models
-  const [bookForm, setBookForm] = useState({ id: '', title: '', author: '', isbn: '' });
+  const [bookForm, setBookForm] = useState({ id: '', title: '', author: '', isbn: '', totalBookCount: 1 });
   const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [profileForm, setProfileForm] = useState({ name: '', email: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [promptPhoneForm, setPromptPhoneForm] = useState({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
@@ -406,12 +406,17 @@ export default function App() {
     e.preventDefault();
     const res = await fetchApi('/books', {
       method: 'POST',
-      body: JSON.stringify({ title: bookForm.title, author: bookForm.author, isbn: bookForm.isbn })
+      body: JSON.stringify({
+        title: bookForm.title,
+        author: bookForm.author,
+        isbn: bookForm.isbn,
+        totalBookCount: Number(bookForm.totalBookCount) || 1
+      })
     });
     if (res.ok) {
       showToast('Book created successfully', 'success');
       setActiveModal(null);
-      setBookForm({ id: '', title: '', author: '', isbn: '' });
+      setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1 });
       loadBooks(booksPage, bookSearchQuery);
     } else {
       showToast(res.data?.message || 'Failed to create book', 'error');
@@ -422,7 +427,12 @@ export default function App() {
     e.preventDefault();
     const res = await fetchApi(`/books/${bookForm.id}`, {
       method: 'PUT',
-      body: JSON.stringify({ title: bookForm.title, author: bookForm.author, isbn: bookForm.isbn })
+      body: JSON.stringify({
+        title: bookForm.title,
+        author: bookForm.author,
+        isbn: bookForm.isbn,
+        totalBookCount: Number(bookForm.totalBookCount) || 1
+      })
     });
     if (res.ok) {
       showToast('Book updated successfully', 'success');
@@ -599,9 +609,23 @@ export default function App() {
 
   const handleAdminIssueLoan = async (e) => {
     e.preventDefault();
+    const memberUuidOrId = adminBorrowSelect.memberId;
+    const bookUuidOrId = adminBorrowSelect.bookId;
+
+    if (!memberUuidOrId || !bookUuidOrId) {
+      showToast('Please select both a member and a book', 'error');
+      return;
+    }
+
+    const isUuid = (val) => typeof val === 'string' && val.includes('-');
+    const payload = {
+      ...(isUuid(memberUuidOrId) ? { userUuid: memberUuidOrId } : { userId: Number(memberUuidOrId) || undefined }),
+      ...(isUuid(bookUuidOrId) ? { bookUuid: bookUuidOrId } : { bookId: Number(bookUuidOrId) || undefined })
+    };
+
     const res = await fetchApi('/borrow', {
       method: 'POST',
-      body: JSON.stringify({ userId: adminBorrowSelect.memberId, bookId: adminBorrowSelect.bookId })
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
       showToast('Book borrow issued', 'success');
@@ -614,7 +638,15 @@ export default function App() {
 
   const handleUserSelfBorrow = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
-    if (!currentUser || !currentUser.id) return;
+    if (!isAuthenticated) {
+      showToast('Please sign in to borrow books', 'error');
+      return;
+    }
+
+    if (!userBorrowBookId) {
+      showToast('Please select a book to borrow', 'error');
+      return;
+    }
 
     // Check membership
     const resMem = await fetchApi('/memberships/me');
@@ -625,9 +657,19 @@ export default function App() {
       return;
     }
 
+    const matchedBook = books.find(b => b.uuid === userBorrowBookId || b.id === userBorrowBookId || String(b.uuid) === String(userBorrowBookId) || String(b.id) === String(userBorrowBookId));
+    const targetUuid = matchedBook?.uuid || userBorrowBookId;
+
+    const payload = {
+      bookUuid: targetUuid,
+      ...(matchedBook?.id ? { bookId: Number(matchedBook.id) } : {}),
+      ...(currentUser?.uuid ? { userUuid: currentUser.uuid } : {}),
+      ...(currentUser?.id ? { userId: Number(currentUser.id) } : {})
+    };
+
     const res = await fetchApi('/borrow', {
       method: 'POST',
-      body: JSON.stringify({ userId: currentUser.id, bookId: userBorrowBookId })
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
       showToast('Book checked out successfully!', 'success');
@@ -640,9 +682,14 @@ export default function App() {
     }
   };
 
-  const handleDirectBorrow = async (bookId, bookTitle) => {
-    if (!currentUser || !currentUser.id) {
+  const handleDirectBorrow = async (bookUuidOrId, bookTitle) => {
+    if (!isAuthenticated) {
       showToast('Please sign in to borrow books', 'error');
+      return;
+    }
+
+    if (!bookUuidOrId) {
+      showToast('Invalid book selected', 'error');
       return;
     }
 
@@ -654,12 +701,22 @@ export default function App() {
       return;
     }
 
+    const matchedBook = books.find(b => b.uuid === bookUuidOrId || b.id === bookUuidOrId || String(b.uuid) === String(bookUuidOrId) || String(b.id) === String(bookUuidOrId));
+    const targetUuid = matchedBook?.uuid || (typeof bookUuidOrId === 'string' ? bookUuidOrId : String(bookUuidOrId));
+
+    const payload = {
+      bookUuid: targetUuid,
+      ...(matchedBook?.id ? { bookId: Number(matchedBook.id) } : {}),
+      ...(currentUser?.uuid ? { userUuid: currentUser.uuid } : {}),
+      ...(currentUser?.id ? { userId: Number(currentUser.id) } : {})
+    };
+
     const res = await fetchApi('/borrow', {
       method: 'POST',
-      body: JSON.stringify({ userId: currentUser.id, bookId: bookId })
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
-      showToast(`Successfully checked out "${bookTitle || 'book'}"!`, 'success');
+      showToast(`Successfully checked out "${bookTitle || matchedBook?.title || 'book'}"!`, 'success');
       loadBorrows();
       loadDashboard();
       setCurrentPage('borrow');
@@ -1266,7 +1323,7 @@ export default function App() {
                       <p className="section-desc">Frequently performed librarian tasks</p>
                     </div>
                     <div className="quick-actions-row">
-                      <button className="quick-action-btn" onClick={() => { setBookForm({ id: '', title: '', author: '', isbn: '' }); setActiveModal('createBook'); }}>
+                      <button className="quick-action-btn" onClick={() => { setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1 }); setActiveModal('createBook'); }}>
                         <div className="qa-icon">+</div>
                         <div className="qa-text">
                           <span className="qa-title">Add New Book</span>
@@ -1341,24 +1398,34 @@ export default function App() {
                 </div>
 
                 <div className="book-card-grid mt-4">
-                  {recentBooks.map((b, idx) => (
-                    <div className="book-card" key={b.id ?? b.uuid ?? b.isbn ?? `recent-${idx}`}>
-                      <div className="book-cover-wrap">
-                        {b.coverImageUrl ? (
-                          <img src={getCoverUrl(b.coverImageUrl)} alt={b.title} className="book-cover-img" />
-                        ) : (
-                          <div className="default-cover-placeholder">
-                            <span className="default-cover-monogram">{getMonogram(b.title)}</span>
+                  {recentBooks.map((b, idx) => {
+                    const total = b.totalBookCount ?? b.total_book_count ?? 0;
+                    const borrowed = b.borrowedBookCount ?? b.borrowed_book_count ?? 0;
+                    const avail = b.availableBookCount !== undefined ? b.availableBookCount : Math.max(0, total - borrowed);
+                    return (
+                      <div className="book-card" key={b.id ?? b.uuid ?? b.isbn ?? `recent-${idx}`}>
+                        <div className="book-cover-wrap">
+                          {b.coverImageUrl ? (
+                            <img src={getCoverUrl(b.coverImageUrl)} alt={b.title} className="book-cover-img" />
+                          ) : (
+                            <div className="default-cover-placeholder">
+                              <span className="default-cover-monogram">{getMonogram(b.title)}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="book-card-body">
+                          <span className="book-card-title">{b.title}</span>
+                          <span className="book-card-author">by {b.author}</span>
+                          <span className="book-card-isbn">ISBN: {b.isbn}</span>
+                          <div style={{ marginTop: '6px', fontSize: '12px' }}>
+                            <span style={{ color: avail > 0 ? '#10B981' : '#EF4444', fontWeight: '600' }}>
+                              {avail > 0 ? `Available: ${avail} ${avail === 1 ? 'copy' : 'copies'}` : 'Out of stock'}
+                            </span>
                           </div>
-                        )}
+                        </div>
                       </div>
-                      <div className="book-card-body">
-                        <span className="book-card-title">{b.title}</span>
-                        <span className="book-card-author">by {b.author}</span>
-                        <span className="book-card-isbn">ISBN: {b.isbn}</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -1383,7 +1450,7 @@ export default function App() {
                 </form>
 
                 {userRole === 'ADMIN' && (
-                  <button className="btn btn-primary" onClick={() => { setBookForm({ id: '', title: '', author: '', isbn: '' }); setActiveModal('createBook'); }}>
+                  <button className="btn btn-primary" onClick={() => { setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1 }); setActiveModal('createBook'); }}>
                     <Plus size={16} />
                     <span>Add Book</span>
                   </button>
@@ -1398,38 +1465,78 @@ export default function App() {
                       <th>Title & Metadata</th>
                       <th>Author</th>
                       <th>ISBN</th>
+                      {userRole === 'ADMIN' ? (
+                        <>
+                          <th width="90">Total</th>
+                          <th width="90">Borrowed</th>
+                          <th width="100">Available</th>
+                        </>
+                      ) : (
+                        <th width="140">Available Copies</th>
+                      )}
                       <th width="180" className="text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {books.length === 0 ? (
-                      <tr><td colSpan="5" className="empty-cell">No books found in catalog.</td></tr>
+                      <tr><td colSpan={userRole === 'ADMIN' ? 8 : 6} className="empty-cell">No books found in catalog.</td></tr>
                     ) : (
-                      books.map((b, idx) => (
-                        <tr key={b.id ?? b.uuid ?? b.isbn ?? `book-${idx}`}>
-                          <td>
-                            {b.coverImageUrl ? (
-                              <img src={getCoverUrl(b.coverImageUrl)} alt={b.title} className="table-thumb-img" />
-                            ) : (
-                              <div className="table-thumb">{getMonogram(b.title)}</div>
-                            )}
-                          </td>
-                          <td><strong>{b.title}</strong></td>
-                          <td>{b.author}</td>
-                          <td><code>{b.isbn}</code></td>
-                          <td className="text-right">
+                      books.map((b, idx) => {
+                        const total = b.totalBookCount ?? b.total_book_count ?? 0;
+                        const borrowed = b.borrowedBookCount ?? b.borrowed_book_count ?? 0;
+                        const avail = b.availableBookCount !== undefined ? b.availableBookCount : Math.max(0, total - borrowed);
+                        return (
+                          <tr key={b.id ?? b.uuid ?? b.isbn ?? `book-${idx}`}>
+                            <td>
+                              {b.coverImageUrl ? (
+                                <img src={getCoverUrl(b.coverImageUrl)} alt={b.title} className="table-thumb-img" />
+                              ) : (
+                                <div className="table-thumb">{getMonogram(b.title)}</div>
+                              )}
+                            </td>
+                            <td><strong>{b.title}</strong></td>
+                            <td>{b.author}</td>
+                            <td><code>{b.isbn}</code></td>
                             {userRole === 'ADMIN' ? (
-                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                <button className="btn btn-secondary btn-sm" title="Upload Cover" onClick={() => { setSelectedBookForCover({ id: b.id, title: b.title }); setActiveModal('uploadCover'); }}>Cover</button>
-                                <button className="btn btn-secondary btn-sm" onClick={() => { setBookForm(b); setActiveModal('editBook'); }}>Edit</button>
-                                <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBook(b.id, b.title)}>Del</button>
-                              </div>
+                              <>
+                                <td><span className="badge badge-secondary" style={{ padding: '4px 8px' }}>{total}</span></td>
+                                <td><span className="badge badge-warning" style={{ padding: '4px 8px' }}>{borrowed}</span></td>
+                                <td><span className={`badge ${avail > 0 ? 'badge-success' : 'badge-danger'}`} style={{ padding: '4px 8px' }}>{avail} left</span></td>
+                              </>
                             ) : (
-                              <button className="btn btn-primary btn-sm" onClick={() => handleDirectBorrow(b.id, b.title)}>Borrow</button>
+                              <td>
+                                <span className={`badge ${avail > 0 ? 'badge-success' : 'badge-danger'}`}>
+                                  {avail > 0 ? `${avail} available` : 'Out of stock'}
+                                </span>
+                              </td>
                             )}
-                          </td>
-                        </tr>
-                      ))
+                            <td className="text-right">
+                              {userRole === 'ADMIN' ? (
+                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                  <button className="btn btn-secondary btn-sm" title="Upload Cover" onClick={() => { setSelectedBookForCover({ id: b.id ?? b.uuid, title: b.title }); setActiveModal('uploadCover'); }}>Cover</button>
+                                  <button className="btn btn-secondary btn-sm" onClick={() => {
+                                    setBookForm({
+                                      id: b.id,
+                                      title: b.title,
+                                      author: b.author,
+                                      isbn: b.isbn,
+                                      totalBookCount: b.totalBookCount ?? b.total_book_count ?? 1
+                                    });
+                                    setActiveModal('editBook');
+                                  }}>Edit</button>
+                                  <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBook(b.id, b.title)}>Del</button>
+                                </div>
+                              ) : (
+                                avail <= 0 ? (
+                                  <button className="btn btn-secondary btn-sm" disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>Out of Stock</button>
+                                ) : (
+                                  <button className="btn btn-primary btn-sm" onClick={() => handleDirectBorrow(b.id ?? b.uuid, b.title)}>Borrow</button>
+                                )
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -2163,6 +2270,10 @@ export default function App() {
                   <label className="form-label">ISBN Number</label>
                   <input type="text" className="form-input" required value={bookForm.isbn} onChange={e => setBookForm({ ...bookForm, isbn: e.target.value })} />
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Total Book Count (Copies) <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input type="number" min="1" className="form-input" required value={bookForm.totalBookCount} onChange={e => setBookForm({ ...bookForm, totalBookCount: e.target.value })} />
+                </div>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)}>Cancel</button>
@@ -2194,6 +2305,10 @@ export default function App() {
                 <div className="form-group">
                   <label className="form-label">ISBN Number</label>
                   <input type="text" className="form-input" required value={bookForm.isbn} onChange={e => setBookForm({ ...bookForm, isbn: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Total Book Count (Copies) <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input type="number" min="1" className="form-input" required value={bookForm.totalBookCount} onChange={e => setBookForm({ ...bookForm, totalBookCount: e.target.value })} />
                 </div>
               </div>
               <div className="modal-footer">
@@ -2430,7 +2545,7 @@ export default function App() {
                   <select className="form-select" required value={adminBorrowSelect.bookId} onChange={e => setAdminBorrowSelect({ ...adminBorrowSelect, bookId: e.target.value })}>
                     <option value="">-- Choose Book --</option>
                     {books.map((b, idx) => (
-                      <option key={b.id ?? b.uuid ?? b.isbn ?? `admin-b-b-${idx}`} value={b.id || ''}>{b.title}</option>
+                      <option key={b.id ?? b.uuid ?? b.isbn ?? `admin-b-b-${idx}`} value={b.id ?? b.uuid ?? ''}>{b.title}</option>
                     ))}
                   </select>
                 </div>
@@ -2459,7 +2574,7 @@ export default function App() {
                   <select className="form-select" required value={userBorrowBookId} onChange={e => setUserBorrowBookId(e.target.value)}>
                     <option value="">-- Choose Book --</option>
                     {books.map((b, idx) => (
-                      <option key={b.id ?? b.uuid ?? b.isbn ?? `user-b-${idx}`} value={b.id || ''}>{b.title} (by {b.author})</option>
+                      <option key={b.id ?? b.uuid ?? b.isbn ?? `user-b-${idx}`} value={b.id ?? b.uuid ?? ''}>{b.title} (by {b.author})</option>
                     ))}
                   </select>
                 </div>

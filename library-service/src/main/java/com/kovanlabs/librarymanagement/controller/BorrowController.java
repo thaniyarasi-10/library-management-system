@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -38,8 +39,11 @@ public class BorrowController {
     }
 
     @PostMapping
-    public ResponseEntity<BorrowResponseDto> borrowBook(@RequestBody BorrowRequestDto request) {
-        BorrowResponseDto response = borrowService.borrowBook(request);
+    public ResponseEntity<BorrowResponseDto> borrowBook(
+            @RequestBody BorrowRequestDto request,
+            Principal principal) {
+        String identifier = Objects.nonNull(principal) ? principal.getName() : null;
+        BorrowResponseDto response = borrowService.borrowBook(request, identifier);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

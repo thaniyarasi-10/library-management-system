@@ -19,8 +19,6 @@ import org.mapstruct.factory.Mappers;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
-
 /**
  * MapStruct mapper for Borrow entity conversions, DTO transformations,
  * and Salesforce Borrow SObject mappings using static INSTANCE.
@@ -153,6 +151,8 @@ public interface BorrowMapper {
     @Mapping(target = "author", source = "bookAuthor")
     @Mapping(target = "coverImageUrl", source = "bookCoverImageUrl")
     @Mapping(target = "isbn", ignore = true)
+    @Mapping(target = "totalBookCount", ignore = true)
+    @Mapping(target = "borrowedBookCount", ignore = true)
     BookSObject toBookSObject(BorrowResponseDto dto);
 
     /**
@@ -168,6 +168,8 @@ public interface BorrowMapper {
     @Mapping(target = "author", source = "author")
     @Mapping(target = "isbn", source = "isbn")
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
+    @Mapping(target = "totalBookCount", source = "totalBookCount")
+    @Mapping(target = "borrowedBookCount", source = "borrowedBookCount")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     BookSObject toBookSObject(Book book);

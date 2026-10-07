@@ -32,6 +32,14 @@ public class Book extends BaseEntity {
 
     private String coverImageKey;
 
+    @Column(name = "total_book_count", nullable = false)
+    @Builder.Default
+    private Integer totalBookCount = 0;
+
+    @Column(name = "borrowed_book_count", nullable = false)
+    @Builder.Default
+    private Integer borrowedBookCount = 0;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "salesforce_sync_status", nullable = false)
     @Builder.Default

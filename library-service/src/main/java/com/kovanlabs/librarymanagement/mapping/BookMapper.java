@@ -8,13 +8,10 @@ import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.SObjectAttributes;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
-import org.mapstruct.Named;
 import org.mapstruct.factory.Mappers;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
-
 /**
  * MapStruct mapper for Book entity conversions, DTO transformations,
  * and Salesforce Book SObject mappings.
@@ -32,6 +29,7 @@ public interface BookMapper {
      * @param book The book entity
      * @return The mapped {@link BookResponse} DTO
      */
+    @Mapping(target = "availableBookCount", expression = "java((Objects.nonNull(book.getTotalBookCount()) ? book.getTotalBookCount() : 0) - (Objects.nonNull(book.getBorrowedBookCount()) ? book.getBorrowedBookCount() : 0))")
     BookResponse mapToResponse(Book book);
 
     /**
@@ -52,6 +50,7 @@ public interface BookMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "coverImageUrl", ignore = true)
     @Mapping(target = "coverImageKey", ignore = true)
+    @Mapping(target = "borrowedBookCount", ignore = true)
     @Mapping(target = "salesforceSyncStatus", ignore = true)
     @Mapping(target = "salesforceRetryCount", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
@@ -73,6 +72,8 @@ public interface BookMapper {
     @Mapping(target = "author", source = "author")
     @Mapping(target = "isbn", source = "isbn")
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
+    @Mapping(target = "totalBookCount", source = "totalBookCount")
+    @Mapping(target = "borrowedBookCount", source = "borrowedBookCount")
     BookSObject toBookSObject(BookResponse dto);
 
     /**
@@ -88,6 +89,8 @@ public interface BookMapper {
     @Mapping(target = "author", source = "author")
     @Mapping(target = "isbn", source = "isbn")
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
+    @Mapping(target = "totalBookCount", source = "totalBookCount")
+    @Mapping(target = "borrowedBookCount", source = "borrowedBookCount")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     BookSObject toBookSObject(Book book);
@@ -104,6 +107,9 @@ public interface BookMapper {
     @Mapping(target = "author", source = "author")
     @Mapping(target = "isbn", source = "isbn")
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
+    @Mapping(target = "totalBookCount", source = "totalBookCount")
+    @Mapping(target = "borrowedBookCount", source = "borrowedBookCount")
+    @Mapping(target = "availableBookCount", expression = "java((Objects.nonNull(sObject.getTotalBookCount()) ? sObject.getTotalBookCount() : 0) - (Objects.nonNull(sObject.getBorrowedBookCount()) ? sObject.getBorrowedBookCount() : 0))")
     BookResponse toBookResponse(BookSObject sObject);
 
     /**

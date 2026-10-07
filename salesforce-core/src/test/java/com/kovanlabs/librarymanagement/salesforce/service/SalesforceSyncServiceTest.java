@@ -17,7 +17,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -124,6 +123,8 @@ class SalesforceSyncServiceTest {
                 .author("Robert Martin")
                 .isbn("1234567890")
                 .coverImageUrl("http://images.com/cleancode.png")
+                .totalBookCount(10)
+                .borrowedBookCount(3)
                 .build();
 
         salesforceSyncService.syncBook(book);
@@ -137,6 +138,8 @@ class SalesforceSyncServiceTest {
         assertEquals("Robert Martin", fields.get(BookFields.AUTHOR));
         assertEquals("1234567890", fields.get(BookFields.ISBN));
         assertEquals("http://images.com/cleancode.png", fields.get(BookFields.COVER_IMAGE_URL));
+        assertEquals(10, fields.get(BookFields.TOTAL_BOOK_COUNT));
+        assertEquals(3, fields.get(BookFields.BORROWED_BOOK_COUNT));
     }
 
     @Test

@@ -8,8 +8,8 @@ import com.kovanlabs.librarymanagement.database.repository.MembershipRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.dto.MembershipApplicationResponse;
 import com.kovanlabs.librarymanagement.dto.MembershipResponseDto;
-import com.kovanlabs.librarymanagement.mapping.MembershipMapper;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -194,7 +194,36 @@ class MembershipServiceImplTest {
     }
 
     @Test
-    void testSignAgreement_success() {
+    void testSignAgreement_success_withCollisionRetry() {
+        MockMultipartFile file = new MockMultipartFile("file", "sig.png", "image/png", new byte[]{1, 2, 3});
+        String memUuid = UUID.randomUUID().toString();
+        Membership pendingMembership = Membership.builder()
+                .uuid(memUuid)
+                .userUuid(userUuid)
+                .status(MembershipStatus.PENDING)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+        when(membershipRepository.findByUuid(memUuid)).thenReturn(Optional.of(pendingMembership));
+        // Simulate ID collision once, then succeed
+        when(membershipRepository.findByMembershipId(anyLong()))
+                .thenReturn(Optional.of(Membership.builder().id(1L).build()))
+                .thenReturn(Optional.empty());
+        when(s3Service.downloadFileAsString(anyString(), anyString(), anyString())).thenReturn(sampleHtmlTemplate);
+        when(membershipRepository.save(any(Membership.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MembershipResponseDto result = membershipService.signAgreement(memUuid, file, email);
+
+        assertNotNull(result);
+        assertEquals("ACTIVE", result.status());
+        verify(s3Service).uploadFileBytes(eq("test-bucket"), eq("us-east-1"), anyString(), any(byte[].class), eq("application/pdf"));
+        verify(membershipRepository).save(any(Membership.class));
+    }
+
+    @Test
+    @DisplayName("signAgreement when pdf upload or rendering fails should throw INTERNAL_SERVER_ERROR")
+    void testSignAgreement_renderOrUploadFails_throwsInternalServerError() {
         MockMultipartFile file = new MockMultipartFile("file", "sig.png", "image/png", new byte[]{1, 2, 3});
         String memUuid = UUID.randomUUID().toString();
         Membership pendingMembership = Membership.builder()
@@ -207,15 +236,9 @@ class MembershipServiceImplTest {
         when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(membershipRepository.findByUuid(memUuid)).thenReturn(Optional.of(pendingMembership));
         when(membershipRepository.findByMembershipId(anyLong())).thenReturn(Optional.empty());
-        when(s3Service.downloadFileAsString(anyString(), anyString(), anyString())).thenReturn(sampleHtmlTemplate);
-        when(membershipRepository.save(any(Membership.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(s3Service.downloadFileAsString(anyString(), anyString(), anyString())).thenThrow(new RuntimeException("S3 template download failed"));
 
-        MembershipResponseDto result = membershipService.signAgreement(memUuid, file, email);
-
-        assertNotNull(result);
-        assertEquals("ACTIVE", result.status());
-        verify(s3Service).uploadFileBytes(eq("test-bucket"), eq("us-east-1"), anyString(), any(byte[].class), eq("application/pdf"));
-        verify(membershipRepository).save(any(Membership.class));
+        assertThrows(ResponseStatusException.class, () -> membershipService.signAgreement(memUuid, file, email));
     }
 
     @Test
@@ -235,6 +258,40 @@ class MembershipServiceImplTest {
 
         assertNotNull(result);
         assertEquals(memUuid, result.uuid());
+    }
+
+    @Test
+    @DisplayName("getMyMembership fallback to latest created membership when status filter has no match")
+    void testGetMyMembership_fallbackToLatest() {
+        String memUuid = UUID.randomUUID().toString();
+        Membership membership = Membership.builder()
+                .uuid(memUuid)
+                .userUuid(userUuid)
+                .status(MembershipStatus.CANCELLED)
+                .build();
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+                .thenReturn(Optional.empty());
+        when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid))
+                .thenReturn(Optional.of(membership));
+
+        MembershipResponseDto result = membershipService.getMyMembership(email);
+
+        assertNotNull(result);
+        assertEquals(memUuid, result.uuid());
+    }
+
+    @Test
+    @DisplayName("getMyMembership when no application exists at all should throw NOT_FOUND")
+    void testGetMyMembership_notFound_throwsNotFound() {
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+                .thenReturn(Optional.empty());
+        when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid))
+                .thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> membershipService.getMyMembership(email));
     }
 
     @Test
@@ -259,11 +316,28 @@ class MembershipServiceImplTest {
     }
 
     @Test
+    @DisplayName("cancelMembership when status is already CANCELLED should throw BAD_REQUEST")
+    void testCancelMembership_whenAlreadyCancelled_throwsBadRequest() {
+        Membership cancelledMembership = Membership.builder()
+                .uuid(UUID.randomUUID().toString())
+                .userUuid(userUuid)
+                .status(MembershipStatus.CANCELLED)
+                .build();
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+                .thenReturn(Optional.of(cancelledMembership));
+
+        assertThrows(ResponseStatusException.class, () -> membershipService.cancelMembership(email));
+    }
+
+    @Test
     void testGetAgreementHtmlByUuid_success() {
         String memUuid = UUID.randomUUID().toString();
         Membership membership = Membership.builder()
                 .uuid(memUuid)
                 .userUuid(userUuid)
+                .membershipId(123456L)
                 .status(MembershipStatus.PENDING)
                 .createdAt(LocalDateTime.now())
                 .build();
@@ -276,6 +350,45 @@ class MembershipServiceImplTest {
 
         assertNotNull(html);
         assertTrue(html.contains("John Doe"));
+        assertTrue(html.contains("123456"));
+    }
+
+    @Test
+    @DisplayName("getAgreementHtmlByUuid with null membershipId and createdAt should use defaults")
+    void testGetAgreementHtmlByUuid_withNullFields() {
+        String memUuid = UUID.randomUUID().toString();
+        Membership membership = Membership.builder()
+                .uuid(memUuid)
+                .userUuid(userUuid)
+                .membershipId(null)
+                .createdAt(null)
+                .status(MembershipStatus.PENDING)
+                .build();
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+        when(membershipRepository.findByUuid(memUuid)).thenReturn(Optional.of(membership));
+        when(s3Service.downloadFileAsString(anyString(), anyString(), anyString())).thenReturn(sampleHtmlTemplate);
+
+        String html = membershipService.getAgreementHtmlByUuid(memUuid, email);
+
+        assertNotNull(html);
+        assertTrue(html.contains("PENDING"));
+    }
+
+    @Test
+    @DisplayName("getAgreementHtmlByUuid when not found or forbidden should throw")
+    void testGetAgreementHtmlByUuid_errors() {
+        String memUuid = UUID.randomUUID().toString();
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+        when(membershipRepository.findByUuid(memUuid)).thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> membershipService.getAgreementHtmlByUuid(memUuid, email));
+
+        Membership otherMembership = Membership.builder()
+                .userUuid(UUID.randomUUID().toString())
+                .build();
+        when(membershipRepository.findByUuid(memUuid)).thenReturn(Optional.of(otherMembership));
+        assertThrows(ResponseStatusException.class, () -> membershipService.getAgreementHtmlByUuid(memUuid, email));
     }
 
     @Test
@@ -314,6 +427,33 @@ class MembershipServiceImplTest {
 
         assertTrue(membershipService.hasActiveMembership(userUuid));
 
+        // Active with null expiryDate
+        Membership activeNoExpiry = Membership.builder()
+                .uuid(UUID.randomUUID().toString())
+                .userUuid(userUuid)
+                .status(MembershipStatus.ACTIVE)
+                .expiryDate(null)
+                .build();
+
+        when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(eq(userUuid)))
+                .thenReturn(Optional.of(activeNoExpiry));
+
+        assertTrue(membershipService.hasActiveMembership(userUuid));
+
+        // Inactive status
+        Membership pendingMembership = Membership.builder()
+                .uuid(UUID.randomUUID().toString())
+                .userUuid(userUuid)
+                .status(MembershipStatus.PENDING)
+                .expiryDate(LocalDate.now().plusMonths(6))
+                .build();
+
+        when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(eq(userUuid)))
+                .thenReturn(Optional.of(pendingMembership));
+
+        assertFalse(membershipService.hasActiveMembership(userUuid));
+
+        // Expired
         Membership expiredMembership = Membership.builder()
                 .uuid(UUID.randomUUID().toString())
                 .userUuid(userUuid)
@@ -326,6 +466,7 @@ class MembershipServiceImplTest {
 
         assertFalse(membershipService.hasActiveMembership(userUuid));
 
+        // Empty
         when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(eq(userUuid)))
                 .thenReturn(Optional.empty());
 

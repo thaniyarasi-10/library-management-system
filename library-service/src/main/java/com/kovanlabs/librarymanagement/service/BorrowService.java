@@ -19,6 +19,15 @@ public interface BorrowService {
     BorrowResponseDto borrowBook(BorrowRequestDto borrowRequestDto);
 
     /**
+     * Issues a book borrow transaction, resolving user by userIdentifier if userId is not provided.
+     *
+     * @param borrowRequestDto The borrow request payload
+     * @param userIdentifier Optional authenticated user identifier (sub or email)
+     * @return The created {@link BorrowResponseDto}
+     */
+    BorrowResponseDto borrowBook(BorrowRequestDto borrowRequestDto, String userIdentifier);
+
+    /**
      * Records the return of a borrowed book and updates its status.
      *
      * @param borrowId The borrow record ID
