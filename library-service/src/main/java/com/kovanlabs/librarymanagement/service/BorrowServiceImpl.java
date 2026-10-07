@@ -41,6 +41,7 @@ public class BorrowServiceImpl implements BorrowService {
     private final UserFineChecker userFineChecker;
     private final MembershipService membershipService;
     private final SalesforceSync salesforceSyncService;
+    private final RewardService rewardService;
 
     @Override
     public BorrowResponseDto borrowBook(BorrowRequestDto borrowRequestDto) {
@@ -67,11 +68,14 @@ public class BorrowServiceImpl implements BorrowService {
 
         Book book = resolveBook(borrowRequestDto);
 
-        if (Objects.isNull(book.getBookCount()) || book.getBookCount() <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Book is out of stock and cannot be borrowed");
+        int totalBookCount = Objects.nonNull(book.getTotalBookCount()) ? book.getTotalBookCount() : 0;
+        int borrowedBookCount = Objects.nonNull(book.getBorrowedBookCount()) ? book.getBorrowedBookCount() : 0;
+
+        if (borrowedBookCount >= totalBookCount || totalBookCount <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No copies available. All copies are currently borrowed.");
         }
 
-        book.setBookCount(book.getBookCount() - 1);
+        book.setBorrowedBookCount(borrowedBookCount + 1);
         Book updatedBook = bookRepository.save(book);
 
         syncBookToSalesforce(updatedBook);
@@ -104,8 +108,8 @@ public class BorrowServiceImpl implements BorrowService {
 
         Book book = borrow.getBook();
         if (Objects.nonNull(book)) {
-            int currentCount = Objects.nonNull(book.getBookCount()) ? book.getBookCount() : 0;
-            book.setBookCount(currentCount + 1);
+            int borrowedCount = Objects.nonNull(book.getBorrowedBookCount()) ? book.getBorrowedBookCount() : 0;
+            book.setBorrowedBookCount(Math.max(0, borrowedCount - 1));
             Book updatedBook = bookRepository.save(book);
             syncBookToSalesforce(updatedBook);
         }
@@ -115,6 +119,8 @@ public class BorrowServiceImpl implements BorrowService {
         Borrow updatedBorrow = borrowRepository.save(borrow);
 
         syncBorrowToSalesforce(updatedBorrow, "UPDATE");
+        // Trigger reward points processing
+        rewardService.processOnTimeReturnRewards();
 
         return BorrowMapper.INSTANCE.mapToResponse(updatedBorrow);
     }

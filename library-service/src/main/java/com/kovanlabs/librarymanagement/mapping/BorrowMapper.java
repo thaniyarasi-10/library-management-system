@@ -151,7 +151,8 @@ public interface BorrowMapper {
     @Mapping(target = "author", source = "bookAuthor")
     @Mapping(target = "coverImageUrl", source = "bookCoverImageUrl")
     @Mapping(target = "isbn", ignore = true)
-    @Mapping(target = "bookCount", ignore = true)
+    @Mapping(target = "totalBookCount", ignore = true)
+    @Mapping(target = "borrowedBookCount", ignore = true)
     BookSObject toBookSObject(BorrowResponseDto dto);
 
     /**
@@ -167,7 +168,8 @@ public interface BorrowMapper {
     @Mapping(target = "author", source = "author")
     @Mapping(target = "isbn", source = "isbn")
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
-    @Mapping(target = "bookCount", source = "bookCount")
+    @Mapping(target = "totalBookCount", source = "totalBookCount")
+    @Mapping(target = "borrowedBookCount", source = "borrowedBookCount")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     BookSObject toBookSObject(Book book);

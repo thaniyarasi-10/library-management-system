@@ -186,7 +186,7 @@ public class SalesforceSyncImpl implements SalesforceSync {
     @Override
     public List<BookSObject> fetchBooksFromSalesforce(int size, int offset) {
         String soql = new SOQLBuilder<>()
-                .select(BookFields.EXTERNAL_BOOK_UUID, BookFields.NAME, BookFields.TITLE, BookFields.AUTHOR, BookFields.ISBN, BookFields.COVER_IMAGE_URL, BookFields.BOOK_COUNT)
+                .select(BookFields.EXTERNAL_BOOK_UUID, BookFields.NAME, BookFields.TITLE, BookFields.AUTHOR, BookFields.ISBN, BookFields.COVER_IMAGE_URL, BookFields.TOTAL_BOOK_COUNT, BookFields.BORROWED_BOOK_COUNT)
                 .from(SObject.BOOK)
                 .whereNotNull(BookSObject.EXTERNAL_ID_FIELD)
                 .limit(size)

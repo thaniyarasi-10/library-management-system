@@ -35,6 +35,9 @@ public class BookSObject extends SObjectBase {
     @JsonProperty(BookFields.COVER_IMAGE_URL)
     private String coverImageUrl;
 
-    @JsonProperty(BookFields.BOOK_COUNT)
-    private Integer bookCount;
+    @JsonProperty(BookFields.TOTAL_BOOK_COUNT)
+    private Integer totalBookCount;
+
+    @JsonProperty(BookFields.BORROWED_BOOK_COUNT)
+    private Integer borrowedBookCount;
 }

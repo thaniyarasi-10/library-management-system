@@ -86,4 +86,13 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="23-rename-book-count-to-total-and-add-borrowed-count" author="thani">
+        <renameColumn tableName="book" oldColumnName="book_count" newColumnName="total_book_count" columnDataType="int"/>
+        <addColumn tableName="book">
+            <column name="borrowed_book_count" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

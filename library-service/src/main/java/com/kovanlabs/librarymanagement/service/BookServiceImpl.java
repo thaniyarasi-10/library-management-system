@@ -196,8 +196,8 @@ public class BookServiceImpl implements BookService {
         book.setTitle(request.title());
         book.setAuthor(request.author());
         book.setIsbn(request.isbn());
-        if (Objects.nonNull(request.bookCount())) {
-            book.setBookCount(request.bookCount());
+        if (Objects.nonNull(request.totalBookCount())) {
+            book.setTotalBookCount(request.totalBookCount());
         }
         
         Book updatedBook = bookRepository.save(book);

@@ -178,7 +178,8 @@ public class SalesforceSyncRetryScheduler {
                 .author(book.getAuthor())
                 .isbn(book.getIsbn())
                 .coverImageUrl(book.getCoverImageUrl())
-                .bookCount(book.getBookCount())
+                .totalBookCount(book.getTotalBookCount())
+                .borrowedBookCount(book.getBorrowedBookCount())
                 .build();
     }
 

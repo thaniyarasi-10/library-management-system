@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.service;
 
+import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.dto.BorrowResponseDto;
 import com.kovanlabs.librarymanagement.database.entity.Book;
@@ -9,6 +10,7 @@ import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -41,7 +44,7 @@ class BorrowServiceImplTest {
     private UserRepository userRepository;
 
     @Mock
-    private com.kovanlabs.librarymanagement.database.repository.UserProviderRepository userProviderRepository;
+    private UserProviderRepository userProviderRepository;
 
     @Mock
     private UserFineChecker userFineChecker;
@@ -50,7 +53,10 @@ class BorrowServiceImplTest {
     private MembershipService membershipService;
 
     @Mock
-    private com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl salesforceSyncService;
+    private RewardService rewardService;
+
+    @Mock
+    private SalesforceSyncImpl salesforceSyncService;
 
     @InjectMocks
     private BorrowServiceImpl borrowService;
@@ -74,7 +80,8 @@ class BorrowServiceImplTest {
                 .title("Clean Architecture")
                 .author("Robert C. Martin")
                 .isbn("9780134494166")
-                .bookCount(5)
+                .totalBookCount(5)
+                .borrowedBookCount(1)
                 .build();
 
         borrow = Borrow.builder()
@@ -160,12 +167,41 @@ class BorrowServiceImplTest {
         assertNotNull(response);
         assertEquals(BorrowStatus.RETURNED, response.status());
         assertNotNull(response.returnedDate());
-        assertEquals(6, book.getBookCount());
+        assertEquals(0, book.getBorrowedBookCount());
         verify(bookRepository, times(2)).save(book);
         verify(salesforceSyncService).syncBook(any());
         verify(userFineChecker, times(1)).hasPendingFines(1L);
         verify(borrowRepository, times(2)).save(borrow);
         assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.SUCCESS, borrow.getSalesforceSyncStatus());
+    }
+
+    @Test
+    @DisplayName("returnBook when borrow.getBook() is null and borrow.getUser() is null")
+    void returnBook_whenBookAndUserNull() {
+        Borrow borrowWithoutBookAndUser = Borrow.builder()
+                .id(200L)
+                .uuid(UUID.randomUUID().toString())
+                .status(BorrowStatus.BORROWED)
+                .build();
+        when(borrowRepository.findById(200L)).thenReturn(Optional.of(borrowWithoutBookAndUser));
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BorrowResponseDto response = borrowService.returnBook(200L);
+        assertNotNull(response);
+        assertEquals(BorrowStatus.RETURNED, response.status());
+    }
+
+    @Test
+    @DisplayName("returnBook when book borrowedBookCount is null should decrement cleanly to 0")
+    void returnBook_whenBorrowedBookCountNull() {
+        book.setBorrowedBookCount(null);
+        when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BorrowResponseDto response = borrowService.returnBook(100L);
+        assertNotNull(response);
+        assertEquals(0, book.getBorrowedBookCount());
     }
 
     @Test
@@ -226,15 +262,15 @@ class BorrowServiceImplTest {
     }
 
     @Test
-    @DisplayName("borrowBook validation failures (null request, missing user, missing book)")
+    @DisplayName("borrowBook validation failures (null request, missing user, missing book, blank identifiers)")
     void borrowBook_ValidationFailures() {
         // Null request
         assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(null));
-        // Null bookId
-        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(null, 1L)));
-        // Null userId and null userIdentifier
-        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, null)));
-        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, null), ""));
+        // Null bookId with blank bookUuid
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(null, 1L, "   ", null)));
+        // Null userId and null userIdentifier with blank userUuid
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, null, null, "   ")));
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, null), "   "));
 
         // User not found by ID
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
@@ -249,6 +285,46 @@ class BorrowServiceImplTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(bookRepository.findById(99L)).thenReturn(Optional.empty());
         assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(99L, 1L)));
+    }
+
+    @Test
+    @DisplayName("borrowBook with blank bookUuid and userUuid falling back to IDs")
+    void borrowBook_withBlankUuids_fallsBackToIds() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L, "   ", "   ");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BorrowResponseDto response = borrowService.borrowBook(request);
+        assertNotNull(response);
+    }
+
+    @Test
+    @DisplayName("borrowBook should resolve user from userIdentifier via provider")
+    void borrowBook_WhenUserIdNull_ShouldResolveFromUserIdentifierProvider() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, null);
+        String providerId = "auth0|provider123";
+
+        com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
+                .userUuid(user.getUuid())
+                .build();
+        when(userProviderRepository.findByProviderId(providerId)).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid(user.getUuid())).thenReturn(Optional.of(user));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> {
+            Borrow b = inv.getArgument(0);
+            b.setUuid(UUID.randomUUID().toString());
+            b.setId(100L);
+            return b;
+        });
+
+        BorrowResponseDto response = borrowService.borrowBook(request, providerId);
+
+        assertNotNull(response);
+        assertEquals(BorrowStatus.BORROWED, response.status());
     }
 
     @Test
@@ -277,8 +353,8 @@ class BorrowServiceImplTest {
     }
 
     @Test
-    @DisplayName("borrowBook should throw BAD_REQUEST when book_count is 0 or null")
-    void borrowBook_WhenBookCountZeroOrNull_ShouldThrowBadRequest() {
+    @DisplayName("borrowBook should throw BAD_REQUEST when borrowed count equals total book count or total is null/zero")
+    void borrowBook_WhenBorrowCountEqualsTotalBook_ShouldThrowBadRequest() {
         BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
         Book outOfStockBook = Book.builder()
                 .uuid(UUID.randomUUID().toString())
@@ -286,7 +362,8 @@ class BorrowServiceImplTest {
                 .title("Zero Stock Book")
                 .author("Author")
                 .isbn("12345")
-                .bookCount(0)
+                .totalBookCount(2)
+                .borrowedBookCount(2)
                 .build();
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
@@ -295,22 +372,23 @@ class BorrowServiceImplTest {
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(request));
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertTrue(ex.getReason().contains("out of stock"));
+        assertTrue(ex.getReason().contains("No copies available") || ex.getMessage().contains("No copies available"));
         verify(borrowRepository, never()).save(any());
         verify(salesforceSyncService, never()).syncBook(any());
 
-        // Test with null bookCount
-        outOfStockBook.setBookCount(null);
+        // Test with null totalBookCount
+        outOfStockBook.setTotalBookCount(null);
+        outOfStockBook.setBorrowedBookCount(null);
         ResponseStatusException exNull = assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(request));
         assertEquals(HttpStatus.BAD_REQUEST, exNull.getStatusCode());
-        assertTrue(exNull.getReason().contains("out of stock"));
     }
 
     @Test
-    @DisplayName("borrowBook should decrement book_count by 1 and sync to Salesforce")
-    void borrowBook_ShouldDecrementBookCountAndSyncSalesforce() {
+    @DisplayName("borrowBook should increment borrowed_book_count by 1 and sync to Salesforce")
+    void borrowBook_ShouldIncrementBorrowedBookCountAndSyncSalesforce() {
         BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
-        book.setBookCount(3);
+        book.setTotalBookCount(5);
+        book.setBorrowedBookCount(1);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
@@ -321,9 +399,9 @@ class BorrowServiceImplTest {
         BorrowResponseDto response = borrowService.borrowBook(request);
 
         assertNotNull(response);
-        assertEquals(2, book.getBookCount());
+        assertEquals(2, book.getBorrowedBookCount());
         verify(bookRepository, atLeastOnce()).save(book);
-        verify(salesforceSyncService).syncBook(argThat(sObj -> sObj.getBookCount() == 2));
+        verify(salesforceSyncService).syncBook(argThat(sObj -> Objects.equals(sObj.getBorrowedBookCount(), 2)));
     }
 
     @Test
@@ -349,7 +427,8 @@ class BorrowServiceImplTest {
                         userProviderRepository,
                         null,
                         membershipService,
-                        null
+                        null,
+                        rewardService
                 );
 
         BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
@@ -362,6 +441,12 @@ class BorrowServiceImplTest {
         BorrowResponseDto response = serviceWithoutFineChecker.borrowBook(request);
 
         assertNotNull(response);
+
+        // Also test borrowBook(request, userIdentifier) with null fine checker
+        when(userProviderRepository.findByProviderId("john@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("john@example.com")).thenReturn(Optional.of(user));
+        BorrowResponseDto respIdent = serviceWithoutFineChecker.borrowBook(new BorrowRequestDto(10L, null), "john@example.com");
+        assertNotNull(respIdent);
 
         when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
 
@@ -428,6 +513,13 @@ class BorrowServiceImplTest {
         when(borrowRepository.findByUser_IdOrderByIdDesc(1L)).thenReturn(List.of(borrow));
 
         assertEquals(1, borrowService.getBorrowsByUserEmail(email).size());
+
+        // provider match with user.id == null
+        String providerEmail = "provider-only@example.com";
+        User userNullId = User.builder().id(null).uuid("null-id-uuid").build();
+        when(userProviderRepository.findByProviderId(providerEmail)).thenReturn(Optional.of(com.kovanlabs.librarymanagement.database.entity.UserProvider.builder().userUuid("null-id-uuid").build()));
+        when(userRepository.findByUuid("null-id-uuid")).thenReturn(Optional.of(userNullId));
+        assertTrue(borrowService.getBorrowsByUserEmail(providerEmail).isEmpty());
 
         // fallback to findByEmail
         when(userProviderRepository.findByProviderId("other@example.com")).thenReturn(Optional.empty());

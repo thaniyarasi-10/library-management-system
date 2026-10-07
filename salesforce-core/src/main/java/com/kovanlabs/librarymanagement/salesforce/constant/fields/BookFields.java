@@ -12,5 +12,6 @@ public final class BookFields {
     public static final String ISBN = "ISBN__c";
     public static final String COVER_IMAGE_URL = "Cover_Image_Url__c";
     public static final String EXTERNAL_BOOK_UUID = "External_Book_UUID__c";
-    public static final String BOOK_COUNT = "Book_Count__c";
+    public static final String TOTAL_BOOK_COUNT = "Total_Book_Count__c";
+    public static final String BORROWED_BOOK_COUNT = "Borrowed_Book_Count__c";
 }
