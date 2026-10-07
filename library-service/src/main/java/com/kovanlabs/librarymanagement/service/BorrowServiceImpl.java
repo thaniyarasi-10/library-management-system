@@ -43,6 +43,8 @@ public class BorrowServiceImpl implements BorrowService {
     private final SalesforceSync salesforceSyncService;
     private final RewardService rewardService;
 
+    public static final int MAX_BORROW_LIMIT = 5;
+
     @Override
     public BorrowResponseDto borrowBook(BorrowRequestDto borrowRequestDto) {
         return borrowBook(borrowRequestDto, null);
@@ -59,6 +61,12 @@ public class BorrowServiceImpl implements BorrowService {
         if (!membershipService.hasActiveMembership(user.getUuid())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Only users with an ACTIVE membership can perform borrow operations");
+        }
+
+        long activeBorrowsCount = borrowRepository.countByUser_UuidAndStatus(user.getUuid(), BorrowStatus.BORROWED);
+        if (activeBorrowsCount >= MAX_BORROW_LIMIT) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Borrow limit exceeded. Users are only allowed to borrow up to " + MAX_BORROW_LIMIT + " books at a time.");
         }
 
         if (Objects.nonNull(userFineChecker) && userFineChecker.hasPendingFines(user.getId())) {

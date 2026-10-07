@@ -95,7 +95,22 @@ class BorrowServiceImplTest {
                 .build();
 
         lenient().when(membershipService.hasActiveMembership(any())).thenReturn(true);
+        lenient().when(borrowRepository.countByUser_UuidAndStatus(any(), any())).thenReturn(0L);
         lenient().when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    @Test
+    @DisplayName("borrowBook should throw BAD_REQUEST when user already has 5 active borrowed books")
+    void borrowBook_WhenUserExceeds5BookLimit_ShouldThrowBadRequest() {
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(borrowRepository.countByUser_UuidAndStatus(user.getUuid(), BorrowStatus.BORROWED)).thenReturn(5L);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(request));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("Borrow limit exceeded") || ex.getMessage().contains("Borrow limit exceeded"));
+        verify(borrowRepository, never()).save(any());
     }
 
     @Test

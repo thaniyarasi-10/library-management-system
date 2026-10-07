@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.database.repository;
 
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
+import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -20,6 +21,7 @@ public interface BorrowRepository extends JpaRepository<Borrow, String> {
     List<Borrow> findAllByOrderByIdDesc();
     List<Borrow> findByUser_IdOrderByIdDesc(Long userId);
     List<Borrow> findByUser_UuidOrderByIdDesc(String userUuid);
+    long countByUser_UuidAndStatus(String userUuid, BorrowStatus status);
     List<Borrow> findByBook_UuidAndUser_Uuid(String bookUuid, String userUuid);
     Optional<Borrow> findFirstByBook_UuidAndUser_UuidOrderByDueDateDesc(String bookUuid, String userUuid);
     List<Borrow> findBySalesforceSyncStatus(SalesforceSyncStatus salesforceSyncStatus);
