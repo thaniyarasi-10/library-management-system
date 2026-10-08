@@ -17,6 +17,7 @@ public interface BookRepository extends JpaRepository<Book, String> {
 
     Optional<Book> findByUuid(String uuid);
     Optional<Book> findById(Long id);
+    Optional<Book> findByIsbn(String isbn);
     List<Book> findBySalesforceSyncStatus(SalesforceSyncStatus salesforceSyncStatus);
 
     @Query("SELECT b FROM Book b WHERE " +
