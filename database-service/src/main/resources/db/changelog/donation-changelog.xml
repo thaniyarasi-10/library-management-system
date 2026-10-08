@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="1-create-book-donation" author="thani">
+        <createTable tableName="book_donation">
+            <column name="uuid" type="varchar(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="user_uuid" type="varchar(36)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="book_uuid" type="varchar(36)"/>
+            <column name="title" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="author" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="isbn" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="cover_image_url" type="varchar(255)"/>
+            <column name="cover_image_key" type="varchar(500)"/>
+            <column name="donated_book_count" type="int">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="varchar(36)" defaultValue="PENDING">
+                <constraints nullable="false"/>
+            </column>
+            <column name="reviewed_by_uuid" type="varchar(36)"/>
+            <column name="reviewed_at" type="timestamp"/>
+            <column name="rejection_reason" type="varchar(500)"/>
+            <column name="created_at" type="timestamp" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addForeignKeyConstraint baseTableName="book_donation" baseColumnNames="user_uuid"
+                                 constraintName="fk_book_donation_user_uuid"
+                                 referencedTableName="user" referencedColumnNames="uuid"
+                                 onDelete="CASCADE"/>
+
+        <addForeignKeyConstraint baseTableName="book_donation" baseColumnNames="book_uuid"
+                                 constraintName="fk_book_donation_book_uuid"
+                                 referencedTableName="book" referencedColumnNames="uuid"
+                                 onDelete="SET NULL"/>
+
+    </changeSet>
+
+</databaseChangeLog>
