@@ -1216,15 +1216,18 @@ class UserServiceImplTest {
     }
 
     @Test
-    @DisplayName("syncAuth0User should reset warning state and update lastLoginAt for existing user")
-    void syncAuth0User_existingUserWithWarning_shouldResetWarning() {
+    @DisplayName("syncAuth0User should not modify lastLoginAt or save repository for existing user")
+    void syncAuth0User_existingUser_shouldNotUpdateTimestampOrSave() {
+        LocalDateTime initialLoginAt = LocalDateTime.now().minusDays(10);
+        LocalDateTime warningSentAt = LocalDateTime.now().minusDays(3);
         User existing = User.builder()
                 .id(300L)
                 .uuid("u-300")
                 .name("Returning User")
                 .email("return@example.com")
                 .status(AccountStatus.ACTIVE)
-                .inactivityWarningSentAt(LocalDateTime.now().minusDays(3))
+                .lastLoginAt(initialLoginAt)
+                .inactivityWarningSentAt(warningSentAt)
                 .build();
 
         UserProvider provider = UserProvider.builder()
@@ -1234,14 +1237,13 @@ class UserServiceImplTest {
 
         when(userProviderRepository.findByProviderId("auth0|returning")).thenReturn(Optional.of(provider));
         when(userRepository.findByUuid("u-300")).thenReturn(Optional.of(existing));
-        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
 
         User result = userService.syncAuth0User("auth0|returning", "return@example.com", "Returning User", RoleEnum.USER);
 
         assertNotNull(result);
-        assertNull(result.getInactivityWarningSentAt());
-        assertNotNull(result.getLastLoginAt());
-        verify(userRepository).save(existing);
+        assertEquals(initialLoginAt, result.getLastLoginAt());
+        assertEquals(warningSentAt, result.getInactivityWarningSentAt());
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
@@ -1364,5 +1366,225 @@ class UserServiceImplTest {
         assertNull(deact.getDeactivatedAt());
         assertNull(deact.getReactivationRequestedAt());
         assertNotNull(deact.getLastLoginAt());
+    }
+
+    @Test
+    @DisplayName("recordLogin for existing user with warning should update lastLoginAt and clear warning timestamp")
+    void recordLogin_existingUserWithWarning_shouldUpdateLastLoginAndClearWarning() {
+        LocalDateTime oldLogin = LocalDateTime.now().minusDays(25);
+        User user = User.builder()
+                .id(700L)
+                .uuid("u-700")
+                .name("Returning User")
+                .email("returning@example.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(oldLogin)
+                .inactivityWarningSentAt(LocalDateTime.now().minusDays(2))
+                .build();
+
+        UserProvider up = UserProvider.builder()
+                .userUuid("u-700")
+                .providerId("auth0|returning-700")
+                .build();
+
+        when(userProviderRepository.findByProviderId("auth0|returning-700")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid("u-700")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|returning-700")
+                .claim("email", "returning@example.com")
+                .claim("name", "Returning User")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse res = userService.recordLogin(auth);
+
+        assertNotNull(res);
+        assertNull(user.getInactivityWarningSentAt());
+        assertNotNull(user.getLastLoginAt());
+        assertTrue(user.getLastLoginAt().isAfter(oldLogin));
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    @DisplayName("recordLogin with Google OAuth sub should update lastLoginAt")
+    void recordLogin_googleOAuthUser_shouldUpdateLastLogin() {
+        LocalDateTime oldLogin = LocalDateTime.now().minusDays(15);
+        User user = User.builder()
+                .id(701L)
+                .uuid("u-701")
+                .name("Google User")
+                .email("google@example.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(oldLogin)
+                .build();
+
+        UserProvider up = UserProvider.builder()
+                .userUuid("u-701")
+                .providerId("google-oauth2|11223344")
+                .build();
+
+        when(userProviderRepository.findByProviderId("google-oauth2|11223344")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid("u-701")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "google-oauth2|11223344")
+                .claim("email", "google@example.com")
+                .claim("name", "Google User")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse res = userService.recordLogin(auth);
+
+        assertNotNull(res);
+        assertNotNull(user.getLastLoginAt());
+        assertTrue(user.getLastLoginAt().isAfter(oldLogin));
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    @DisplayName("recordLogin with username/password Auth0 sub should update lastLoginAt")
+    void recordLogin_usernamePasswordUser_shouldUpdateLastLogin() {
+        LocalDateTime oldLogin = LocalDateTime.now().minusDays(5);
+        User user = User.builder()
+                .id(702L)
+                .uuid("u-702")
+                .name("Db User")
+                .email("dbuser@example.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(oldLogin)
+                .build();
+
+        UserProvider up = UserProvider.builder()
+                .userUuid("u-702")
+                .providerId("auth0|db-pass-123")
+                .build();
+
+        when(userProviderRepository.findByProviderId("auth0|db-pass-123")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid("u-702")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|db-pass-123")
+                .claim("email", "dbuser@example.com")
+                .claim("name", "Db User")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse res = userService.recordLogin(auth);
+
+        assertNotNull(res);
+        assertNotNull(user.getLastLoginAt());
+        assertTrue(user.getLastLoginAt().isAfter(oldLogin));
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    @DisplayName("recordLogin for brand new user should initialize lastLoginAt timestamp")
+    void recordLogin_newUser_shouldReceiveInitialLoginTimestamp() {
+        when(userProviderRepository.findByProviderId("auth0|brand-new")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("new@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(703L);
+            u.setUuid("u-703");
+            return u;
+        });
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|brand-new")
+                .claim("email", "new@example.com")
+                .claim("name", "New User")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse res = userService.recordLogin(auth);
+
+        assertNotNull(res);
+        verify(userRepository, atLeastOnce()).save(argThat(u -> Objects.nonNull(u.getLastLoginAt())));
+    }
+
+    @Test
+    @DisplayName("Calling getCurrentUser repeatedly should not modify lastLoginAt or trigger repository save")
+    void getCurrentUser_repeatedCalls_shouldNotModifyLastLoginAt() {
+        LocalDateTime originalLoginAt = LocalDateTime.now().minusDays(12);
+        User user = User.builder()
+                .id(704L)
+                .uuid("u-704")
+                .name("Repeat User")
+                .email("repeat@example.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(originalLoginAt)
+                .build();
+
+        UserProvider up = UserProvider.builder()
+                .userUuid("u-704")
+                .providerId("auth0|repeat-704")
+                .build();
+
+        when(userProviderRepository.findByProviderId("auth0|repeat-704")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid("u-704")).thenReturn(Optional.of(user));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|repeat-704")
+                .claim("email", "repeat@example.com")
+                .claim("name", "Repeat User")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        // First call
+        UserResponse res1 = userService.getCurrentUser(auth);
+        assertNotNull(res1);
+
+        // Second call
+        UserResponse res2 = userService.getCurrentUser(auth);
+        assertNotNull(res2);
+
+        // Third call
+        UserResponse res3 = userService.getCurrentUser(auth);
+        assertNotNull(res3);
+
+        assertEquals(originalLoginAt, user.getLastLoginAt());
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("recordLogin with null principal should throw UNAUTHORIZED")
+    void recordLogin_nullPrincipal_shouldThrowUnauthorized() {
+        assertThrows(ResponseStatusException.class, () -> userService.recordLogin(null));
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    @DisplayName("recordLogin with standard Principal should resolve user and update lastLoginAt")
+    void recordLogin_standardPrincipal_shouldUpdateLastLogin() {
+        LocalDateTime oldLogin = LocalDateTime.now().minusDays(8);
+        User user = User.builder()
+                .id(705L)
+                .uuid("u-705")
+                .name("Std User")
+                .email("std@example.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(oldLogin)
+                .build();
+
+        Principal stdPrincipal = () -> "std@example.com";
+        when(userProviderRepository.findByProviderId("std@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("std@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.recordLogin(stdPrincipal);
+
+        assertNotNull(res);
+        assertNotNull(user.getLastLoginAt());
+        assertTrue(user.getLastLoginAt().isAfter(oldLogin));
+        verify(userRepository).save(user);
     }
 }

@@ -9,7 +9,7 @@ import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.dto.FineResult;
-import com.kovanlabs.librarymanagement.inactivity.service.AccountInactivityService;
+import com.kovanlabs.librarymanagement.service.AccountInactivityService;
 import com.kovanlabs.librarymanagement.service.FineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,7 +46,7 @@ public class NotificationScheduler {
      * Updates borrow record statuses, calculates accrued overdue fines, and enqueues
      * notification requests to SQS for asynchronous email delivery.
      */
-    @Scheduled(cron = "${notification.scheduling.cron:0 0 0 * * *}")
+    @Scheduled(cron = "${notification.scheduling.cron:0 0/2 * * * *}")
     @Transactional
     public void sendOverdueNotifications() {
         log.info("Executing scheduled task at midnight to process overdue borrow records and send notifications");
@@ -120,7 +120,7 @@ public class NotificationScheduler {
      * advance warnings (at &ge; 23 days) and deactivation notices (at &ge; 30 days)
      * directly via the email notification service.
      */
-    @Scheduled(cron = "${inactivity.scheduling.cron:0 0 2 * * *}")
+    @Scheduled(cron = "${inactivity.scheduling.cron:0 0/2 * * * *}")
     public void processAccountInactivityNotifications() {
         log.info("Executing scheduled task at 02:00 AM to process account inactivity warnings and deactivations");
         try {

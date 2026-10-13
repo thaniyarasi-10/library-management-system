@@ -8,7 +8,7 @@ import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.dto.FineResult;
-import com.kovanlabs.librarymanagement.inactivity.service.AccountInactivityService;
+import com.kovanlabs.librarymanagement.service.AccountInactivityService;
 import com.kovanlabs.librarymanagement.service.FineService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

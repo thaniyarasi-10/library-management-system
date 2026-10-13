@@ -323,7 +323,10 @@ export default function App() {
         reqHeaders['X-User-Name'] = pendingUsername.trim();
       }
 
-      const res = await fetchApi('/user/me', { headers: reqHeaders });
+      let res = await fetchApi('/user/callback', { method: 'POST', headers: reqHeaders });
+      if (!res.ok) {
+        res = await fetchApi('/user/me', { headers: reqHeaders });
+      }
       if (res.ok && res.data) {
         setCurrentUser(res.data);
         sessionStorage.removeItem('auth0_pending_username');

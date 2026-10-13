@@ -237,6 +237,65 @@ class UserControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/auth/me should return current user profile")
+    void getCurrentUser_ApiAuthMe_ShouldReturnProfile() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        java.security.Principal mockPrincipal = mock(java.security.Principal.class);
+        when(userService.getCurrentUser(mockPrincipal)).thenReturn(response);
+
+        mockMvc.perform(get("/api/auth/me").principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"))
+                .andExpect(jsonPath("$.email").value("alice@example.com"));
+
+        verify(userService).getCurrentUser(mockPrincipal);
+    }
+
+    @Test
+    @DisplayName("POST /user/callback should record login activity and return profile")
+    void recordLogin_UserCallback_ShouldReturnProfile() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        java.security.Principal mockPrincipal = mock(java.security.Principal.class);
+        when(userService.recordLogin(mockPrincipal)).thenReturn(response);
+
+        mockMvc.perform(post("/user/callback").principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"))
+                .andExpect(jsonPath("$.email").value("alice@example.com"));
+
+        verify(userService).recordLogin(mockPrincipal);
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/callback should record login activity and return profile")
+    void recordLogin_ApiAuthCallback_ShouldReturnProfile() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        java.security.Principal mockPrincipal = mock(java.security.Principal.class);
+        when(userService.recordLogin(mockPrincipal)).thenReturn(response);
+
+        mockMvc.perform(post("/api/auth/callback").principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"))
+                .andExpect(jsonPath("$.email").value("alice@example.com"));
+
+        verify(userService).recordLogin(mockPrincipal);
+    }
+
+    @Test
+    @DisplayName("POST /user/login-success should record login activity and return profile")
+    void recordLogin_LoginSuccess_ShouldReturnProfile() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        java.security.Principal mockPrincipal = mock(java.security.Principal.class);
+        when(userService.recordLogin(mockPrincipal)).thenReturn(response);
+
+        mockMvc.perform(post("/user/login-success").principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"));
+
+        verify(userService).recordLogin(mockPrincipal);
+    }
+
+    @Test
     @DisplayName("PATCH /user/{id}/role should update and return user profile")
     void updateUserRole_ShouldReturnUpdatedProfile() throws Exception {
         UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "ADMIN", 0);

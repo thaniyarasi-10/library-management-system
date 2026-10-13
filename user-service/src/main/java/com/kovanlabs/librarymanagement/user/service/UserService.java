@@ -23,6 +23,7 @@ public interface UserService {
     void deleteUser(Long id);
     User syncAuth0User(String sub, String email, String name, RoleEnum role);
     UserResponse getCurrentUser(Principal principal);
+    UserResponse recordLogin(Principal principal);
     UserResponse updateCurrentUser(Principal principal, UserRequest request);
     UserResponse reactivateUser(Long id);
     UserResponse deactivateUser(Long id);

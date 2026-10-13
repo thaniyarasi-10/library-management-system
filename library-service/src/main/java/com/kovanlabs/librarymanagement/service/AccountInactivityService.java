@@ -1,4 +1,4 @@
-package com.kovanlabs.librarymanagement.inactivity.service;
+package com.kovanlabs.librarymanagement.service;
 
 import com.kovanlabs.librarymanagement.communication.dto.NotificationRequest;
 import com.kovanlabs.librarymanagement.communication.enums.EmailTemplateType;

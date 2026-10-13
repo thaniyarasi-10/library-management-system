@@ -112,10 +112,13 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/books", "/books/**")
                         .hasAnyAuthority("books:delete", "ROLE_ADMIN")
 
-                        // User Me Endpoint (Authenticated User/Admin)
-                        .requestMatchers(HttpMethod.GET, "/user/me")
+                        // User Me & Login Completion Endpoints (Authenticated User/Admin)
+                        .requestMatchers(HttpMethod.GET, "/user/me", "/api/auth/me")
                         .authenticated()
-                        .requestMatchers(HttpMethod.PUT, "/user/me")
+                        .requestMatchers(HttpMethod.POST, "/user/callback", "/user/login-success", "/user/login",
+                                "/api/auth/callback", "/api/auth/login-success", "/api/auth/login")
+                        .authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/user/me", "/api/auth/me")
                         .authenticated()
                         .requestMatchers(HttpMethod.POST, "/user/me/request-reactivation")
                         .authenticated()

@@ -437,15 +437,9 @@ public class UserServiceImpl implements UserService {
         var userProviderOpt = userProviderRepository.findByProviderId(sub);
         if (userProviderOpt.isPresent()) {
             UserProvider userProvider = userProviderOpt.get();
-            User user = userRepository.findByUuid(userProvider.getUserUuid())
+            return userRepository.findByUuid(userProvider.getUserUuid())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                             "User not found for providerId: " + sub));
-            if (user.getStatus() == AccountStatus.ACTIVE && Objects.nonNull(user.getInactivityWarningSentAt())) {
-                user.setInactivityWarningSentAt(null);
-                user.setLastLoginAt(LocalDateTime.now());
-                return userRepository.save(user);
-            }
-            return user;
         }
 
         // 2. Lookup by raw provider ID if sub has a provider prefix (e.g. sub =
@@ -481,12 +475,6 @@ public class UserServiceImpl implements UserService {
                                 .build();
                         userProviderRepository.save(newProvider);
                     }
-
-                    if (existing.getStatus() == AccountStatus.ACTIVE && Objects.nonNull(existing.getInactivityWarningSentAt())) {
-                        existing.setInactivityWarningSentAt(null);
-                        existing.setLastLoginAt(LocalDateTime.now());
-                        return userRepository.save(existing);
-                    }
                     return existing;
                 }
             }
@@ -510,12 +498,6 @@ public class UserServiceImpl implements UserService {
                             .providerId(sub)
                             .build();
                     userProviderRepository.save(newProvider);
-                }
-
-                if (existing.getStatus() == AccountStatus.ACTIVE && Objects.nonNull(existing.getInactivityWarningSentAt())) {
-                    existing.setInactivityWarningSentAt(null);
-                    existing.setLastLoginAt(LocalDateTime.now());
-                    return userRepository.save(existing);
                 }
                 return existing;
             }
@@ -551,6 +533,14 @@ public class UserServiceImpl implements UserService {
         return savedUser;
     }
 
+    /**
+     * Retrieves the current user's profile without altering login activity metadata or timestamps.
+     * Safe to call repeatedly on /me or /api/auth/me without resetting the account inactivity period.
+     *
+     * @param principal The security principal representing the current user
+     * @return The {@link UserResponse} DTO
+     * @throws ResponseStatusException 401 UNAUTHORIZED if principal is null
+     */
     @Override
     @Transactional
     public UserResponse getCurrentUser(Principal principal) {
@@ -592,6 +582,67 @@ public class UserServiceImpl implements UserService {
         }
 
         return getUserByIdentifier(principal.getName());
+    }
+
+    /**
+     * Records a genuine successful login completion event for an authenticated user.
+     * Updates {@code last_login_at} timestamp and clears any pending inactivity warning state.
+     * Separated from {@link #getCurrentUser(Principal)} to prevent repeated /me profile reads
+     * from inadvertently resetting the inactivity countdown.
+     *
+     * @param principal The authenticated security principal
+     * @return The updated {@link UserResponse} DTO
+     * @throws ResponseStatusException 401 UNAUTHORIZED if principal is null
+     */
+    @Override
+    @Transactional
+    public UserResponse recordLogin(Principal principal) {
+        if (Objects.isNull(principal)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+
+        User user;
+        if (principal instanceof Authentication auth
+                && auth.getPrincipal() instanceof Jwt jwt) {
+            String sub = jwt.getSubject();
+            String email = jwt.getClaimAsString("email");
+            if (Objects.isNull(email) || email.isBlank()) {
+                email = jwt.getClaimAsString("https://library.kovanlabs.com/email");
+            }
+            if (Objects.isNull(email) || email.isBlank()) {
+                email = jwt.getClaimAsString("https://library-management.com/email");
+            }
+
+            String customUsername = getHeaderFromRequestContext("X-User-Username");
+            if (Objects.isNull(customUsername) || customUsername.isBlank()) {
+                customUsername = getHeaderFromRequestContext("X-User-Name");
+            }
+
+            String name = (Objects.nonNull(customUsername) && !customUsername.isBlank()) ? customUsername.trim() : null;
+            if (Objects.isNull(name) || name.isBlank()) {
+                name = jwt.getClaimAsString("name");
+            }
+            if (Objects.isNull(name) || name.isBlank()) {
+                name = jwt.getClaimAsString("nickname");
+            }
+            if (Objects.isNull(name) || name.isBlank()) {
+                name = jwt.getClaimAsString("https://library.kovanlabs.com/name");
+            }
+
+            RoleEnum role = extractRoleFromJwt(jwt);
+
+            user = syncAuth0User(sub, email, name, role);
+        } else {
+            user = findUserEntityByIdentifier(principal.getName());
+        }
+
+        if (Objects.nonNull(user) && user.getStatus() == AccountStatus.ACTIVE) {
+            user.setLastLoginAt(LocalDateTime.now());
+            user.setInactivityWarningSentAt(null);
+            user = userRepository.save(user);
+        }
+
+        return toUserResponse(user);
     }
 
     @Override

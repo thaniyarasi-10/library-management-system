@@ -61,9 +61,14 @@ class SecurityConfigTest {
             return ResponseEntity.ok("deleted");
         }
 
-        @GetMapping("/user/me")
+        @GetMapping({"/user/me", "/api/auth/me"})
         public ResponseEntity<String> getMe() {
             return ResponseEntity.ok("me");
+        }
+
+        @PostMapping("/user/callback")
+        public ResponseEntity<String> userCallback() {
+            return ResponseEntity.ok("callback");
         }
 
         @GetMapping("/user")
@@ -207,6 +212,36 @@ class SecurityConfigTest {
         mockMvc.perform(get("/user/me")
                         .header("Authorization", "Bearer me-token"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void apiAuthMeEndpoint_whenValidToken_shouldBeAllowed() throws Exception {
+        Jwt jwt = createJwtWithClaims(Map.of(
+                "sub", "auth0|12345"
+        ));
+        when(mockJwtDecoder.decode("me-token")).thenReturn(jwt);
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header("Authorization", "Bearer me-token"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void userCallbackEndpoint_whenValidToken_shouldBeAllowed() throws Exception {
+        Jwt jwt = createJwtWithClaims(Map.of(
+                "sub", "auth0|12345"
+        ));
+        when(mockJwtDecoder.decode("callback-token")).thenReturn(jwt);
+
+        mockMvc.perform(post("/user/callback")
+                        .header("Authorization", "Bearer callback-token"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void userCallbackEndpoint_whenNoToken_shouldReturn401() throws Exception {
+        mockMvc.perform(post("/user/callback"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

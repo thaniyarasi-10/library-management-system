@@ -80,4 +80,10 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="23-migrate-null-last-login-at" author="thani">
+        <sql>
+            UPDATE user SET last_login_at = COALESCE(created_at, NOW()) WHERE last_login_at IS NULL;
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

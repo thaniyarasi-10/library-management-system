@@ -14,7 +14,7 @@ import java.security.Principal;
 import java.util.List;
 
 @RestController
-@RequestMapping("/user")
+@RequestMapping({"/user", "/api/auth"})
 @RequiredArgsConstructor
 public class UserController {
 
@@ -46,9 +46,14 @@ public class UserController {
         return userService.searchUsers(query, page, size, sortBy, sortDir);
     }
 
-    @GetMapping("/me")
+    @GetMapping({"/me", "/auth/me"})
     public UserResponse getCurrentUser(Principal principal) {
         return userService.getCurrentUser(principal);
+    }
+
+    @PostMapping({"/callback", "/login-success", "/login"})
+    public UserResponse recordLogin(Principal principal) {
+        return userService.recordLogin(principal);
     }
 
     @PutMapping("/me")
