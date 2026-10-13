@@ -1,36 +1,42 @@
 package com.kovanlabs.librarymanagement.inactivity.service;
 
-import com.kovanlabs.librarymanagement.communication.service.InactivityNotificationService;
+import com.kovanlabs.librarymanagement.communication.dto.NotificationRequest;
+import com.kovanlabs.librarymanagement.communication.enums.EmailTemplateType;
+import com.kovanlabs.librarymanagement.communication.enums.NotificationTypeEnum;
+import com.kovanlabs.librarymanagement.communication.factory.NotificationFactory;
+import com.kovanlabs.librarymanagement.communication.service.NotificationService;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class AccountInactivityServiceTest {
 
-    private InactivityNotificationService notificationService;
+    private NotificationFactory notificationFactory;
+    private NotificationService emailNotificationService;
     private UserRepository userRepository;
     private AccountInactivityService service;
 
     @BeforeEach
     void setUp() {
-        notificationService = mock(InactivityNotificationService.class);
+        notificationFactory = mock(NotificationFactory.class);
+        emailNotificationService = mock(NotificationService.class);
         userRepository = mock(UserRepository.class);
 
+        when(notificationFactory.get(NotificationTypeEnum.EMAIL)).thenReturn(emailNotificationService);
+
         service = new AccountInactivityService(
-                notificationService,
+                notificationFactory,
                 userRepository
         );
     }
@@ -47,13 +53,14 @@ class AccountInactivityServiceTest {
                 .build();
         service.processUser(deactivatedUser);
 
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(notificationFactory);
+        verifyNoInteractions(emailNotificationService);
         verifyNoInteractions(userRepository);
     }
 
     @Test
-    @DisplayName("processUser inactive >= 30 days should deactivate user in MySQL")
-    void processUser_inactivity30Days_shouldDeactivate() {
+    @DisplayName("processUser inactive >= 30 days should deactivate user in MySQL and send deactivation email")
+    void processUser_inactivity30Days_shouldDeactivateAndSendEmail() {
         User user = User.builder()
                 .id(2L)
                 .uuid("u-2")
@@ -68,12 +75,18 @@ class AccountInactivityServiceTest {
         assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
         assertNotNull(user.getDeactivatedAt());
         verify(userRepository).save(user);
-        verifyNoInteractions(notificationService);
+
+        ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
+        verify(emailNotificationService, times(1)).send(captor.capture());
+        NotificationRequest sent = captor.getValue();
+        assertEquals("inactive@test.com", sent.recipient());
+        assertEquals(EmailTemplateType.ACCOUNT_DEACTIVATED, sent.templateType());
+        assertTrue(sent.inactiveDays() >= 30);
     }
 
     @Test
-    @DisplayName("processUser inactive >= 30 days when lastLoginAt is null should use createdAt")
-    void processUser_nullLastLogin_shouldUseCreatedAt() {
+    @DisplayName("processUser inactive >= 30 days when lastLoginAt is null should use createdAt and send deactivation email")
+    void processUser_nullLastLogin_shouldUseCreatedAtAndDeactivate() {
         User user = User.builder()
                 .id(3L)
                 .uuid("u-3")
@@ -89,12 +102,13 @@ class AccountInactivityServiceTest {
         assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
         assertNotNull(user.getDeactivatedAt());
         verify(userRepository).save(user);
-        verifyNoInteractions(notificationService);
+
+        verify(emailNotificationService, times(1)).send(any(NotificationRequest.class));
     }
 
     @Test
-    @DisplayName("processUser at warning threshold (23 to 29 days) should send warning email")
-    void processUser_warningThreshold_shouldSendWarning() {
+    @DisplayName("processUser at warning threshold (23 to 29 days) should send warning email via factory")
+    void processUser_warningThreshold_shouldSendWarningEmail() {
         User user = User.builder()
                 .id(4L)
                 .uuid("u-4")
@@ -104,25 +118,19 @@ class AccountInactivityServiceTest {
                 .lastLoginAt(LocalDateTime.now().minusDays(24))
                 .build();
 
-        when(notificationService.sendInactivityWarning(
-                eq("warn@test.com"),
-                eq("Warn User"),
-                anyLong(),
-                anyLong(),
-                any(LocalDate.class)
-        )).thenReturn(true);
-
         service.processUser(user);
 
         assertEquals(AccountStatus.ACTIVE, user.getStatus());
         assertNotNull(user.getInactivityWarningSentAt());
-        verify(notificationService).sendInactivityWarning(
-                eq("warn@test.com"),
-                eq("Warn User"),
-                anyLong(),
-                anyLong(),
-                any(LocalDate.class)
-        );
+
+        ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
+        verify(emailNotificationService, times(1)).send(captor.capture());
+        NotificationRequest sent = captor.getValue();
+        assertEquals("warn@test.com", sent.recipient());
+        assertEquals("Warn User", sent.userName());
+        assertEquals(EmailTemplateType.INACTIVITY_WARNING, sent.templateType());
+        assertTrue(sent.inactiveDays() >= 23);
+
         verify(userRepository).save(user);
     }
 
@@ -141,13 +149,14 @@ class AccountInactivityServiceTest {
 
         service.processUser(user);
 
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(notificationFactory);
+        verifyNoInteractions(emailNotificationService);
         verify(userRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("processUser when warning email sending fails should not persist warning timestamp")
-    void processUser_warningFails_shouldNotPersistTimestamp() {
+    @DisplayName("processUser when sending email throws exception should handle gracefully without crashing")
+    void processUser_warningThrowsException_shouldHandleGracefully() {
         User user = User.builder()
                 .id(6L)
                 .uuid("u-6")
@@ -157,13 +166,29 @@ class AccountInactivityServiceTest {
                 .lastLoginAt(LocalDateTime.now().minusDays(24))
                 .build();
 
-        when(notificationService.sendInactivityWarning(anyString(), anyString(), anyLong(), anyLong(), any()))
-                .thenReturn(false);
+        doThrow(new RuntimeException("Email dispatch error")).when(emailNotificationService).send(any());
 
-        service.processUser(user);
-
+        assertDoesNotThrow(() -> service.processUser(user));
         assertNull(user.getInactivityWarningSentAt());
-        verify(userRepository, never()).save(user);
+    }
+
+    @Test
+    @DisplayName("processUser when deactivation email throws exception should still deactivate user")
+    void processUser_deactivateEmailThrowsException_shouldStillDeactivate() {
+        User user = User.builder()
+                .id(66L)
+                .uuid("u-66")
+                .email("faildeactmail@test.com")
+                .name("Fail Deact Mail")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(35))
+                .build();
+
+        doThrow(new RuntimeException("Deactivation email error")).when(emailNotificationService).send(any());
+
+        assertDoesNotThrow(() -> service.processUser(user));
+        assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
+        verify(userRepository).save(user);
     }
 
     @Test
@@ -183,6 +208,7 @@ class AccountInactivityServiceTest {
 
         assertNull(user.getInactivityWarningSentAt());
         verify(userRepository).save(user);
+        verifyNoInteractions(emailNotificationService);
     }
 
     @Test
@@ -199,7 +225,8 @@ class AccountInactivityServiceTest {
 
         service.processUser(user);
 
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(notificationFactory);
+        verifyNoInteractions(emailNotificationService);
         verify(userRepository, never()).save(any());
     }
 
@@ -220,5 +247,153 @@ class AccountInactivityServiceTest {
 
         assertEquals(AccountStatus.ACTIVE, user.getStatus());
         verify(userRepository, never()).save(any());
+        verifyNoInteractions(emailNotificationService);
+    }
+
+    @Test
+    @DisplayName("processInactiveAccounts should process deactivations, warnings, and warning resets")
+    void processInactiveAccounts_success() {
+        User userToDeactivate = User.builder()
+                .id(10L)
+                .uuid("u-10")
+                .email("deactivate@test.com")
+                .name("To Deactivate")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(35))
+                .build();
+
+        User userToWarn = User.builder()
+                .id(11L)
+                .uuid("u-11")
+                .email("warnme@test.com")
+                .name("To Warn")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(25))
+                .build();
+
+        User userToReset = User.builder()
+                .id(12L)
+                .uuid("u-12")
+                .email("resetwarn@test.com")
+                .name("To Reset")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(2))
+                .inactivityWarningSentAt(LocalDateTime.now().minusDays(10))
+                .build();
+
+        when(userRepository.findUsersEligibleForDeactivation(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of(userToDeactivate));
+        when(userRepository.findUsersEligibleForInactivityWarning(eq(AccountStatus.ACTIVE), any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of(userToWarn));
+        when(userRepository.findActiveUsersWithPendingWarningToReset(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of(userToReset));
+
+        service.processInactiveAccounts();
+
+        assertEquals(AccountStatus.DEACTIVATED, userToDeactivate.getStatus());
+        assertNotNull(userToDeactivate.getDeactivatedAt());
+        verify(userRepository).save(userToDeactivate);
+
+        assertEquals(AccountStatus.ACTIVE, userToWarn.getStatus());
+        assertNotNull(userToWarn.getInactivityWarningSentAt());
+        verify(userRepository).save(userToWarn);
+
+        assertNull(userToReset.getInactivityWarningSentAt());
+        verify(userRepository).save(userToReset);
+
+        ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
+        verify(emailNotificationService, times(2)).send(captor.capture());
+
+        List<NotificationRequest> sentRequests = captor.getAllValues();
+        assertEquals(2, sentRequests.size());
+
+        NotificationRequest deactReq = sentRequests.stream()
+                .filter(r -> r.templateType() == EmailTemplateType.ACCOUNT_DEACTIVATED)
+                .findFirst().orElseThrow();
+        assertEquals("deactivate@test.com", deactReq.recipient());
+
+        NotificationRequest warnReq = sentRequests.stream()
+                .filter(r -> r.templateType() == EmailTemplateType.INACTIVITY_WARNING)
+                .findFirst().orElseThrow();
+        assertEquals("warnme@test.com", warnReq.recipient());
+    }
+
+    @Test
+    @DisplayName("processInactiveAccounts when empty lists returned should complete cleanly without interactions")
+    void processInactiveAccounts_emptyLists() {
+        when(userRepository.findUsersEligibleForDeactivation(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findUsersEligibleForInactivityWarning(eq(AccountStatus.ACTIVE), any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findActiveUsersWithPendingWarningToReset(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+
+        assertDoesNotThrow(() -> service.processInactiveAccounts());
+
+        verify(emailNotificationService, never()).send(any());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("processInactiveAccounts should catch exceptions on individual user processing without aborting batch")
+    void processInactiveAccounts_isolatedExceptions() {
+        User failingUser = mock(User.class);
+        when(failingUser.getId()).thenReturn(99L);
+        when(failingUser.getEmail()).thenReturn("fail@test.com");
+        when(failingUser.getLastLoginAt()).thenThrow(new RuntimeException("Simulated error in getter"));
+
+        User succeedingUser = User.builder()
+                .id(100L)
+                .uuid("u-100")
+                .email("success@test.com")
+                .name("Success User")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(32))
+                .build();
+
+        when(userRepository.findUsersEligibleForDeactivation(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of(failingUser, succeedingUser));
+        when(userRepository.findUsersEligibleForInactivityWarning(eq(AccountStatus.ACTIVE), any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findActiveUsersWithPendingWarningToReset(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+
+        assertDoesNotThrow(() -> service.processInactiveAccounts());
+
+        assertEquals(AccountStatus.DEACTIVATED, succeedingUser.getStatus());
+        verify(userRepository).save(succeedingUser);
+        verify(emailNotificationService, times(1)).send(any());
+    }
+
+    @Test
+    @DisplayName("processInactiveAccounts warning batch should catch individual exceptions and continue")
+    void processInactiveAccounts_warningIsolatedExceptions() {
+        User failingWarnUser = mock(User.class);
+        when(failingWarnUser.getId()).thenReturn(88L);
+        when(failingWarnUser.getEmail()).thenReturn("failwarn@test.com");
+        when(failingWarnUser.getLastLoginAt()).thenThrow(new RuntimeException("Simulated warning baseline error"));
+
+        User succeedingWarnUser = User.builder()
+                .id(89L)
+                .uuid("u-89")
+                .email("successwarn@test.com")
+                .name("Success Warn User")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(26))
+                .build();
+
+        when(userRepository.findUsersEligibleForDeactivation(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findUsersEligibleForInactivityWarning(eq(AccountStatus.ACTIVE), any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of(failingWarnUser, succeedingWarnUser));
+        when(userRepository.findActiveUsersWithPendingWarningToReset(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+
+        assertDoesNotThrow(() -> service.processInactiveAccounts());
+
+        assertEquals(AccountStatus.ACTIVE, succeedingWarnUser.getStatus());
+        assertNotNull(succeedingWarnUser.getInactivityWarningSentAt());
+        verify(userRepository).save(succeedingWarnUser);
+        verify(emailNotificationService, times(1)).send(any());
     }
 }

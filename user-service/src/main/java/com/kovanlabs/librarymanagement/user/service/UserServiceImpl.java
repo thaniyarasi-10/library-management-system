@@ -46,6 +46,11 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+/**
+ * Primary implementation of {@link UserService} managing user lifecycle,
+ * authentication synchronization, role mappings, account deactivations,
+ * reactivation approval workflows, and external Salesforce CRM synchronization.
+ */
 @Service
 @Transactional(readOnly = true)
 @Slf4j
@@ -340,10 +345,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserResponse getUserByIdentifier(String identifier) {
+        return toUserResponse(findUserEntityByIdentifier(identifier));
+    }
+
+    private User findUserEntityByIdentifier(String identifier) {
         if (Objects.isNull(identifier) || identifier.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User identifier must not be empty");
         }
-        User user = userProviderRepository.findByProviderId(identifier)
+        return userProviderRepository.findByProviderId(identifier)
                 .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
                 .or(() -> {
                     if (identifier.contains("|")) {
@@ -359,7 +368,6 @@ public class UserServiceImpl implements UserService {
                 .or(() -> userRepository.findByUuid(identifier))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "User not found with identifier: " + identifier));
-        return toUserResponse(user);
     }
 
     /**
@@ -649,6 +657,15 @@ public class UserServiceImpl implements UserService {
         }
     }
 
+    /**
+     * Approves and executes user account reactivation by restoring ACTIVE status.
+     * Clears deactivation metadata, pending reactivation flags, and inactivity warning timestamps,
+     * resetting the user's last login baseline to the current time.
+     *
+     * @param id The primary key identifier of the user to reactivate
+     * @return The updated {@link UserResponse}
+     * @throws ResponseStatusException 404 NOT_FOUND if the user does not exist
+     */
     @Override
     @Transactional
     @CacheEvict(value = "users", key = "#p0")
@@ -666,6 +683,13 @@ public class UserServiceImpl implements UserService {
         return toUserResponse(savedUser);
     }
 
+    /**
+     * Manually deactivates a user account, setting its status to DEACTIVATED and clearing request flags.
+     *
+     * @param id The primary key identifier of the user to deactivate
+     * @return The updated {@link UserResponse}
+     * @throws ResponseStatusException 404 NOT_FOUND if the user does not exist
+     */
     @Override
     @Transactional
     @CacheEvict(value = "users", key = "#p0")
@@ -681,6 +705,19 @@ public class UserServiceImpl implements UserService {
         return toUserResponse(savedUser);
     }
 
+    /**
+     * Submits an account reactivation request on behalf of the currently authenticated user.
+     * <p>
+     * Verification rules:
+     * <ul>
+     *     <li>Account must currently be in DEACTIVATED status.</li>
+     *     <li>User must not have any outstanding unpaid fines. If pending fines exist, requests are rejected with 400 BAD_REQUEST.</li>
+     * </ul>
+     *
+     * @param principal The security principal representing the requesting user
+     * @return The updated {@link UserResponse} with reactivationRequested set to true
+     * @throws ResponseStatusException 401 UNAUTHORIZED if not authenticated, 404 NOT_FOUND if user not found, or 400 BAD_REQUEST if user is not deactivated or has unpaid fines
+     */
     @Override
     @Transactional
     public UserResponse requestReactivation(Principal principal) {
@@ -738,6 +775,11 @@ public class UserServiceImpl implements UserService {
         return toUserResponse(savedUser);
     }
 
+    /**
+     * Retrieves all deactivated accounts that have submitted pending reactivation requests.
+     *
+     * @return List of {@link UserResponse} representing users awaiting administrative reactivation approval
+     */
     @Override
     public List<UserResponse> getReactivationRequests() {
         List<User> users = userRepository.findByStatusAndReactivationRequestedTrue(AccountStatus.DEACTIVATED);

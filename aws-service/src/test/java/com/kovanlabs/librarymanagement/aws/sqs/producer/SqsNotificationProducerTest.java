@@ -3,6 +3,7 @@ package com.kovanlabs.librarymanagement.aws.sqs.producer;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kovanlabs.librarymanagement.communication.dto.NotificationRequest;
+import com.kovanlabs.librarymanagement.communication.enums.EmailTemplateType;
 import com.kovanlabs.librarymanagement.communication.enums.NotificationTypeEnum;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,7 +47,11 @@ class SqsNotificationProducerTest {
                 "Book due soon",
                 "John",
                 null,
-                0.0
+                0.0,
+                EmailTemplateType.OVERDUE_FINE,
+                null,
+                null,
+                null
         );
 
         when(objectMapper.writeValueAsString(request)).thenReturn("{\"recipient\":\"user@example.com\"}");
@@ -61,7 +66,9 @@ class SqsNotificationProducerTest {
 
     @Test
     void send_whenSerializationFails_shouldThrowRuntimeException() throws Exception {
-        NotificationRequest request = new NotificationRequest("user@example.com", "Sub", "Msg");
+        NotificationRequest request = new NotificationRequest(
+                "user@example.com", "Sub", "Msg", "User", null, null, EmailTemplateType.OVERDUE_FINE, null, null, null
+        );
         when(objectMapper.writeValueAsString(request)).thenThrow(new JsonProcessingException("Serialization error") {});
 
         RuntimeException exception = assertThrows(RuntimeException.class, () -> producer.send(request));
@@ -70,7 +77,9 @@ class SqsNotificationProducerTest {
 
     @Test
     void send_whenSqsFails_shouldThrowRuntimeException() throws Exception {
-        NotificationRequest request = new NotificationRequest("user@example.com", "Sub", "Msg");
+        NotificationRequest request = new NotificationRequest(
+                "user@example.com", "Sub", "Msg", "User", null, null, EmailTemplateType.OVERDUE_FINE, null, null, null
+        );
         when(objectMapper.writeValueAsString(request)).thenReturn("{}");
         doThrow(SqsException.builder().message("SQS error").build()).when(sqsClient).sendMessage(any(SendMessageRequest.class));
 

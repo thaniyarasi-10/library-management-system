@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,4 +29,40 @@ public interface UserRepository extends JpaRepository<User, String> {
            "LOWER(u.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%'))")
     Page<User> searchUsers(@Param("query") String query, Pageable pageable);
+
+    @Query("""
+        SELECT u FROM User u
+        WHERE u.status = :status
+          AND ((u.lastLoginAt IS NOT NULL AND u.lastLoginAt <= :cutoff)
+               OR (u.lastLoginAt IS NULL AND u.createdAt IS NOT NULL AND u.createdAt <= :cutoff))
+    """)
+    List<User> findUsersEligibleForDeactivation(
+            @Param("status") AccountStatus status,
+            @Param("cutoff") LocalDateTime cutoff
+    );
+
+    @Query("""
+        SELECT u FROM User u
+        WHERE u.status = :status
+          AND u.inactivityWarningSentAt IS NULL
+          AND ((u.lastLoginAt IS NOT NULL AND u.lastLoginAt <= :warningCutoff AND u.lastLoginAt > :deactivationCutoff)
+               OR (u.lastLoginAt IS NULL AND u.createdAt IS NOT NULL AND u.createdAt <= :warningCutoff AND u.createdAt > :deactivationCutoff))
+    """)
+    List<User> findUsersEligibleForInactivityWarning(
+            @Param("status") AccountStatus status,
+            @Param("warningCutoff") LocalDateTime warningCutoff,
+            @Param("deactivationCutoff") LocalDateTime deactivationCutoff
+    );
+
+    @Query("""
+        SELECT u FROM User u
+        WHERE u.status = :status
+          AND u.inactivityWarningSentAt IS NOT NULL
+          AND ((u.lastLoginAt IS NOT NULL AND u.lastLoginAt > :warningCutoff)
+               OR (u.lastLoginAt IS NULL AND u.createdAt IS NOT NULL AND u.createdAt > :warningCutoff))
+    """)
+    List<User> findActiveUsersWithPendingWarningToReset(
+            @Param("status") AccountStatus status,
+            @Param("warningCutoff") LocalDateTime warningCutoff
+    );
 }
