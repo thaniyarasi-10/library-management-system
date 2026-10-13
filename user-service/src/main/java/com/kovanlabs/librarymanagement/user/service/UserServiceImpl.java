@@ -14,6 +14,7 @@ import com.kovanlabs.librarymanagement.database.repository.FineRepository;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
@@ -835,6 +836,27 @@ public class UserServiceImpl implements UserService {
     public List<UserResponse> getReactivationRequests() {
         List<User> users = userRepository.findByStatusAndReactivationRequestedTrue(AccountStatus.DEACTIVATED);
         return users.stream().map(this::toUserResponse).toList();
+    }
+
+    /**
+     * Rejects an account reactivation request for a deactivated user, clearing the request flag
+     * while preserving the DEACTIVATED account status.
+     *
+     * @param id The primary key identifier of the user whose request is being rejected
+     * @return The updated {@link UserResponse}
+     * @throws ResponseStatusException 404 NOT_FOUND if the user does not exist
+     */
+    @Override
+    @Transactional
+    @CacheEvict(value = "users", key = "#p0")
+    public UserResponse rejectReactivation(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
+        user.setReactivationRequested(false);
+        user.setReactivationRequestedAt(null);
+        User savedUser = userRepository.save(user);
+        log.info("Successfully rejected account reactivation request for user ID: {}, Email: {}", id, savedUser.getEmail());
+        return toUserResponse(savedUser);
     }
 
     private String getHeaderFromRequestContext(String headerName) {

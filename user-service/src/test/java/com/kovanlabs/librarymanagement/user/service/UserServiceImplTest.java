@@ -8,6 +8,7 @@ import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.entity.Fine;
+import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.enums.FineStatus;
 import com.kovanlabs.librarymanagement.database.repository.FineRepository;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
@@ -1366,6 +1367,38 @@ class UserServiceImplTest {
         assertNull(deact.getDeactivatedAt());
         assertNull(deact.getReactivationRequestedAt());
         assertNotNull(deact.getLastLoginAt());
+    }
+
+    @Test
+    @DisplayName("rejectReactivation when user exists should clear reactivationRequested and keep DEACTIVATED status")
+    void rejectReactivation_whenUserExists_shouldClearFlagAndKeepDeactivated() {
+        User deact = User.builder()
+                .id(601L)
+                .uuid("u-601")
+                .email("reject@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .reactivationRequested(true)
+                .reactivationRequestedAt(LocalDateTime.now().minusDays(1))
+                .build();
+
+        when(userRepository.findById(601L)).thenReturn(Optional.of(deact));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.rejectReactivation(601L);
+
+        assertEquals("DEACTIVATED", res.status());
+        assertFalse(res.reactivationRequested());
+        assertNull(deact.getReactivationRequestedAt());
+        verify(userRepository).save(deact);
+    }
+
+    @Test
+    @DisplayName("rejectReactivation when user ID not found should throw 404")
+    void rejectReactivation_whenNotFound_shouldThrow404() {
+        when(userRepository.findById(9999L)).thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () ->
+                userService.rejectReactivation(9999L));
     }
 
     @Test

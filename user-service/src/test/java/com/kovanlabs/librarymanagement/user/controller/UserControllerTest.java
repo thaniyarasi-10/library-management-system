@@ -390,4 +390,18 @@ class UserControllerTest {
 
         verify(userService).reactivateUser(id1);
     }
+
+    @Test
+    @DisplayName("POST /user/{id}/reject-reactivation should reject request and return deactivated response")
+    void rejectReactivation_ShouldReturnDeactivatedUser() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0, null, "DEACTIVATED", false, false, 0.0);
+        when(userService.rejectReactivation(id1)).thenReturn(response);
+
+        mockMvc.perform(post("/user/{id}/reject-reactivation", id1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DEACTIVATED"))
+                .andExpect(jsonPath("$.reactivationRequested").value(false));
+
+        verify(userService).rejectReactivation(id1);
+    }
 }

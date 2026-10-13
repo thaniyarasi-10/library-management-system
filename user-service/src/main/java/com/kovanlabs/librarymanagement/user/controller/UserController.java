@@ -99,6 +99,11 @@ public class UserController {
         return userService.reactivateUser(id);
     }
 
+    @PostMapping("/{id}/reject-reactivation")
+    public UserResponse rejectReactivation(@PathVariable("id") Long id) {
+        return userService.rejectReactivation(id);
+    }
+
     @PostMapping("/{id}/deactivate")
     public UserResponse deactivateUser(@PathVariable("id") Long id) {
         return userService.deactivateUser(id);

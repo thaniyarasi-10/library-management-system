@@ -29,5 +29,6 @@ public interface UserService {
     UserResponse deactivateUser(Long id);
     UserResponse requestReactivation(Principal principal);
     List<UserResponse> getReactivationRequests();
+    UserResponse rejectReactivation(Long id);
 }
 

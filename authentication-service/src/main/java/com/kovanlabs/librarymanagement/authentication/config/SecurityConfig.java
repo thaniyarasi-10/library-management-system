@@ -128,7 +128,7 @@ public class SecurityConfig {
                         .permitAll()
 
                         // User Reactivation and Deactivation (Admin)
-                        .requestMatchers(HttpMethod.POST, "/user/*/deactivate", "/user/*/approve-reactivation")
+                        .requestMatchers(HttpMethod.POST, "/user/*/deactivate", "/user/*/approve-reactivation", "/user/*/reject-reactivation")
                         .hasAnyAuthority("users:write", "ROLE_ADMIN")
 
                         // User Admin / Profile Update Endpoints (Permission or Role)

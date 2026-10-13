@@ -4,7 +4,7 @@ import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
-  User as UserIcon, Edit2, Phone, Gift
+  User as UserIcon, Edit2, Phone, Gift, Trash2
 } from 'lucide-react';
 import './styles.css';
 
@@ -784,12 +784,26 @@ export default function App() {
   };
 
   const handleApproveReactivation = async (userId, name) => {
+    setReactivationRequests(prev => prev.filter(r => r.id !== userId && r.uuid !== userId));
     const res = await fetchApi(`/user/${userId}/approve-reactivation`, { method: 'POST' });
     if (res.ok) {
       showToast(`Member "${name}" reactivated successfully`, 'success');
       loadMembers(membersPage, memberSearchQuery);
     } else {
       showToast(res.data?.message || 'Failed to reactivate member', 'error');
+      loadMembers(membersPage, memberSearchQuery);
+    }
+  };
+
+  const handleRejectReactivation = async (userId, name) => {
+    setReactivationRequests(prev => prev.filter(r => r.id !== userId && r.uuid !== userId));
+    const res = await fetchApi(`/user/${userId}/reject-reactivation`, { method: 'POST' });
+    if (res.ok) {
+      showToast(`Reactivation request for "${name}" rejected`, 'info');
+      loadMembers(membersPage, memberSearchQuery);
+    } else {
+      showToast(res.data?.message || 'Failed to reject reactivation request', 'error');
+      loadMembers(membersPage, memberSearchQuery);
     }
   };
 
@@ -1291,7 +1305,7 @@ export default function App() {
               }}
               onClick={() => { setAuthMode('signup'); setSignupError(''); }}
             >
-              Register (Sign Up)
+              Sign Up
             </button>
           </div>
 
@@ -1558,14 +1572,6 @@ export default function App() {
           </button>
 
           <button
-            className={`nav-link ${currentPage === 'membership' ? 'active' : ''}`}
-            onClick={() => setCurrentPage('membership')}
-          >
-            <Award className="nav-icon" size={18} />
-            <span>{userRole === 'ADMIN' ? 'Membership' : 'Digital Membership'}</span>
-          </button>
-
-          <button
             className={`nav-link ${currentPage === 'donations' ? 'active' : ''}`}
             onClick={() => setCurrentPage('donations')}
           >
@@ -1639,6 +1645,17 @@ export default function App() {
                   <button className="dropdown-item" onClick={handleOpenEditProfile} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <UserIcon size={14} />
                     <span>Edit Profile</span>
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setCurrentPage('membership');
+                      setShowUserDropdown(false);
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <Award size={14} />
+                    <span>{userRole === 'ADMIN' ? 'Membership' : 'Digital Membership'}</span>
                   </button>
                   <div className="dropdown-divider"></div>
                   <button className="dropdown-item danger" onClick={handleSignOut}>Sign Out</button>
@@ -1963,17 +1980,51 @@ export default function App() {
               </div>
 
               {reactivationRequests.length > 0 && (
-                <div style={{ marginBottom: '16px', padding: '14px 18px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.35)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '18px' }}>🔔</span>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  className="reactivation-banner-interactive"
+                  onClick={() => setActiveModal('reactivationRequests')}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveModal('reactivationRequests'); }}
+                  style={{
+                    marginBottom: '16px',
+                    padding: '14px 18px',
+                    borderRadius: '10px',
+                    background: 'rgba(245, 158, 11, 0.12)',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title="Click to view and review pending reactivation requests"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '20px' }}>🔔</span>
                     <div>
                       <strong style={{ color: '#f59e0b', fontSize: '14px' }}>
                         {reactivationRequests.length} Pending Account Reactivation Request{reactivationRequests.length > 1 ? 's' : ''}
                       </strong>
                       <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
-                        Deactivated members have requested reactivation and are awaiting review.
+                        Deactivated members have requested reactivation and are awaiting review. Click to take action.
                       </p>
                     </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      background: 'rgba(245, 158, 11, 0.2)',
+                      color: '#f59e0b',
+                      padding: '4px 12px',
+                      borderRadius: '16px',
+                      fontSize: '12px',
+                      fontWeight: '600'
+                    }}>
+                      Review Requests &rarr;
+                    </span>
                   </div>
                 </div>
               )}
@@ -2011,7 +2062,7 @@ export default function App() {
                             )}
                           </td>
                           <td>
-                            {m.status === 'DEACTIVATED' ? (
+                            {String(m.status || '').toUpperCase() === 'DEACTIVATED' ? (
                               m.reactivationRequested ? (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '11px' }}>
                                   Pending Reactivation
@@ -2033,14 +2084,14 @@ export default function App() {
                             </span>
                           </td>
                           <td className="text-right">
-                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                              {m.status === 'DEACTIVATED' ? (
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
+                              {String(m.status || '').toUpperCase() === 'DEACTIVATED' ? (
                                 <button
                                   className="btn btn-sm"
                                   style={{ background: 'var(--accent-primary, #3b82f6)', color: '#fff', fontSize: '11px', padding: '3px 8px' }}
                                   onClick={() => handleApproveReactivation(m.id, m.name || m.email)}
                                 >
-                                  Approve
+                                  {m.reactivationRequested ? 'Approve' : 'Reactivate'}
                                 </button>
                               ) : (
                                 <button
@@ -2051,20 +2102,36 @@ export default function App() {
                                   Deactivate
                                 </button>
                               )}
-                              <button className="btn btn-secondary btn-sm" onClick={() => {
-                                const parsed = parsePhoneNumber(m.phone || '');
-                                setUserForm({
-                                  id: m.id,
-                                  name: m.name || m.username,
-                                  email: m.email,
-                                  password: '',
-                                  countryCode: parsed.countryDial,
-                                  phoneNumber: parsed.localNumber,
-                                  phoneError: ''
-                                });
-                                setActiveModal('editUser');
-                              }}>Edit</button>
-                              <button className="btn btn-danger btn-sm" onClick={() => handleDeleteUser(m.id, m.name || m.email)}>Delete</button>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                style={{ padding: '5px 8px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                title="Edit Member"
+                                aria-label="Edit Member"
+                                onClick={() => {
+                                  const parsed = parsePhoneNumber(m.phone || '');
+                                  setUserForm({
+                                    id: m.id,
+                                    name: m.name || m.username,
+                                    email: m.email,
+                                    password: '',
+                                    countryCode: parsed.countryDial,
+                                    phoneNumber: parsed.localNumber,
+                                    phoneError: ''
+                                  });
+                                  setActiveModal('editUser');
+                                }}
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                className="btn btn-danger btn-sm"
+                                style={{ padding: '5px 8px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                title="Delete Member"
+                                aria-label="Delete Member"
+                                onClick={() => handleDeleteUser(m.id, m.name || m.email)}
+                              >
+                                <Trash2 size={14} />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -3604,6 +3671,125 @@ export default function App() {
                 }}
               >
                 {confirmConfig.actionBtnText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 9. Pending Reactivation Requests Modal */}
+      {activeModal === 'reactivationRequests' && (
+        <div className="modal-backdrop open">
+          <div className="modal-card" style={{ maxWidth: '640px', width: '100%' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '20px' }}>🔔</span>
+                <div>
+                  <h3 style={{ margin: 0 }}>Pending Reactivation Requests</h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    {reactivationRequests.length} pending request{reactivationRequests.length === 1 ? '' : 's'} awaiting review
+                  </span>
+                </div>
+              </div>
+              <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
+            </div>
+            <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+              {reactivationRequests.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '36px 16px' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '8px' }}>✨</div>
+                  <p style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '600', margin: '0 0 4px' }}>
+                    No Pending Requests
+                  </p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: 0 }}>
+                    All account reactivation requests have been reviewed.
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {reactivationRequests.map((req, idx) => (
+                    <div
+                      key={req.id ?? req.uuid ?? req.email ?? `req-${idx}`}
+                      style={{
+                        padding: '14px 16px',
+                        borderRadius: '8px',
+                        background: 'var(--bg-app, rgba(255,255,255,0.03))',
+                        border: '1px solid var(--border-subtle)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '12px'
+                      }}
+                    >
+                      <div style={{ flex: '1 1 240px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>
+                            {req.name || req.email}
+                          </strong>
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            padding: '2px 8px',
+                            borderRadius: '10px',
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            color: '#f59e0b',
+                            border: '1px solid rgba(245, 158, 11, 0.3)'
+                          }}>
+                            Pending Review
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <div>📧 <code>{req.email}</code></div>
+                          {req.phone && <div>📞 <code>{req.phone}</code></div>}
+                          {req.rewardPoints !== undefined && (
+                            <div style={{ color: '#eab308', fontWeight: '500' }}>🏆 {req.rewardPoints} Reward Points</div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          style={{
+                            background: 'var(--accent-primary, #3b82f6)',
+                            color: '#fff',
+                            fontSize: '12px',
+                            padding: '6px 14px',
+                            fontWeight: '600',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          onClick={() => handleApproveReactivation(req.id, req.name || req.email)}
+                        >
+                          <Check size={14} />
+                          <span>Approve</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-danger"
+                          style={{
+                            fontSize: '12px',
+                            padding: '6px 14px',
+                            fontWeight: '600',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          onClick={() => handleRejectReactivation(req.id, req.name || req.email)}
+                        >
+                          <X size={14} />
+                          <span>Reject</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={() => setActiveModal(null)}>
+                Close
               </button>
             </div>
           </div>
