@@ -58,4 +58,11 @@
 
     </changeSet>
 
+    <changeSet id="24-alter-cover-image-url-length" author="thani">
+        <modifyDataType
+                tableName="book_donation"
+                columnName="cover_image_url"
+                newDataType="varchar(500)"/>
+    </changeSet>
+
 </databaseChangeLog>
