@@ -275,4 +275,60 @@ class UserControllerTest {
 
         verify(userService).updateCurrentUser(eq(mockPrincipal), any(UserRequest.class));
     }
+
+    @Test
+    @DisplayName("POST /user/{id}/deactivate should deactivate user and return response")
+    void deactivateUser_ShouldReturnDeactivatedUser() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0, null, "DEACTIVATED");
+        when(userService.deactivateUser(id1)).thenReturn(response);
+
+        mockMvc.perform(post("/user/{id}/deactivate", id1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DEACTIVATED"));
+
+        verify(userService).deactivateUser(id1);
+    }
+
+    @Test
+    @DisplayName("POST /user/me/request-reactivation should invoke requestReactivation on service")
+    void requestReactivation_ShouldReturnResponse() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0, null, "DEACTIVATED", true, false, 0.0);
+        when(userService.requestReactivation(any())).thenReturn(response);
+
+        mockMvc.perform(post("/user/me/request-reactivation"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DEACTIVATED"))
+                .andExpect(jsonPath("$.reactivationRequested").value(true));
+
+        verify(userService).requestReactivation(any());
+    }
+
+    @Test
+    @DisplayName("GET /user/reactivation-requests should return list of pending reactivation users")
+    void getReactivationRequests_ShouldReturnList() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0, null, "DEACTIVATED", true, false, 0.0);
+        when(userService.getReactivationRequests()).thenReturn(List.of(response));
+
+        mockMvc.perform(get("/user/reactivation-requests"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].email").value("alice@example.com"))
+                .andExpect(jsonPath("$[0].reactivationRequested").value(true));
+
+        verify(userService).getReactivationRequests();
+    }
+
+    @Test
+    @DisplayName("POST /user/{id}/approve-reactivation should reactivate user and return response")
+    void approveReactivation_ShouldReturnActiveUser() throws Exception {
+        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0, null, "ACTIVE", false, false, 0.0);
+        when(userService.reactivateUser(id1)).thenReturn(response);
+
+        mockMvc.perform(post("/user/{id}/approve-reactivation", id1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.reactivationRequested").value(false));
+
+        verify(userService).reactivateUser(id1);
+    }
 }

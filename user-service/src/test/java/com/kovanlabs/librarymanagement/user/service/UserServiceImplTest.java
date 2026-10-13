@@ -3,9 +3,13 @@ package com.kovanlabs.librarymanagement.user.service;
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.entity.UserProvider;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
+import com.kovanlabs.librarymanagement.database.entity.Fine;
+import com.kovanlabs.librarymanagement.database.enums.FineStatus;
+import com.kovanlabs.librarymanagement.database.repository.FineRepository;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
@@ -27,6 +31,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -50,6 +55,9 @@ class UserServiceImplTest {
 
     @Mock
     private RewardRepository rewardRepository;
+
+    @Mock
+    private FineRepository fineRepository;
 
     @InjectMocks
     private UserServiceImpl userService;
@@ -990,6 +998,7 @@ class UserServiceImplTest {
                 userRepository,
                 userProviderRepository,
                 rewardRepository,
+                fineRepository,
                 null
         );
 
@@ -1132,5 +1141,228 @@ class UserServiceImplTest {
 
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
         assertTrue(ex.getReason().contains("User not found with ID: 9999"));
+    }
+
+    @Test
+    @DisplayName("reactivateUser when user exists should set ACTIVE and clear deactivatedAt")
+    void reactivateUser_whenUserExists_shouldSetActive() {
+        User user = User.builder()
+                .id(100L)
+                .uuid("u-100")
+                .name("Deactivated Alice")
+                .email("alice.deactivated@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(10))
+                .inactivityWarningSentAt(LocalDateTime.now().minusDays(17))
+                .build();
+
+        when(userRepository.findById(100L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.reactivateUser(100L);
+
+        assertNotNull(response);
+        assertEquals(AccountStatus.ACTIVE.name(), response.status());
+        assertEquals(AccountStatus.ACTIVE, user.getStatus());
+        assertNull(user.getDeactivatedAt());
+        assertNull(user.getInactivityWarningSentAt());
+        assertNotNull(user.getLastLoginAt());
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    @DisplayName("reactivateUser when user ID not found should throw 404")
+    void reactivateUser_whenNotFound_shouldThrow404() {
+        when(userRepository.findById(9999L)).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                userService.reactivateUser(9999L));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("deactivateUser when user exists should set DEACTIVATED and set deactivatedAt")
+    void deactivateUser_whenUserExists_shouldSetDeactivated() {
+        User user = User.builder()
+                .id(200L)
+                .uuid("u-200")
+                .name("Active Bob")
+                .email("bob@example.com")
+                .status(AccountStatus.ACTIVE)
+                .build();
+
+        when(userRepository.findById(200L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.deactivateUser(200L);
+
+        assertNotNull(response);
+        assertEquals(AccountStatus.DEACTIVATED.name(), response.status());
+        assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
+        assertNotNull(user.getDeactivatedAt());
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    @DisplayName("deactivateUser when user ID not found should throw 404")
+    void deactivateUser_whenNotFound_shouldThrow404() {
+        when(userRepository.findById(9999L)).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                userService.deactivateUser(9999L));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("syncAuth0User should reset warning state and update lastLoginAt for existing user")
+    void syncAuth0User_existingUserWithWarning_shouldResetWarning() {
+        User existing = User.builder()
+                .id(300L)
+                .uuid("u-300")
+                .name("Returning User")
+                .email("return@example.com")
+                .status(AccountStatus.ACTIVE)
+                .inactivityWarningSentAt(LocalDateTime.now().minusDays(3))
+                .build();
+
+        UserProvider provider = UserProvider.builder()
+                .userUuid("u-300")
+                .providerId("auth0|returning")
+                .build();
+
+        when(userProviderRepository.findByProviderId("auth0|returning")).thenReturn(Optional.of(provider));
+        when(userRepository.findByUuid("u-300")).thenReturn(Optional.of(existing));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        User result = userService.syncAuth0User("auth0|returning", "return@example.com", "Returning User", RoleEnum.USER);
+
+        assertNotNull(result);
+        assertNull(result.getInactivityWarningSentAt());
+        assertNotNull(result.getLastLoginAt());
+        verify(userRepository).save(existing);
+    }
+
+    @Test
+    @DisplayName("requestReactivation should succeed when deactivated and no pending fines")
+    void requestReactivation_whenDeactivatedAndNoPendingFines_shouldSucceed() {
+        User deactivated = User.builder()
+                .id(400L)
+                .uuid("u-400")
+                .name("Deactivated User")
+                .email("deact@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .reactivationRequested(false)
+                .build();
+
+        Principal principal = () -> "deact@example.com";
+        when(userRepository.findByEmail("deact@example.com")).thenReturn(Optional.of(deactivated));
+        when(fineRepository.findByUserUuidAndStatus("u-400", FineStatus.PENDING)).thenReturn(List.of());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.requestReactivation(principal);
+
+        assertNotNull(res);
+        assertTrue(res.reactivationRequested());
+        assertFalse(res.hasPendingFines());
+        assertEquals("DEACTIVATED", res.status());
+        verify(userRepository).save(deactivated);
+    }
+
+    @Test
+    @DisplayName("requestReactivation should throw BAD_REQUEST when user has pending fines")
+    void requestReactivation_whenHasPendingFines_shouldThrowBadRequest() {
+        User deactivated = User.builder()
+                .id(401L)
+                .uuid("u-401")
+                .name("Fines User")
+                .email("fines@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+
+        Fine pendingFine = Fine.builder()
+                .id(10L)
+                .userUuid("u-401")
+                .pendingFineAmount(new BigDecimal("15.50"))
+                .status(FineStatus.PENDING)
+                .build();
+
+        Principal principal = () -> "fines@example.com";
+        when(userRepository.findByEmail("fines@example.com")).thenReturn(Optional.of(deactivated));
+        when(fineRepository.findByUserUuidAndStatus("u-401", FineStatus.PENDING)).thenReturn(List.of(pendingFine));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                userService.requestReactivation(principal));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("pending fines"));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("requestReactivation should throw BAD_REQUEST when user is not deactivated")
+    void requestReactivation_whenUserIsActive_shouldThrowBadRequest() {
+        User active = User.builder()
+                .id(402L)
+                .uuid("u-402")
+                .email("active@example.com")
+                .status(AccountStatus.ACTIVE)
+                .build();
+
+        Principal principal = () -> "active@example.com";
+        when(userRepository.findByEmail("active@example.com")).thenReturn(Optional.of(active));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                userService.requestReactivation(principal));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("Account is not deactivated"));
+    }
+
+    @Test
+    @DisplayName("getReactivationRequests should return list of deactivated users with reactivationRequested true")
+    void getReactivationRequests_shouldReturnRequests() {
+        User reqUser = User.builder()
+                .id(500L)
+                .uuid("u-500")
+                .email("req@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .reactivationRequested(true)
+                .build();
+
+        when(userRepository.findByStatusAndReactivationRequestedTrue(AccountStatus.DEACTIVATED))
+                .thenReturn(List.of(reqUser));
+
+        List<UserResponse> list = userService.getReactivationRequests();
+
+        assertEquals(1, list.size());
+        assertEquals("req@example.com", list.get(0).email());
+        assertTrue(list.get(0).reactivationRequested());
+    }
+
+    @Test
+    @DisplayName("reactivateUser should reset status to ACTIVE, clear deactivatedAt and reactivationRequested")
+    void reactivateUser_shouldResetStatusAndFlags() {
+        User deact = User.builder()
+                .id(600L)
+                .uuid("u-600")
+                .email("reactivate@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(5))
+                .reactivationRequested(true)
+                .reactivationRequestedAt(LocalDateTime.now().minusDays(1))
+                .build();
+
+        when(userRepository.findById(600L)).thenReturn(Optional.of(deact));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.reactivateUser(600L);
+
+        assertEquals("ACTIVE", res.status());
+        assertFalse(res.reactivationRequested());
+        assertNull(deact.getDeactivatedAt());
+        assertNull(deact.getReactivationRequestedAt());
+        assertNotNull(deact.getLastLoginAt());
     }
 }

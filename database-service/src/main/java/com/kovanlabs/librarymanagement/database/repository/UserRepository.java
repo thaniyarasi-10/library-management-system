@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.database.repository;
 
 import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -19,6 +20,9 @@ public interface UserRepository extends JpaRepository<User, String> {
     Optional<User> findById(Long id);
     boolean existsByEmail(String email);
     List<User> findBySalesforceSyncStatus(SalesforceSyncStatus salesforceSyncStatus);
+    List<User> findByStatus(AccountStatus status);
+    Page<User> findByStatus(AccountStatus status, Pageable pageable);
+    List<User> findByStatusAndReactivationRequestedTrue(AccountStatus status);
 
     @Query("SELECT u FROM User u WHERE " +
            "LOWER(u.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +

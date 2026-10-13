@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.util.List;
 
 @RestController
 @RequestMapping("/user")
@@ -76,6 +77,26 @@ public class UserController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteUser(@PathVariable("id") Long id) {
         userService.deleteUser(id);
+    }
+
+    @PostMapping("/me/request-reactivation")
+    public UserResponse requestReactivation(Principal principal) {
+        return userService.requestReactivation(principal);
+    }
+
+    @GetMapping("/reactivation-requests")
+    public List<UserResponse> getReactivationRequests() {
+        return userService.getReactivationRequests();
+    }
+
+    @PostMapping("/{id}/approve-reactivation")
+    public UserResponse approveReactivation(@PathVariable("id") Long id) {
+        return userService.reactivateUser(id);
+    }
+
+    @PostMapping("/{id}/deactivate")
+    public UserResponse deactivateUser(@PathVariable("id") Long id) {
+        return userService.deactivateUser(id);
     }
 
 }

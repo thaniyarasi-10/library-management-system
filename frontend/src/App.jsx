@@ -121,6 +121,8 @@ export default function App() {
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [memberSortBy, setMemberSortBy] = useState('id');
   const [memberSortDir, setMemberSortDir] = useState('asc');
+  const [reactivationRequests, setReactivationRequests] = useState([]);
+  const [requestingReactivation, setRequestingReactivation] = useState(false);
 
   // Borrows
   const [adminBorrows, setAdminBorrows] = useState([]);
@@ -493,6 +495,10 @@ export default function App() {
       setMembers(res.data.content || res.data || []);
       setMembersTotalPages(res.data.totalPages || 1);
     }
+    const reqRes = await fetchApi('/user/reactivation-requests');
+    if (reqRes.ok && reqRes.data) {
+      setReactivationRequests(Array.isArray(reqRes.data) ? reqRes.data : []);
+    }
   };
 
   const handleCreateUserSubmit = async (e) => {
@@ -579,6 +585,34 @@ export default function App() {
           loadMembers(membersPage, memberSearchQuery);
         } else {
           showToast(res.data?.message || 'Failed to delete member', 'error');
+        }
+      }
+    });
+    setActiveModal('confirm');
+  };
+
+  const handleApproveReactivation = async (userId, name) => {
+    const res = await fetchApi(`/user/${userId}/approve-reactivation`, { method: 'POST' });
+    if (res.ok) {
+      showToast(`Member "${name}" reactivated successfully`, 'success');
+      loadMembers(membersPage, memberSearchQuery);
+    } else {
+      showToast(res.data?.message || 'Failed to reactivate member', 'error');
+    }
+  };
+
+  const handleDeactivateMember = async (userId, name) => {
+    setConfirmConfig({
+      title: 'Deactivate Member',
+      message: `Are you sure you want to deactivate member "${name}"?`,
+      actionBtnText: 'Deactivate Account',
+      onConfirm: async () => {
+        const res = await fetchApi(`/user/${userId}/deactivate`, { method: 'POST' });
+        if (res.ok) {
+          showToast(`Member "${name}" deactivated successfully`, 'success');
+          loadMembers(membersPage, memberSearchQuery);
+        } else {
+          showToast(res.data?.message || 'Failed to deactivate member', 'error');
         }
       }
     });
@@ -1146,6 +1180,106 @@ export default function App() {
     );
   }
 
+  // Render Deactivated Account Screen if account status is DEACTIVATED
+  if (currentUser && currentUser.status === 'DEACTIVATED') {
+    const handleReactivateRequest = async () => {
+      setRequestingReactivation(true);
+      const res = await fetchApi('/user/me/request-reactivation', { method: 'POST' });
+      setRequestingReactivation(false);
+      if (res.ok && res.data) {
+        setCurrentUser(res.data);
+        showToast('Account reactivation requested successfully. Awaiting admin approval.', 'success');
+      } else {
+        const errMsg = res.data?.message || 'Failed to request reactivation';
+        showToast(errMsg, 'error');
+      }
+    };
+
+    return (
+      <div className="auth-screen">
+        <div className="auth-card" style={{ maxWidth: '540px', textAlign: 'center', padding: '36px' }}>
+          <div className="auth-brand" style={{ marginBottom: '24px' }}>
+            <div className="brand-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Shield size={32} />
+            </div>
+            <h1 className="brand-title" style={{ fontSize: '24px', fontWeight: 700 }}>Account Deactivated</h1>
+            <p className="brand-subtitle" style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
+              Logged in as <strong>{currentUser.name || currentUser.email}</strong>
+            </p>
+          </div>
+
+          <div style={{ textAlign: 'left', marginBottom: '20px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <span style={{ fontSize: '22px', lineHeight: 1 }}>⚠️</span>
+              <div>
+                <strong style={{ display: 'block', fontSize: '15px', marginBottom: '4px', color: '#ef4444' }}>
+                  Your account has been deactivated
+                </strong>
+                <span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-main)', opacity: 0.9 }}>
+                  Your account has been deactivated due to inactivity. You cannot access the dashboard until an administrator approves your reactivation request.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {currentUser.hasPendingFines ? (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                <CreditCard size={18} color="#f59e0b" />
+                <strong style={{ fontSize: '14px', color: '#f59e0b' }}>Outstanding Fines Detected</strong>
+              </div>
+              <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '8px' }}>
+                You have unpaid pending fines of <strong style={{ color: '#f59e0b', fontSize: '15px' }}>${Number(currentUser.pendingFineAmount || 0).toFixed(2)}</strong>.
+              </p>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                You can only submit a reactivation request after all outstanding fines have been cleared. Please contact library support or settle pending dues first.
+              </p>
+            </div>
+          ) : currentUser.reactivationRequested ? (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                <Check size={18} color="#3b82f6" />
+                <strong style={{ fontSize: '14px', color: '#3b82f6' }}>Reactivation Request Submitted</strong>
+              </div>
+              <p style={{ fontSize: '13px', color: 'var(--text-main)', margin: 0 }}>
+                Your reactivation request has been submitted and is currently awaiting administrator review. Once approved, you will be able to access your dashboard.
+              </p>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-subtle)' }}>
+              <strong style={{ display: 'block', fontSize: '14px', marginBottom: '6px' }}>
+                Request Account Reactivation
+              </strong>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                You have no pending fines. Would you like to request the library administrator to reactivate your account?
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary btn-block"
+                onClick={handleReactivateRequest}
+                disabled={requestingReactivation}
+              >
+                {requestingReactivation ? 'Submitting Request...' : 'Request Reactivation'}
+              </button>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleSignOut}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <LogOut size={16} />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Production App Shell
   const userName = currentUser ? (currentUser.name || currentUser.email) : (userRole === 'ADMIN' ? 'Library Staff' : 'Library Member');
   const userEmail = currentUser ? currentUser.email : '';
@@ -1600,6 +1734,22 @@ export default function App() {
                 </button>
               </div>
 
+              {reactivationRequests.length > 0 && (
+                <div style={{ marginBottom: '16px', padding: '14px 18px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.35)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '18px' }}>🔔</span>
+                    <div>
+                      <strong style={{ color: '#f59e0b', fontSize: '14px' }}>
+                        {reactivationRequests.length} Pending Account Reactivation Request{reactivationRequests.length > 1 ? 's' : ''}
+                      </strong>
+                      <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Deactivated members have requested reactivation and are awaiting review.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="table-container mt-4">
                 <table className="data-table">
                   <thead>
@@ -1608,13 +1758,14 @@ export default function App() {
                       <th>Member Name</th>
                       <th>Email Address</th>
                       <th width="150">Phone Number</th>
+                      <th width="130">Status</th>
                       <th width="130">Reward Points</th>
-                      <th width="170" className="text-right">Actions</th>
+                      <th width="220" className="text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {members.length === 0 ? (
-                      <tr><td colSpan="6" className="empty-cell">No members found.</td></tr>
+                      <tr><td colSpan="7" className="empty-cell">No members found.</td></tr>
                     ) : (
                       members.map((m, idx) => (
                         <tr key={m.id ?? m.uuid ?? m.email ?? `member-${idx}`}>
@@ -1632,12 +1783,46 @@ export default function App() {
                             )}
                           </td>
                           <td>
+                            {m.status === 'DEACTIVATED' ? (
+                              m.reactivationRequested ? (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '11px' }}>
+                                  Pending Reactivation
+                                </span>
+                              ) : (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '11px' }}>
+                                  Deactivated
+                                </span>
+                              )
+                            ) : (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '11px' }}>
+                                Active
+                              </span>
+                            )}
+                          </td>
+                          <td>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '12px' }}>
                               🏆 {m.rewardPoints || 0} pts
                             </span>
                           </td>
                           <td className="text-right">
-                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                              {m.status === 'DEACTIVATED' ? (
+                                <button
+                                  className="btn btn-sm"
+                                  style={{ background: 'var(--accent-primary, #3b82f6)', color: '#fff', fontSize: '11px', padding: '3px 8px' }}
+                                  onClick={() => handleApproveReactivation(m.id, m.name || m.email)}
+                                >
+                                  Approve
+                                </button>
+                              ) : (
+                                <button
+                                  className="btn btn-sm"
+                                  style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', fontSize: '11px', padding: '3px 8px' }}
+                                  onClick={() => handleDeactivateMember(m.id, m.name || m.email)}
+                                >
+                                  Deactivate
+                                </button>
+                              )}
                               <button className="btn btn-secondary btn-sm" onClick={() => {
                                 const parsed = parsePhoneNumber(m.phone || '');
                                 setUserForm({

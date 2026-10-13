@@ -1,12 +1,16 @@
 package com.kovanlabs.librarymanagement.user.service;
 
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.database.entity.Fine;
 import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.entity.UserProvider;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
+import com.kovanlabs.librarymanagement.database.enums.FineStatus;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
+import com.kovanlabs.librarymanagement.database.repository.FineRepository;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
@@ -31,7 +35,9 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.math.BigDecimal;
 import java.security.Principal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -49,41 +55,38 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final UserProviderRepository userProviderRepository;
     private final RewardRepository rewardRepository;
+    private final FineRepository fineRepository;
     private final SalesforceSync salesforceSyncDelegate;
 
     /**
-     * Helper method to map a single User entity to {@link UserResponse} along with
-     * their calculated reward points.
-     *
-     * @param user The user entity
-     * @return The populated {@link UserResponse}
+     * Maps a single User entity to {@link UserResponse} with reward points and pending fine status via {@link UserMapper}.
      */
-    private UserResponse mapToUserResponseWithRewards(User user) {
-        if (Objects.isNull(user))
+    private UserResponse toUserResponse(User user) {
+        if (Objects.isNull(user)) {
             return null;
+        }
         Integer points = Objects.nonNull(user.getUuid())
                 ? rewardRepository.findByUserUuid(user.getUuid()).map(Reward::getPoints).orElse(0)
                 : 0;
-        return new UserResponse(
-                user.getUuid(),
-                user.getId(),
-                user.getName(),
-                user.getEmail(),
-                user.getRole().name(),
-                points,
-                user.getPhone());
+        BigDecimal pendingFineAmount = BigDecimal.ZERO;
+        if (Objects.nonNull(user.getUuid())) {
+            List<Fine> pendingFines = fineRepository.findByUserUuidAndStatus(user.getUuid(), FineStatus.PENDING);
+            pendingFineAmount = pendingFines.stream()
+                    .map(Fine::getPendingFineAmount)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+        boolean hasPendingFines = pendingFineAmount.compareTo(BigDecimal.ZERO) > 0;
+        return UserMapper.INSTANCE.mapToResponse(user, points, hasPendingFines, pendingFineAmount.doubleValue());
     }
 
     /**
-     * Helper method to batch map a list of User entities to {@link UserResponse}
-     * DTOs with reward points.
-     *
-     * @param users List of user entities
-     * @return List of mapped {@link UserResponse} DTOs
+     * Maps a list of User entities to {@link UserResponse} DTOs with reward points via {@link UserMapper}.
      */
-    private List<UserResponse> mapToUserResponseListWithRewards(List<User> users) {
-        if (Objects.isNull(users) || users.isEmpty())
+    private List<UserResponse> toUserResponseList(List<User> users) {
+        if (Objects.isNull(users) || users.isEmpty()) {
             return List.of();
+        }
         List<String> uuids = users.stream()
                 .map(User::getUuid)
                 .filter(Objects::nonNull)
@@ -95,14 +98,7 @@ public class UserServiceImpl implements UserService {
                         Reward::getPoints,
                         (p1, p2) -> p1));
 
-        return users.stream().map(user -> new UserResponse(
-                user.getUuid(),
-                user.getId(),
-                user.getName(),
-                user.getEmail(),
-                user.getRole().name(),
-                Objects.nonNull(user.getUuid()) ? rewardMap.getOrDefault(user.getUuid(), 0) : 0,
-                user.getPhone())).toList();
+        return UserMapper.INSTANCE.mapToResponse(users, rewardMap);
     }
 
     /**
@@ -121,7 +117,7 @@ public class UserServiceImpl implements UserService {
             user.setRole(RoleEnum.USER);
         }
         User savedUser = userRepository.save(user);
-        UserResponse response = mapToUserResponseWithRewards(savedUser);
+        UserResponse response = toUserResponse(savedUser);
 
         if (Objects.nonNull(salesforceSyncDelegate)) {
             try {
@@ -163,7 +159,7 @@ public class UserServiceImpl implements UserService {
             }
         }
         log.info("[DATA SOURCE: MYSQL] Fetching users from MySQL database");
-        return UserMapper.INSTANCE.mapToResponse(userRepository.findAll());
+        return toUserResponseList(userRepository.findAll());
     }
 
     /**
@@ -209,7 +205,7 @@ public class UserServiceImpl implements UserService {
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<User> usersPage = userRepository.findAll(pageable);
-        List<UserResponse> content = mapToUserResponseListWithRewards(usersPage.getContent());
+        List<UserResponse> content = toUserResponseList(usersPage.getContent());
 
         return new PagedResponse<>(
                 content,
@@ -236,7 +232,7 @@ public class UserServiceImpl implements UserService {
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<User> usersPage = userRepository.searchUsers(query, pageable);
-        List<UserResponse> content = mapToUserResponseListWithRewards(usersPage.getContent());
+        List<UserResponse> content = toUserResponseList(usersPage.getContent());
 
         return new PagedResponse<>(
                 content,
@@ -259,7 +255,7 @@ public class UserServiceImpl implements UserService {
         log.info("CACHE MISS - Fetching user {} from DATABASE", id);
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
-        return mapToUserResponseWithRewards(user);
+        return toUserResponse(user);
     }
 
     /**
@@ -287,7 +283,7 @@ public class UserServiceImpl implements UserService {
         }
 
         User updatedUser = userRepository.save(user);
-        UserResponse response = mapToUserResponseWithRewards(updatedUser);
+        UserResponse response = toUserResponse(updatedUser);
 
         if (Objects.nonNull(salesforceSyncDelegate)) {
             try {
@@ -363,7 +359,7 @@ public class UserServiceImpl implements UserService {
                 .or(() -> userRepository.findByUuid(identifier))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "User not found with identifier: " + identifier));
-        return mapToUserResponseWithRewards(user);
+        return toUserResponse(user);
     }
 
     /**
@@ -388,7 +384,7 @@ public class UserServiceImpl implements UserService {
 
         user.setRole(newRole);
         User updatedUser = userRepository.save(user);
-        UserResponse response = mapToUserResponseWithRewards(updatedUser);
+        UserResponse response = toUserResponse(updatedUser);
 
         if (Objects.nonNull(salesforceSyncDelegate)) {
             try {
@@ -433,9 +429,15 @@ public class UserServiceImpl implements UserService {
         var userProviderOpt = userProviderRepository.findByProviderId(sub);
         if (userProviderOpt.isPresent()) {
             UserProvider userProvider = userProviderOpt.get();
-            return userRepository.findByUuid(userProvider.getUserUuid())
+            User user = userRepository.findByUuid(userProvider.getUserUuid())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                             "User not found for providerId: " + sub));
+            if (user.getStatus() == AccountStatus.ACTIVE && Objects.nonNull(user.getInactivityWarningSentAt())) {
+                user.setInactivityWarningSentAt(null);
+                user.setLastLoginAt(LocalDateTime.now());
+                return userRepository.save(user);
+            }
+            return user;
         }
 
         // 2. Lookup by raw provider ID if sub has a provider prefix (e.g. sub =
@@ -472,6 +474,11 @@ public class UserServiceImpl implements UserService {
                         userProviderRepository.save(newProvider);
                     }
 
+                    if (existing.getStatus() == AccountStatus.ACTIVE && Objects.nonNull(existing.getInactivityWarningSentAt())) {
+                        existing.setInactivityWarningSentAt(null);
+                        existing.setLastLoginAt(LocalDateTime.now());
+                        return userRepository.save(existing);
+                    }
                     return existing;
                 }
             }
@@ -497,6 +504,11 @@ public class UserServiceImpl implements UserService {
                     userProviderRepository.save(newProvider);
                 }
 
+                if (existing.getStatus() == AccountStatus.ACTIVE && Objects.nonNull(existing.getInactivityWarningSentAt())) {
+                    existing.setInactivityWarningSentAt(null);
+                    existing.setLastLoginAt(LocalDateTime.now());
+                    return userRepository.save(existing);
+                }
                 return existing;
             }
         }
@@ -514,6 +526,8 @@ public class UserServiceImpl implements UserService {
                 .email(email)
                 .name(effectiveName)
                 .role(initialRole)
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(java.time.LocalDateTime.now())
                 .build();
 
         User savedUser = userRepository.save(newUser);
@@ -566,7 +580,7 @@ public class UserServiceImpl implements UserService {
             RoleEnum role = extractRoleFromJwt(jwt);
 
             User syncedUser = syncAuth0User(sub, email, name, role);
-            return mapToUserResponseWithRewards(syncedUser);
+            return toUserResponse(syncedUser);
         }
 
         return getUserByIdentifier(principal.getName());
@@ -633,6 +647,101 @@ public class UserServiceImpl implements UserService {
                         user.getId(), user.getUuid(), retryCount, e.getMessage());
             }
         }
+    }
+
+    @Override
+    @Transactional
+    @CacheEvict(value = "users", key = "#p0")
+    public UserResponse reactivateUser(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
+        user.setStatus(AccountStatus.ACTIVE);
+        user.setDeactivatedAt(null);
+        user.setInactivityWarningSentAt(null);
+        user.setReactivationRequested(false);
+        user.setReactivationRequestedAt(null);
+        user.setLastLoginAt(LocalDateTime.now());
+        User savedUser = userRepository.save(user);
+        log.info("Successfully reactivated user account ID: {}, Email: {}", id, savedUser.getEmail());
+        return toUserResponse(savedUser);
+    }
+
+    @Override
+    @Transactional
+    @CacheEvict(value = "users", key = "#p0")
+    public UserResponse deactivateUser(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
+        user.setStatus(AccountStatus.DEACTIVATED);
+        user.setDeactivatedAt(LocalDateTime.now());
+        user.setReactivationRequested(false);
+        user.setReactivationRequestedAt(null);
+        User savedUser = userRepository.save(user);
+        log.info("Successfully deactivated user account ID: {}, Email: {}", id, savedUser.getEmail());
+        return toUserResponse(savedUser);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse requestReactivation(Principal principal) {
+        if (Objects.isNull(principal)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+        User user = null;
+        if (principal instanceof Authentication auth && auth.getPrincipal() instanceof Jwt jwt) {
+            String sub = jwt.getSubject();
+            var userProviderOpt = userProviderRepository.findByProviderId(sub);
+            if (userProviderOpt.isPresent()) {
+                user = userRepository.findByUuid(userProviderOpt.get().getUserUuid()).orElse(null);
+            }
+            if (Objects.isNull(user)) {
+                String email = jwt.getClaimAsString("email");
+                if (Objects.isNull(email) || email.isBlank()) {
+                    email = jwt.getClaimAsString("https://library.kovanlabs.com/email");
+                }
+                if (Objects.nonNull(email) && !email.isBlank()) {
+                    user = userRepository.findByEmail(email).orElse(null);
+                }
+            }
+        } else {
+            user = userRepository.findByEmail(principal.getName())
+                    .or(() -> userRepository.findByUuid(principal.getName()))
+                    .orElse(null);
+        }
+
+        if (Objects.isNull(user)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        }
+
+        if (user.getStatus() != AccountStatus.DEACTIVATED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account is not deactivated");
+        }
+
+        BigDecimal pendingFineAmount = BigDecimal.ZERO;
+        if (Objects.nonNull(user.getUuid())) {
+            List<Fine> pendingFines = fineRepository.findByUserUuidAndStatus(user.getUuid(), FineStatus.PENDING);
+            pendingFineAmount = pendingFines.stream()
+                    .map(Fine::getPendingFineAmount)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+
+        if (pendingFineAmount.compareTo(BigDecimal.ZERO) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot request reactivation with pending fines. Please clear all pending fines first.");
+        }
+
+        user.setReactivationRequested(true);
+        user.setReactivationRequestedAt(LocalDateTime.now());
+        User savedUser = userRepository.save(user);
+        log.info("User {} successfully requested account reactivation", savedUser.getEmail());
+        return toUserResponse(savedUser);
+    }
+
+    @Override
+    public List<UserResponse> getReactivationRequests() {
+        List<User> users = userRepository.findByStatusAndReactivationRequestedTrue(AccountStatus.DEACTIVATED);
+        return users.stream().map(this::toUserResponse).toList();
     }
 
     private String getHeaderFromRequestContext(String headerName) {

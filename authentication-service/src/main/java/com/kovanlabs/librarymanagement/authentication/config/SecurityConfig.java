@@ -117,10 +117,16 @@ public class SecurityConfig {
                         .authenticated()
                         .requestMatchers(HttpMethod.PUT, "/user/me")
                         .authenticated()
+                        .requestMatchers(HttpMethod.POST, "/user/me/request-reactivation")
+                        .authenticated()
 
                         // User Registration (Public)
                         .requestMatchers(HttpMethod.POST, "/user")
                         .permitAll()
+
+                        // User Reactivation and Deactivation (Admin)
+                        .requestMatchers(HttpMethod.POST, "/user/*/deactivate", "/user/*/approve-reactivation")
+                        .hasAnyAuthority("users:write", "ROLE_ADMIN")
 
                         // User Admin / Profile Update Endpoints (Permission or Role)
                         .requestMatchers(HttpMethod.GET, "/user", "/user/**")

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Account Inactivity Warning</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 24px;">
+        <h2 style="color: #d9534f; margin-top: 0;">Notice: Account Inactivity Warning</h2>
+        <p>Dear <strong>{{USER_NAME}}</strong>,</p>
+        <p>
+            We noticed that you have not logged in to your Library Management account for <strong>{{INACTIVE_DAYS}} days</strong>.
+        </p>
+        <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 12px 16px; margin: 20px 0;">
+            <p style="margin: 0; font-weight: bold; color: #856404;">
+                Scheduled Deactivation: {{DEACTIVATION_DATE}} (in {{DAYS_REMAINING}} days)
+            </p>
+            <p style="margin: 8px 0 0 0; color: #856404; font-size: 0.95em;">
+                In accordance with our account inactivity policy, inactive accounts are automatically deactivated after 30 days.
+            </p>
+        </div>
+        <h3>How to Keep Your Account Active:</h3>
+        <p>
+            To prevent automatic deactivation, simply <strong>log in to your account</strong> before <strong>{{DEACTIVATION_DATE}}</strong>.
+            Logging in will immediately reset your inactivity period and maintain full access to library services.
+        </p>
+        <p style="margin-top: 24px;">
+            If you need assistance or believe you received this email in error, please contact our support team.
+        </p>
+        <hr style="border: none; border-top: 1px solid #dee2e6; margin: 24px 0;" />
+        <p style="font-size: 0.9em; color: #6c757d; margin: 0;">
+            Thank you,<br/>
+            <strong>Library Management Team</strong>
+        </p>
+    </div>
+</body>
+</html>

@@ -22,4 +22,3 @@ public record UserRequest(
         this(email, name, null);
     }
 }
-

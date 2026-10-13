@@ -39,6 +39,7 @@ class UserMapperTest {
         assertEquals(1L, response.id());
         assertEquals("John Doe", response.name());
         assertEquals("john@example.com", response.email());
+        assertEquals("ACTIVE", response.status());
     }
 
     @Test
@@ -147,5 +148,69 @@ class UserMapperTest {
         assertEquals(1, list.size());
         assertEquals("+15555555555", list.get(0).phone());
         assertNull(userMapper.toUserResponseList(null));
+    }
+
+    @Test
+    void testMapToResponse_WithRewardPoints() {
+        String uuid = UUID.randomUUID().toString();
+        User user = User.builder()
+                .uuid(uuid)
+                .id(99L)
+                .name("Diana")
+                .email("diana@example.com")
+                .role(com.kovanlabs.librarymanagement.database.enums.RoleEnum.USER)
+                .phone("+11234567890")
+                .status(com.kovanlabs.librarymanagement.database.enums.AccountStatus.DEACTIVATED)
+                .build();
+
+        UserResponse res = userMapper.mapToResponse(user, 150);
+
+        assertNotNull(res);
+        assertEquals(uuid, res.uuid());
+        assertEquals(99L, res.id());
+        assertEquals("Diana", res.name());
+        assertEquals("diana@example.com", res.email());
+        assertEquals("USER", res.role());
+        assertEquals("+11234567890", res.phone());
+        assertEquals(150, res.rewardPoints());
+        assertEquals("DEACTIVATED", res.status());
+
+        assertNull(userMapper.mapToResponse((User) null, 50));
+    }
+
+    @Test
+    void testMapToResponse_UserListWithRewardMap() {
+        String uuid1 = UUID.randomUUID().toString();
+        String uuid2 = UUID.randomUUID().toString();
+
+        User user1 = User.builder()
+                .uuid(uuid1)
+                .id(1L)
+                .name("User 1")
+                .email("u1@example.com")
+                .status(com.kovanlabs.librarymanagement.database.enums.AccountStatus.ACTIVE)
+                .build();
+
+        User user2 = User.builder()
+                .uuid(uuid2)
+                .id(2L)
+                .name("User 2")
+                .email("u2@example.com")
+                .status(com.kovanlabs.librarymanagement.database.enums.AccountStatus.DEACTIVATED)
+                .build();
+
+        java.util.Map<String, Integer> rewardMap = java.util.Map.of(uuid1, 200, uuid2, 350);
+
+        List<UserResponse> responses = userMapper.mapToResponse(List.of(user1, user2), rewardMap);
+
+        assertNotNull(responses);
+        assertEquals(2, responses.size());
+        assertEquals(200, responses.get(0).rewardPoints());
+        assertEquals("ACTIVE", responses.get(0).status());
+        assertEquals(350, responses.get(1).rewardPoints());
+        assertEquals("DEACTIVATED", responses.get(1).status());
+
+        assertTrue(userMapper.mapToResponse(List.of(), rewardMap).isEmpty());
+        assertTrue(userMapper.mapToResponse(null, rewardMap).isEmpty());
     }
 }

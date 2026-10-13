@@ -11,6 +11,7 @@ import org.mapstruct.Mapping;
 import org.mapstruct.factory.Mappers;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -29,7 +30,61 @@ public interface UserMapper {
      * @return The mapped {@link UserResponse} DTO
      */
     @Mapping(target = "rewardPoints", ignore = true)
+    @Mapping(target = "status", expression = "java(Objects.nonNull(user.getStatus()) ? user.getStatus().name() : \"ACTIVE\")")
+    @Mapping(target = "reactivationRequested", expression = "java(Objects.nonNull(user) && user.isReactivationRequested())")
+    @Mapping(target = "hasPendingFines", constant = "false")
+    @Mapping(target = "pendingFineAmount", expression = "java(0.0)")
     UserResponse mapToResponse(User user);
+
+    /**
+     * Internal MapStruct mapping combining User and reward points.
+     */
+    @Mapping(target = "uuid", source = "user.uuid")
+    @Mapping(target = "id", source = "user.id")
+    @Mapping(target = "name", source = "user.name")
+    @Mapping(target = "email", source = "user.email")
+    @Mapping(target = "role", expression = "java((Objects.nonNull(user) && Objects.nonNull(user.getRole())) ? user.getRole().name() : null)")
+    @Mapping(target = "phone", source = "user.phone")
+    @Mapping(target = "rewardPoints", source = "rewardPoints")
+    @Mapping(target = "status", expression = "java((Objects.nonNull(user) && Objects.nonNull(user.getStatus())) ? user.getStatus().name() : \"ACTIVE\")")
+    @Mapping(target = "reactivationRequested", expression = "java(Objects.nonNull(user) && user.isReactivationRequested())")
+    @Mapping(target = "hasPendingFines", constant = "false")
+    @Mapping(target = "pendingFineAmount", expression = "java(0.0)")
+    UserResponse mapUserAndReward(User user, Integer rewardPoints);
+
+    /**
+     * Maps a {@link User} entity and calculated reward points to a {@link UserResponse} DTO.
+     *
+     * @param user         The user entity
+     * @param rewardPoints The calculated reward points
+     * @return The populated {@link UserResponse} DTO
+     */
+    default UserResponse mapToResponse(User user, Integer rewardPoints) {
+        if (Objects.isNull(user)) {
+            return null;
+        }
+        return mapUserAndReward(user, rewardPoints);
+    }
+
+    @Mapping(target = "uuid", source = "user.uuid")
+    @Mapping(target = "id", source = "user.id")
+    @Mapping(target = "name", source = "user.name")
+    @Mapping(target = "email", source = "user.email")
+    @Mapping(target = "role", expression = "java((Objects.nonNull(user) && Objects.nonNull(user.getRole())) ? user.getRole().name() : null)")
+    @Mapping(target = "phone", source = "user.phone")
+    @Mapping(target = "rewardPoints", source = "rewardPoints")
+    @Mapping(target = "status", expression = "java((Objects.nonNull(user) && Objects.nonNull(user.getStatus())) ? user.getStatus().name() : \"ACTIVE\")")
+    @Mapping(target = "reactivationRequested", expression = "java(Objects.nonNull(user) && user.isReactivationRequested())")
+    @Mapping(target = "hasPendingFines", source = "hasPendingFines")
+    @Mapping(target = "pendingFineAmount", source = "pendingFineAmount")
+    UserResponse mapUserWithFines(User user, Integer rewardPoints, boolean hasPendingFines, Double pendingFineAmount);
+
+    default UserResponse mapToResponse(User user, Integer rewardPoints, boolean hasPendingFines, Double pendingFineAmount) {
+        if (Objects.isNull(user)) {
+            return null;
+        }
+        return mapUserWithFines(user, rewardPoints, hasPendingFines, pendingFineAmount);
+    }
 
     /**
      * Maps a list of {@link User} entities to a list of {@link UserResponse} DTOs.
@@ -40,6 +95,28 @@ public interface UserMapper {
     List<UserResponse> mapToResponse(List<User> users);
 
     /**
+     * Maps a list of {@link User} entities and their pre-fetched reward points map to a list of {@link UserResponse} DTOs.
+     *
+     * @param users     List of user entities
+     * @param rewardMap Pre-fetched map of user UUID to reward points
+     * @return List of mapped {@link UserResponse} DTOs
+     */
+    default List<UserResponse> mapToResponse(List<User> users, Map<String, Integer> rewardMap) {
+        if (Objects.isNull(users) || users.isEmpty()) {
+            return List.of();
+        }
+        return users.stream().map(user -> {
+            if (Objects.isNull(user)) {
+                return null;
+            }
+            int points = (Objects.nonNull(user.getUuid()) && Objects.nonNull(rewardMap))
+                    ? rewardMap.getOrDefault(user.getUuid(), 0)
+                    : 0;
+            return mapToResponse(user, points);
+        }).toList();
+    }
+
+    /**
      * Maps a {@link UserRequest} DTO to a {@link User} entity.
      *
      * @param request The user request DTO
@@ -48,6 +125,12 @@ public interface UserMapper {
     @Mapping(target = "uuid", ignore = true)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "role", ignore = true)
+    @Mapping(target = "status", ignore = true)
+    @Mapping(target = "lastLoginAt", ignore = true)
+    @Mapping(target = "inactivityWarningSentAt", ignore = true)
+    @Mapping(target = "deactivatedAt", ignore = true)
+    @Mapping(target = "reactivationRequested", ignore = true)
+    @Mapping(target = "reactivationRequestedAt", ignore = true)
     @Mapping(target = "salesforceSyncStatus", ignore = true)
     @Mapping(target = "salesforceRetryCount", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
@@ -94,6 +177,10 @@ public interface UserMapper {
     @Mapping(target = "role", source = "role")
     @Mapping(target = "phone", source = "phone")
     @Mapping(target = "rewardPoints", expression = "java(0)")
+    @Mapping(target = "status", constant = "ACTIVE")
+    @Mapping(target = "reactivationRequested", constant = "false")
+    @Mapping(target = "hasPendingFines", constant = "false")
+    @Mapping(target = "pendingFineAmount", expression = "java(0.0)")
     UserResponse toUserResponse(ContactSObject contact);
 
     /**
