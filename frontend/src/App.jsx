@@ -4,7 +4,7 @@ import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
-  User as UserIcon, Edit2, Phone
+  User as UserIcon, Edit2, Phone, Gift
 } from 'lucide-react';
 import './styles.css';
 
@@ -125,6 +125,7 @@ export default function App() {
   // Borrows
   const [adminBorrows, setAdminBorrows] = useState([]);
   const [userBorrows, setUserBorrows] = useState([]);
+  const [modalBooks, setModalBooks] = useState([]);
 
   // Fines
   const [fines, setFines] = useState([]);
@@ -138,13 +139,21 @@ export default function App() {
   const [sigFile, setSigFile] = useState(null);
   const [sigPreviewUrl, setSigPreviewUrl] = useState('');
 
+  // Book Donations
+  const [donations, setDonations] = useState([]);
+  const [donationFilter, setDonationFilter] = useState('ALL');
+  const [donationForm, setDonationForm] = useState({ title: '', author: '', isbn: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
+  const [editDonationForm, setEditDonationForm] = useState({ id: null, title: '', author: '', isbn: '', donatedBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
+  const [isSubmittingDonation, setIsSubmittingDonation] = useState(false);
+  const [rejectionModal, setRejectionModal] = useState({ open: false, donationId: null, reason: '' });
+
   // Modals & Drawers
-  const [activeModal, setActiveModal] = useState(null); // 'createBook', 'editBook', 'uploadCover', 'createUser', 'editUser', 'adminBorrow', 'userBorrow', 'confirm'
+  const [activeModal, setActiveModal] = useState(null); // 'createBook', 'editBook', 'createDonation', 'editDonation', 'createUser', 'editUser', 'adminBorrow', 'userBorrow', 'confirm'
   const [drawerData, setDrawerData] = useState(null); // { type: 'book'|'member', data: obj }
   const [confirmConfig, setConfirmConfig] = useState({ title: '', message: '', actionBtnText: 'Confirm', onConfirm: null });
 
   // Form models
-  const [bookForm, setBookForm] = useState({ id: '', title: '', author: '', isbn: '', totalBookCount: 1 });
+  const [bookForm, setBookForm] = useState({ id: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
   const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [profileForm, setProfileForm] = useState({ name: '', email: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [promptPhoneForm, setPromptPhoneForm] = useState({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
@@ -219,6 +228,26 @@ export default function App() {
     localStorage.setItem('athenaeum_theme', theme);
   }, [theme]);
 
+  // Reusable profile refresh to keep reward points and user metadata up-to-date
+  const refreshUserProfile = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      let reqHeaders = {};
+      const pendingUsername = sessionStorage.getItem('auth0_pending_username');
+      if (pendingUsername && pendingUsername.trim()) {
+        reqHeaders['X-User-Username'] = pendingUsername.trim();
+        reqHeaders['X-User-Name'] = pendingUsername.trim();
+      }
+      const res = await fetchApi('/user/me', { headers: reqHeaders });
+      if (res.ok && res.data) {
+        setCurrentUser(res.data);
+        if (pendingUsername) sessionStorage.removeItem('auth0_pending_username');
+      }
+    } catch (err) {
+      console.warn('Error refreshing user profile:', err);
+    }
+  }, [isAuthenticated, fetchApi]);
+
   // Auth Initialization and User Sync
   useEffect(() => {
     if (!isAuthenticated) {
@@ -267,7 +296,7 @@ export default function App() {
     let isAdmin = findRoleFromUser(auth0User);
     setUserRole(isAdmin ? 'ADMIN' : 'USER');
 
-    // Also inspect Access Token payload & sync user profile with backend MySQL via GET /user/me
+    // Also inspect Access Token JWT & sync user profile with backend MySQL via GET /user/me
     const syncUser = async () => {
       // Check Access Token JWT for roles if ID token didn't have it
       if (!isAdmin && getAccessTokenSilently) {
@@ -312,7 +341,7 @@ export default function App() {
     syncUser();
   }, [isAuthenticated, auth0User, fetchApi, getAccessTokenSilently]);
 
-  // Load Page Data on Change
+  // Load Page Data on Change - Only fetch what is required for current page
   useEffect(() => {
     if (!isAuthenticated) return;
     if (currentPage === 'dashboard') {
@@ -326,7 +355,9 @@ export default function App() {
     } else if (currentPage === 'fines') {
       loadFines();
     } else if (currentPage === 'membership') {
-      loadMembership();
+      loadMembership(true);
+    } else if (currentPage === 'donations') {
+      loadDonations();
     }
   }, [currentPage, isAuthenticated, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
 
@@ -353,7 +384,7 @@ export default function App() {
     return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
   };
 
-  // Dashboard Loader
+  // Dashboard Loader - Fetches only essential summary data for the dashboard view
   const loadDashboard = async () => {
     const resBooks = await fetchApi('/books?page=0&size=4');
     if (resBooks.ok && resBooks.data) {
@@ -368,7 +399,8 @@ export default function App() {
         setDashboardStats(prev => ({ ...prev, members: resMembers.data.totalElements || 0 }));
       }
     } else {
-      loadMembership();
+      // Only check membership status without pulling heavy agreement text
+      loadMembership(false);
       loadUserFinesTotal();
     }
   };
@@ -414,9 +446,18 @@ export default function App() {
       })
     });
     if (res.ok) {
-      showToast('Book created successfully', 'success');
+      const createdBook = res.data;
+      if (bookForm.coverFile && createdBook?.id) {
+        const formData = new FormData();
+        formData.append('file', bookForm.coverFile);
+        await fetchApi(`/books/${createdBook.id}/cover`, {
+          method: 'POST',
+          body: formData
+        });
+      }
+      showToast('Book added to inventory successfully', 'success');
       setActiveModal(null);
-      setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1 });
+      setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
       loadBooks(booksPage, bookSearchQuery);
     } else {
       showToast(res.data?.message || 'Failed to create book', 'error');
@@ -435,8 +476,17 @@ export default function App() {
       })
     });
     if (res.ok) {
+      if (bookForm.coverFile) {
+        const formData = new FormData();
+        formData.append('file', bookForm.coverFile);
+        await fetchApi(`/books/${bookForm.id}/cover`, {
+          method: 'POST',
+          body: formData
+        });
+      }
       showToast('Book updated successfully', 'success');
       setActiveModal(null);
+      setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
       loadBooks(booksPage, bookSearchQuery);
     } else {
       showToast(res.data?.message || 'Failed to update book', 'error');
@@ -461,26 +511,165 @@ export default function App() {
     setActiveModal('confirm');
   };
 
-  const handleUploadCoverSubmit = async (e) => {
-    e.preventDefault();
-    if (!coverFile) {
-      showToast('Please select an image file', 'error');
-      return;
+  // Donations Loader & Handlers
+  const loadDonations = async () => {
+    const endpoint = userRole === 'ADMIN' ? '/donations' : '/donations/me';
+    const res = await fetchApi(endpoint);
+    if (res.ok && res.data) {
+      const list = Array.isArray(res.data) ? res.data : (res.data.content || []);
+      setDonations(list);
     }
-    const formData = new FormData();
-    formData.append('file', coverFile);
-    const res = await fetchApi(`/books/${selectedBookForCover.id}/cover`, {
+  };
+
+  const handleCreateDonationSubmit = async (e) => {
+    e.preventDefault();
+    if (isSubmittingDonation) return;
+    setIsSubmittingDonation(true);
+    try {
+      let res;
+      if (donationForm.coverFile) {
+        const formData = new FormData();
+        formData.append('title', donationForm.title);
+        formData.append('author', donationForm.author);
+        formData.append('isbn', donationForm.isbn);
+        formData.append('donatedBookCount', Number(donationForm.donatedBookCount) || 1);
+        formData.append('file', donationForm.coverFile);
+        res = await fetchApi('/donations', {
+          method: 'POST',
+          body: formData
+        });
+      } else {
+        const payload = {
+          title: donationForm.title,
+          author: donationForm.author,
+          isbn: donationForm.isbn,
+          donatedBookCount: Number(donationForm.donatedBookCount) || 1
+        };
+        res = await fetchApi('/donations', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      }
+      if (res.ok) {
+        showToast('Thank you! Your donation request has been submitted for review.', 'success');
+        setActiveModal(null);
+        setDonationForm({ title: '', author: '', isbn: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
+        loadDonations();
+        refreshUserProfile();
+      } else {
+        showToast(res.data?.message || 'Failed to submit donation request', 'error');
+      }
+    } finally {
+      setIsSubmittingDonation(false);
+    }
+  };
+
+  const handleOpenEditDonation = (donation) => {
+    setEditDonationForm({
+      id: donation.id,
+      title: donation.title || '',
+      author: donation.author || '',
+      isbn: donation.isbn || '',
+      donatedBookCount: donation.donatedBookCount || 1,
+      coverFile: null,
+      coverPreview: '',
+      existingCoverUrl: donation.coverImageUrl || ''
+    });
+    setActiveModal('editDonation');
+  };
+
+  const handleEditDonationSubmit = async (e) => {
+    e.preventDefault();
+    if (isSubmittingDonation) return;
+    setIsSubmittingDonation(true);
+    try {
+      let res;
+      if (editDonationForm.coverFile) {
+        const formData = new FormData();
+        formData.append('title', editDonationForm.title);
+        formData.append('author', editDonationForm.author);
+        formData.append('isbn', editDonationForm.isbn);
+        formData.append('donatedBookCount', Number(editDonationForm.donatedBookCount) || 1);
+        formData.append('file', editDonationForm.coverFile);
+        res = await fetchApi(`/donations/${editDonationForm.id}`, {
+          method: 'PUT',
+          body: formData
+        });
+      } else {
+        const payload = {
+          title: editDonationForm.title,
+          author: editDonationForm.author,
+          isbn: editDonationForm.isbn,
+          donatedBookCount: Number(editDonationForm.donatedBookCount) || 1
+        };
+        res = await fetchApi(`/donations/${editDonationForm.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+      }
+      if (res.ok) {
+        showToast('Donation request updated successfully!', 'success');
+        setActiveModal(null);
+        loadDonations();
+      } else {
+        showToast(res.data?.message || 'Failed to update donation request', 'error');
+      }
+    } finally {
+      setIsSubmittingDonation(false);
+    }
+  };
+
+  const handleDeleteDonation = (donationId, title) => {
+    setConfirmConfig({
+      title: 'Delete Book Donation',
+      message: `Are you sure you want to delete the donation request for "${title}" (Donation #${donationId})?`,
+      actionBtnText: 'Delete Donation',
+      onConfirm: async () => {
+        const res = await fetchApi(`/donations/${donationId}`, { method: 'DELETE' });
+        if (res.ok) {
+          showToast('Donation request deleted successfully', 'success');
+          loadDonations();
+          refreshUserProfile();
+        } else {
+          showToast(res.data?.message || 'Failed to delete donation request', 'error');
+        }
+      }
+    });
+    setActiveModal('confirm');
+  };
+
+  const handleApproveDonation = (donationId) => {
+    if (!donationId) return;
+    setConfirmConfig({
+      title: 'Approve Book Donation',
+      message: `Are you sure you want to approve Donation #${donationId}? This will automatically add copies to the catalog and award donor reward points.`,
+      actionBtnText: 'Approve Donation',
+      onConfirm: async () => {
+        const res = await fetchApi(`/donations/${donationId}/approve`, { method: 'POST' });
+        if (res.ok) {
+          showToast('Donation approved, added to catalog, and donor reward points awarded!', 'success');
+          loadDonations();
+          refreshUserProfile();
+        } else {
+          showToast(res.data?.message || 'Failed to approve donation', 'error');
+        }
+      }
+    });
+    setActiveModal('confirm');
+  };
+
+  const handleRejectDonationSubmit = async (e) => {
+    e.preventDefault();
+    const res = await fetchApi(`/donations/${rejectionModal.donationId}/reject`, {
       method: 'POST',
-      body: formData
+      body: JSON.stringify({ reason: rejectionModal.reason })
     });
     if (res.ok) {
-      showToast('Cover image updated', 'success');
-      setActiveModal(null);
-      setCoverFile(null);
-      setCoverPreview('');
-      loadBooks(booksPage, bookSearchQuery);
+      showToast('Donation request rejected', 'info');
+      setRejectionModal({ open: false, donationId: null, reason: '' });
+      loadDonations();
     } else {
-      showToast(res.data?.message || 'Failed to upload cover', 'error');
+      showToast(res.data?.message || 'Failed to reject donation', 'error');
     }
   };
 
@@ -585,25 +774,38 @@ export default function App() {
     setActiveModal('confirm');
   };
 
-  // Borrows Loader
+  // Borrows Loader - Only loads active circulation records for the current view
   const loadBorrows = async () => {
     if (userRole === 'ADMIN') {
       const res = await fetchApi('/borrow');
       if (res.ok && res.data) {
-        setAdminBorrows(res.data);
+        setAdminBorrows(Array.isArray(res.data) ? res.data : []);
       }
-      // Populate selects for modal
-      const resM = await fetchApi('/user?page=0&size=100');
-      if (resM.ok && resM.data) setAllMembersForFines(resM.data.content || resM.data || []);
-      const resB = await fetchApi('/books?page=0&size=100');
-      if (resB.ok && resB.data) setBooks(resB.data.content || resB.data || []);
     } else {
       const res = await fetchApi('/borrow/me');
       if (res.ok && res.data) {
-        setUserBorrows(res.data);
+        setUserBorrows(Array.isArray(res.data) ? res.data : []);
       }
+    }
+  };
+
+  const handleOpenAdminBorrowModal = async () => {
+    setActiveModal('adminBorrow');
+    if (allMembersForFines.length === 0) {
+      const resM = await fetchApi('/user?page=0&size=100');
+      if (resM.ok && resM.data) setAllMembersForFines(resM.data.content || resM.data || []);
+    }
+    if (modalBooks.length === 0) {
       const resB = await fetchApi('/books?page=0&size=100');
-      if (resB.ok && resB.data) setBooks(resB.data.content || resB.data || []);
+      if (resB.ok && resB.data) setModalBooks(resB.data.content || resB.data || []);
+    }
+  };
+
+  const handleOpenUserBorrowModal = async () => {
+    setActiveModal('userBorrow');
+    if (modalBooks.length === 0) {
+      const resB = await fetchApi('/books?page=0&size=100');
+      if (resB.ok && resB.data) setModalBooks(resB.data.content || resB.data || []);
     }
   };
 
@@ -648,16 +850,17 @@ export default function App() {
       return;
     }
 
-    // Check membership
+    // Check membership status
     const resMem = await fetchApi('/memberships/me');
     if (!resMem.ok || !resMem.data || resMem.data.status !== 'ACTIVE') {
       showToast('Active membership required to check out books', 'error');
-      setCurrentPage('membership');
       setActiveModal(null);
+      setCurrentPage('membership');
       return;
     }
 
-    const matchedBook = books.find(b => b.uuid === userBorrowBookId || b.id === userBorrowBookId || String(b.uuid) === String(userBorrowBookId) || String(b.id) === String(userBorrowBookId));
+    const candidateBooks = modalBooks.length > 0 ? modalBooks : books;
+    const matchedBook = candidateBooks.find(b => b.uuid === userBorrowBookId || b.id === userBorrowBookId || String(b.uuid) === String(userBorrowBookId) || String(b.id) === String(userBorrowBookId));
     const targetUuid = matchedBook?.uuid || userBorrowBookId;
 
     const payload = {
@@ -674,9 +877,11 @@ export default function App() {
     if (res.ok) {
       showToast('Book checked out successfully!', 'success');
       setActiveModal(null);
-      loadBorrows();
-      loadDashboard();
-      setCurrentPage('borrow');
+      if (currentPage === 'borrow') {
+        loadBorrows();
+      } else {
+        setCurrentPage('borrow');
+      }
     } else {
       showToast(res.data?.message || 'Failed to borrow book', 'error');
     }
@@ -701,7 +906,8 @@ export default function App() {
       return;
     }
 
-    const matchedBook = books.find(b => b.uuid === bookUuidOrId || b.id === bookUuidOrId || String(b.uuid) === String(bookUuidOrId) || String(b.id) === String(bookUuidOrId));
+    const candidateBooks = modalBooks.length > 0 ? modalBooks : books;
+    const matchedBook = candidateBooks.find(b => b.uuid === bookUuidOrId || b.id === bookUuidOrId || String(b.uuid) === String(bookUuidOrId) || String(b.id) === String(bookUuidOrId));
     const targetUuid = matchedBook?.uuid || (typeof bookUuidOrId === 'string' ? bookUuidOrId : String(bookUuidOrId));
 
     const payload = {
@@ -717,22 +923,23 @@ export default function App() {
     });
     if (res.ok) {
       showToast(`Successfully checked out "${bookTitle || matchedBook?.title || 'book'}"!`, 'success');
-      loadBorrows();
-      loadDashboard();
-      setCurrentPage('borrow');
+      if (currentPage === 'borrow') {
+        loadBorrows();
+      } else {
+        setCurrentPage('borrow');
+      }
     } else {
       showToast(res.data?.message || 'Failed to borrow book', 'error');
     }
   };
 
   const handleReturnBook = async (borrowId) => {
+    if (!borrowId) return;
     const res = await fetchApi(`/borrow/${borrowId}`, { method: 'PATCH' });
     if (res.ok) {
       showToast('Book returned successfully', 'success');
-      await loadBorrows();
-      loadFines();
-      loadUserFinesTotal();
-      loadDashboard();
+      loadBorrows();
+      refreshUserProfile();
     } else {
       showToast(res.data?.message || 'Failed to return book', 'error');
     }
@@ -741,11 +948,15 @@ export default function App() {
   // Fines Loader
   const loadFines = async () => {
     if (userRole === 'ADMIN') {
-      const resM = await fetchApi('/user?page=0&size=100');
-      if (resM.ok && resM.data) setAllMembersForFines(resM.data.content || resM.data || []);
+      if (allMembersForFines.length === 0) {
+        const resM = await fetchApi('/user?page=0&size=100');
+        if (resM.ok && resM.data) setAllMembersForFines(resM.data.content || resM.data || []);
+      }
 
       let url = '/fines';
-      if (selectedFineMemberId) url = `/fines/user/${selectedFineMemberId}`;
+      if (selectedFineMemberId && selectedFineMemberId !== 'null') {
+        url = `/fines/user/${selectedFineMemberId}`;
+      }
       const res = await fetchApi(url);
       if (res.ok && res.data) {
         const fList = Array.isArray(res.data) ? res.data : [];
@@ -765,24 +976,23 @@ export default function App() {
   };
 
   const handlePayFine = async (fineId) => {
+    if (!fineId) return;
     const res = await fetchApi(`/fines/${fineId}/pay`, { method: 'POST' });
     if (res.ok) {
       showToast('Fine payment processed successfully', 'success');
       loadFines();
-      loadUserFinesTotal();
-      loadDashboard();
     } else {
       showToast(res.data?.message || 'Failed to settle fine', 'error');
     }
   };
 
-  // Membership Loader
-  const loadMembership = async () => {
+  // Membership Loader - Loads status and optionally agreement text when on membership page
+  const loadMembership = async (loadAgreement = false) => {
     const res = await fetchApi('/memberships/me');
     if (res.ok && res.data) {
       setMembership(res.data);
       const memUuid = res.data.uuid || res.data.membershipUuid || res.data.id;
-      if (memUuid) {
+      if (loadAgreement && memUuid && memUuid !== 'null' && res.data.status === 'PENDING') {
         const resTerms = await fetchApi(`/memberships/${memUuid}/agreement`);
         if (resTerms.ok && resTerms.data) {
           setAgreementText(typeof resTerms.data === 'string' ? resTerms.data : resTerms.data.terms || resTerms.data.agreementHtml || 'Athenaeum Library Membership Agreement...');
@@ -801,7 +1011,7 @@ export default function App() {
         setAgreementText(res.data.agreementHtml);
       }
       showToast('Membership application created. Please review and sign terms.', 'info');
-      await loadMembership();
+      await loadMembership(true);
     } else {
       showToast(res.data?.message || 'Failed to apply for membership', 'error');
     }
@@ -809,7 +1019,7 @@ export default function App() {
 
   const handleSignatureSubmit = async () => {
     const memUuid = membership?.uuid || membership?.membershipUuid;
-    if (!sigFile || !membership || !memUuid) {
+    if (!sigFile || !membership || !memUuid || memUuid === 'null') {
       showToast('Please select a signature PNG image', 'error');
       return;
     }
@@ -824,7 +1034,7 @@ export default function App() {
       showToast('Membership signed & activated successfully!', 'success');
       setSigFile(null);
       setSigPreviewUrl('');
-      await loadMembership();
+      await loadMembership(true);
     } else {
       showToast(res.data?.message || 'Failed to activate membership', 'error');
     }
@@ -832,7 +1042,7 @@ export default function App() {
 
   const handleDownloadPdf = async () => {
     const memId = membership?.membershipId || membership?.id;
-    if (!membership || !memId) {
+    if (!membership || !memId || memId === 'null') {
       showToast('Membership ID not found', 'error');
       return;
     }
@@ -860,7 +1070,7 @@ export default function App() {
         const res = await fetchApi('/memberships/cancel', { method: 'POST' });
         if (res.ok) {
           showToast('Membership cancelled successfully', 'success');
-          loadMembership();
+          loadMembership(false);
         } else {
           showToast(res.data?.message || 'Failed to cancel membership', 'error');
         }
@@ -1217,6 +1427,14 @@ export default function App() {
             <Award className="nav-icon" size={18} />
             <span>{userRole === 'ADMIN' ? 'Membership' : 'Digital Membership'}</span>
           </button>
+
+          <button
+            className={`nav-link ${currentPage === 'donations' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('donations')}
+          >
+            <Gift className="nav-icon" size={18} />
+            <span>{userRole === 'ADMIN' ? 'Book Donations' : 'Donate Books'}</span>
+          </button>
         </nav>
 
         <div className="sidebar-profile">
@@ -1247,8 +1465,13 @@ export default function App() {
               {currentPage === 'borrow' && (userRole === 'ADMIN' ? 'Circulation Log' : 'My Loans')}
               {currentPage === 'fines' && (userRole === 'ADMIN' ? 'Fine Settlement' : 'Fines & Dues')}
               {currentPage === 'membership' && 'Digital Membership'}
+              {currentPage === 'donations' && (userRole === 'ADMIN' ? 'Donation Management' : 'Book Donations')}
             </h1>
-            <p className="header-page-subtitle">Overview of library holdings and staff operations</p>
+            <p className="header-page-subtitle">
+              {currentPage === 'donations'
+                ? (userRole === 'ADMIN' ? 'Review, approve, or reject user book donation requests' : 'Donate books to expand the library collection and view your donation history')
+                : 'Overview of library holdings and staff operations'}
+            </p>
           </div>
 
           <div className="header-actions">
@@ -1450,7 +1673,7 @@ export default function App() {
                 </form>
 
                 {userRole === 'ADMIN' && (
-                  <button className="btn btn-primary" onClick={() => { setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1 }); setActiveModal('createBook'); }}>
+                  <button className="btn btn-primary" onClick={() => { setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' }); setActiveModal('createBook'); }}>
                     <Plus size={16} />
                     <span>Add Book</span>
                   </button>
@@ -1499,13 +1722,13 @@ export default function App() {
                             <td><code>{b.isbn}</code></td>
                             {userRole === 'ADMIN' ? (
                               <>
-                                <td><span className="badge badge-secondary" style={{ padding: '4px 8px' }}>{total}</span></td>
-                                <td><span className="badge badge-warning" style={{ padding: '4px 8px' }}>{borrowed}</span></td>
-                                <td><span className={`badge ${avail > 0 ? 'badge-success' : 'badge-danger'}`} style={{ padding: '4px 8px' }}>{avail} left</span></td>
+                                <td><span className="text-muted" style={{ fontWeight: 500 }}>{total}</span></td>
+                                <td><span style={{ color: '#f59e0b', fontWeight: 600 }}>{borrowed}</span></td>
+                                <td><span style={{ color: avail > 0 ? '#10b981' : '#ef4444', fontWeight: 600 }}>{avail} left</span></td>
                               </>
                             ) : (
                               <td>
-                                <span className={`badge ${avail > 0 ? 'badge-success' : 'badge-danger'}`}>
+                                <span style={{ color: avail > 0 ? '#10b981' : '#ef4444', fontWeight: 600 }}>
                                   {avail > 0 ? `${avail} available` : 'Out of stock'}
                                 </span>
                               </td>
@@ -1513,14 +1736,16 @@ export default function App() {
                             <td className="text-right">
                               {userRole === 'ADMIN' ? (
                                 <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                  <button className="btn btn-secondary btn-sm" title="Upload Cover" onClick={() => { setSelectedBookForCover({ id: b.id ?? b.uuid, title: b.title }); setActiveModal('uploadCover'); }}>Cover</button>
                                   <button className="btn btn-secondary btn-sm" onClick={() => {
                                     setBookForm({
                                       id: b.id,
                                       title: b.title,
                                       author: b.author,
                                       isbn: b.isbn,
-                                      totalBookCount: b.totalBookCount ?? b.total_book_count ?? 1
+                                      totalBookCount: b.totalBookCount ?? b.total_book_count ?? 1,
+                                      coverFile: null,
+                                      coverPreview: '',
+                                      existingCoverUrl: b.coverImageUrl || ''
                                     });
                                     setActiveModal('editBook');
                                   }}>Edit</button>
@@ -1632,7 +1857,7 @@ export default function App() {
                             )}
                           </td>
                           <td>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '12px' }}>
+                            <span style={{ color: '#eab308', fontWeight: '600', fontSize: '13px' }}>
                               🏆 {m.rewardPoints || 0} pts
                             </span>
                           </td>
@@ -1673,7 +1898,7 @@ export default function App() {
                       <h3>All Borrowed Books (Circulation Log)</h3>
                       <p className="section-desc">Active and returned book loans across all registered library patrons</p>
                     </div>
-                    <button className="btn btn-primary btn-sm" onClick={() => setActiveModal('adminBorrow')}>
+                    <button className="btn btn-primary btn-sm" onClick={handleOpenAdminBorrowModal}>
                       + Issue Book Borrow
                     </button>
                   </div>
@@ -1715,8 +1940,8 @@ export default function App() {
                                 <td>{b.borrowDate}</td>
                                 <td>{b.dueDate}</td>
                                 <td>
-                                  <span className={`badge ${isReturned ? 'badge-success' : 'badge-warning'}`}>
-                                    {isReturned ? 'RETURNED' : 'ACTIVE'}
+                                  <span style={{ color: isReturned ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
+                                    {isReturned ? 'Returned' : 'Active'}
                                   </span>
                                 </td>
                                 <td className="text-right">
@@ -1741,7 +1966,7 @@ export default function App() {
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => setCurrentPage('books')}>Browse Catalog</button>
-                      <button className="btn btn-primary btn-sm" onClick={() => setActiveModal('userBorrow')}>+ Borrow a Book</button>
+                      <button className="btn btn-primary btn-sm" onClick={handleOpenUserBorrowModal}>+ Borrow a Book</button>
                     </div>
                   </div>
 
@@ -1781,8 +2006,8 @@ export default function App() {
                                 <td>{b.borrowDate}</td>
                                 <td>{b.dueDate}</td>
                                 <td>
-                                  <span className={`badge ${isReturned ? 'badge-success' : 'badge-warning'}`}>
-                                    {isReturned ? 'RETURNED' : 'ACTIVE'}
+                                  <span style={{ color: isReturned ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
+                                    {isReturned ? 'Returned' : 'Active'}
                                   </span>
                                 </td>
                                 <td className="text-right">
@@ -1873,7 +2098,7 @@ export default function App() {
                               <td><strong>{fineTitle}</strong>{fineAuthor ? <><br /><span className="text-muted">{fineAuthor}</span></> : null}</td>
                               <td><strong>${(f.amount || f.pendingFineAmount || 0).toFixed(2)}</strong></td>
                               <td>
-                                <span className={`badge ${f.status === 'PAID' ? 'badge-success' : 'badge-danger'}`}>
+                                <span style={{ color: f.status === 'PAID' ? '#10b981' : '#ef4444', fontWeight: 600 }}>
                                   {f.status}
                                 </span>
                               </td>
@@ -1977,13 +2202,13 @@ export default function App() {
               ) : (
                 <div>
                   <div className="grid-2col">
-                    <div className="membership-card-badge" style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', border: '1px solid #334155', borderRadius: '16px', padding: '24px', color: '#ffffff', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)', position: 'relative', overflow: 'hidden' }}>
+                    <div className="membership-card-badge" style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', border: '1px solid #334155', borderRadius: '16px', padding: '24px', color: '#ffffff', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
                       <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
                           <h4 style={{ fontSize: '18px', fontWeight: 'bold', letterSpacing: '0.05em', color: '#38bdf8', margin: 0 }}>ATHENAEUM</h4>
                           <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Library System</span>
                         </div>
-                        <span className="badge badge-success" style={{ background: 'rgba(34,197,94,0.15)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)', padding: '4px 10px', borderRadius: '9999px', fontSize: '11px', fontWeight: '600' }}>ACTIVE</span>
+                        <span style={{ color: '#4ade80', fontWeight: 700, fontSize: '12px', letterSpacing: '0.05em' }}>ACTIVE</span>
                       </div>
 
                       <div className="card-body" style={{ marginTop: '20px' }}>
@@ -2033,6 +2258,371 @@ export default function App() {
                       </button>
                     </div>
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* PAGE 6: BOOK DONATIONS */}
+          {currentPage === 'donations' && (
+            <div className="donation-page-container">
+              {userRole === 'ADMIN' ? (
+                <div>
+                  {/* Admin Stats Grid */}
+                  <div className="donation-stats-row mb-6">
+                    <div className="donation-stat-box">
+                      <div className="donation-stat-icon" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
+                        <Gift size={22} />
+                      </div>
+                      <div>
+                        <div className="donation-stat-label">Total Submissions</div>
+                        <div className="donation-stat-value">{donations.length}</div>
+                      </div>
+                    </div>
+                    <div className="donation-stat-box">
+                      <div className="donation-stat-icon" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#eab308' }}>
+                        <RefreshCw size={20} />
+                      </div>
+                      <div>
+                        <div className="donation-stat-label">Pending Review</div>
+                        <div className="donation-stat-value">{donations.filter(d => d.status === 'PENDING').length}</div>
+                      </div>
+                    </div>
+                    <div className="donation-stat-box">
+                      <div className="donation-stat-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+                        <BookOpen size={20} />
+                      </div>
+                      <div>
+                        <div className="donation-stat-label">Approved Books</div>
+                        <div className="donation-stat-value">
+                          {donations.filter(d => d.status === 'APPROVED').reduce((sum, d) => sum + (d.donatedBookCount || 1), 0)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="donation-stat-box">
+                      <div className="donation-stat-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }}>
+                        <X size={20} />
+                      </div>
+                      <div>
+                        <div className="donation-stat-label">Rejected</div>
+                        <div className="donation-stat-value">{donations.filter(d => d.status === 'REJECTED').length}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="action-bar mb-4" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div className="filter-controls" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span className="text-xs text-muted font-medium mr-1">Filter:</span>
+                      {['ALL', 'PENDING', 'APPROVED', 'REJECTED'].map(st => {
+                        const count = st === 'ALL'
+                          ? donations.length
+                          : donations.filter(d => d.status === st).length;
+                        return (
+                          <button
+                            key={st}
+                            className={`btn btn-sm ${donationFilter === st ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => setDonationFilter(st)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            <span>{st}</span>
+                            <span style={{
+                              background: donationFilter === st ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)',
+                              padding: '1px 6px',
+                              borderRadius: '10px',
+                              fontSize: '11px',
+                              fontWeight: '600'
+                            }}>
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="table-container mt-4">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th width="60">ID</th>
+                          <th width="70">Cover</th>
+                          <th>Book Details</th>
+                          <th>Donor Information</th>
+                          <th>ISBN</th>
+                          <th width="90">Copies</th>
+                          <th width="120">Status</th>
+                          <th width="120">Submitted</th>
+                          <th width="200" className="text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const filtered = donationFilter === 'ALL'
+                            ? donations
+                            : donations.filter(d => d.status === donationFilter);
+                          if (filtered.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan="9" className="empty-cell" style={{ padding: '40px 20px', textAlign: 'center' }}>
+                                  No donation requests found {donationFilter !== 'ALL' ? `with status "${donationFilter}"` : ''}.
+                                </td>
+                              </tr>
+                            );
+                          }
+                          return filtered.map((d, idx) => (
+                            <tr key={d.id ?? `donation-${idx}`}>
+                              <td>#{d.id || '—'}</td>
+                              <td>
+                                {d.coverImageUrl ? (
+                                  <img src={getCoverUrl(d.coverImageUrl)} alt={d.title} className="table-thumb-img" />
+                                ) : (
+                                  <div className="table-thumb">{getMonogram(d.title)}</div>
+                                )}
+                              </td>
+                              <td>
+                                <strong>{d.title}</strong>
+                                <span className="text-muted" style={{ display: 'block', fontSize: '12px' }}>by {d.author}</span>
+                              </td>
+                              <td>
+                                <span>{d.userName || 'Member'}</span>
+                                <span className="text-muted" style={{ display: 'block', fontSize: '11px' }}>{d.userEmail}</span>
+                              </td>
+                              <td><code>{d.isbn}</code></td>
+                              <td>
+                                <span className="text-muted" style={{ fontWeight: 500 }}>
+                                  {d.donatedBookCount} {d.donatedBookCount === 1 ? 'copy' : 'copies'}
+                                </span>
+                              </td>
+                              <td>
+                                {d.status === 'APPROVED' && <span style={{ color: '#10b981', fontWeight: 600 }}>Approved</span>}
+                                {d.status === 'PENDING' && <span style={{ color: '#f59e0b', fontWeight: 600 }}>Pending Review</span>}
+                                {d.status === 'REJECTED' && (
+                                  <div>
+                                    <span style={{ color: '#ef4444', fontWeight: 600 }}>Rejected</span>
+                                    {d.rejectionReason && (
+                                      <span className="text-muted" style={{ display: 'block', fontSize: '11px', marginTop: '2px' }} title={d.rejectionReason}>
+                                        {d.rejectionReason.length > 25 ? d.rejectionReason.substring(0, 25) + '...' : d.rejectionReason}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                <span style={{ fontSize: '12px' }}>
+                                  {d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}
+                                </span>
+                              </td>
+                              <td className="text-right">
+                                {d.status === 'PENDING' ? (
+                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                                    <button
+                                      className="btn btn-primary btn-sm"
+                                      onClick={() => handleApproveDonation(d.id)}
+                                      title="Approve and add to catalog"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      className="btn btn-danger btn-sm"
+                                      onClick={() => setRejectionModal({ open: true, donationId: d.id, reason: '' })}
+                                      title="Reject donation"
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted" style={{ fontSize: '12px' }}>Reviewed</span>
+                                )}
+                              </td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  {/* Hero Banner */}
+                  <div className="donation-hero-card">
+                    <div className="donation-hero-content">
+                      <span style={{ color: 'var(--accent-primary)', fontWeight: 700, fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                        COMMUNITY DONATION PROGRAM
+                      </span>
+                      <h2 className="donation-hero-title">Donate Books to Padips Library</h2>
+                      <p className="donation-hero-desc">
+                        Share knowledge and help expand our collection. Submit book details with an optional cover image; our librarians will review and catalog your copies. Earn <strong>2 reward points</strong> for each approved copy!
+                      </p>
+                    </div>
+                    <div>
+                      <button
+                        className="btn btn-primary btn-lg"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: 'var(--radius-sm)' }}
+                        onClick={() => {
+                          setDonationForm({ title: '', author: '', isbn: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
+                          setActiveModal('createDonation');
+                        }}
+                      >
+                        <Plus size={18} />
+                        <span>Donate a Book</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Donor Stats Grid */}
+                  <div className="donation-stats-row">
+                    <div className="donation-stat-box">
+                      <div className="donation-stat-icon" style={{ background: 'rgba(224, 122, 73, 0.12)', color: 'var(--accent-primary)' }}>
+                        <Gift size={20} />
+                      </div>
+                      <div>
+                        <div className="donation-stat-label">My Donations</div>
+                        <div className="donation-stat-value">{donations.length}</div>
+                      </div>
+                    </div>
+                    <div className="donation-stat-box">
+                      <div className="donation-stat-icon" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
+                        <BookOpen size={18} />
+                      </div>
+                      <div>
+                        <div className="donation-stat-label">Copies Approved</div>
+                        <div className="donation-stat-value">
+                          {donations.filter(d => d.status === 'APPROVED').reduce((sum, d) => sum + (d.donatedBookCount || 1), 0)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="donation-stat-box">
+                      <div className="donation-stat-icon" style={{ background: 'rgba(234, 179, 8, 0.12)', color: '#eab308' }}>
+                        <RefreshCw size={18} />
+                      </div>
+                      <div>
+                        <div className="donation-stat-label">Pending Review</div>
+                        <div className="donation-stat-value">{donations.filter(d => d.status === 'PENDING').length}</div>
+                      </div>
+                    </div>
+                    <div className="donation-stat-box">
+                      <div className="donation-stat-icon" style={{ background: 'rgba(234, 179, 8, 0.12)', color: '#fbbf24' }}>
+                        <Award size={20} />
+                      </div>
+                      <div>
+                        <div className="donation-stat-label">Reward Points</div>
+                        <div className="donation-stat-value" style={{ color: '#fbbf24' }}>
+                          {currentUser?.rewardPoints || 0} <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-subtle)' }}>pts</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="section-header" style={{ marginBottom: '8px' }}>
+                    <h3>My Donation History</h3>
+                    <p className="section-desc">Track status and review outcomes of your donated books</p>
+                  </div>
+
+                  {donations.length === 0 ? (
+                    <div className="donation-empty-state">
+                      <div className="donation-empty-icon">
+                        <Gift size={28} />
+                      </div>
+                      <h4 className="donation-empty-title">No Book Donations Yet</h4>
+                      <p className="donation-empty-desc">
+                        Help our community grow by donating books you have loved. Our librarians will review and add them to the library catalog.
+                      </p>
+                      <button
+                        className="btn btn-primary"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                        onClick={() => {
+                          setDonationForm({ title: '', author: '', isbn: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
+                          setActiveModal('createDonation');
+                        }}
+                      >
+                        <Plus size={16} />
+                        <span>Submit Your First Donation</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="table-container">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th width="60">ID</th>
+                            <th width="70">Cover</th>
+                            <th>Book Title & Author</th>
+                            <th>ISBN</th>
+                            <th width="90">Copies</th>
+                            <th width="130">Status</th>
+                            <th width="120">Submitted</th>
+                            <th width="130" className="text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {donations.map((d, idx) => (
+                            <tr key={d.id ?? `my-don-${idx}`}>
+                              <td>#{d.id || '—'}</td>
+                              <td>
+                                {d.coverImageUrl ? (
+                                  <img src={getCoverUrl(d.coverImageUrl)} alt={d.title} className="table-thumb-img" />
+                                ) : (
+                                  <div className="table-thumb">{getMonogram(d.title)}</div>
+                                )}
+                              </td>
+                              <td>
+                                <strong>{d.title}</strong>
+                                <span className="text-muted" style={{ display: 'block', fontSize: '12px' }}>by {d.author}</span>
+                              </td>
+                              <td><code>{d.isbn}</code></td>
+                              <td>
+                                <span className="text-muted" style={{ fontWeight: 500 }}>
+                                  {d.donatedBookCount} {d.donatedBookCount === 1 ? 'copy' : 'copies'}
+                                </span>
+                              </td>
+                              <td>
+                                {d.status === 'APPROVED' && <span style={{ color: '#10b981', fontWeight: 600 }}>Approved</span>}
+                                {d.status === 'PENDING' && <span style={{ color: '#f59e0b', fontWeight: 600 }}>Pending Review</span>}
+                                {d.status === 'REJECTED' && (
+                                  <div>
+                                    <span style={{ color: '#ef4444', fontWeight: 600 }}>Rejected</span>
+                                    {d.rejectionReason && (
+                                      <span className="text-muted" style={{ display: 'block', fontSize: '11px', marginTop: '2px' }}>
+                                        Reason: {d.rejectionReason}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                <span style={{ fontSize: '12px' }}>
+                                  {d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}
+                                </span>
+                              </td>
+                              <td className="text-right">
+                                {d.status === 'PENDING' ? (
+                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                    <button
+                                      className="btn btn-secondary btn-sm"
+                                      onClick={() => handleOpenEditDonation(d)}
+                                      title="Edit donation details"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      className="btn btn-ghost btn-sm"
+                                      onClick={() => handleDeleteDonation(d.id, d.title)}
+                                      title="Delete donation"
+                                      style={{ color: '#ef4444' }}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted" style={{ fontSize: '12px' }}>—</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2258,22 +2848,44 @@ export default function App() {
             </div>
             <form onSubmit={handleCreateBookSubmit}>
               <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Book Title</label>
-                  <input type="text" className="form-input" required value={bookForm.title} onChange={e => setBookForm({ ...bookForm, title: e.target.value })} />
+                <div className="form-group mb-4">
+                  <label className="form-label">Book Title <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input type="text" className="form-input" required value={bookForm.title} onChange={e => setBookForm({ ...bookForm, title: e.target.value })} placeholder="e.g. Design Patterns" />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Author Name</label>
-                  <input type="text" className="form-input" required value={bookForm.author} onChange={e => setBookForm({ ...bookForm, author: e.target.value })} />
+                <div className="form-group mb-4">
+                  <label className="form-label">Author Name <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input type="text" className="form-input" required value={bookForm.author} onChange={e => setBookForm({ ...bookForm, author: e.target.value })} placeholder="e.g. Erich Gamma" />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">ISBN Number</label>
-                  <input type="text" className="form-input" required value={bookForm.isbn} onChange={e => setBookForm({ ...bookForm, isbn: e.target.value })} />
+                <div className="form-group mb-4">
+                  <label className="form-label">ISBN Number <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input type="text" className="form-input" required value={bookForm.isbn} onChange={e => setBookForm({ ...bookForm, isbn: e.target.value })} placeholder="e.g. 9780201633610" />
                 </div>
-                <div className="form-group">
+                <div className="form-group mb-4">
                   <label className="form-label">Total Book Count (Copies) <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
                   <input type="number" min="1" className="form-input" required value={bookForm.totalBookCount} onChange={e => setBookForm({ ...bookForm, totalBookCount: e.target.value })} />
                 </div>
+                <div className="form-group mb-2">
+                  <label className="form-label">Book Cover Image (Optional)</label>
+                  <input
+                    type="file"
+                    className="form-input"
+                    accept="image/*"
+                    onChange={e => {
+                      if (e.target.files && e.target.files[0]) {
+                        const f = e.target.files[0];
+                        setBookForm(prev => ({ ...prev, coverFile: f, coverPreview: URL.createObjectURL(f) }));
+                      }
+                    }}
+                  />
+                  <small className="text-muted" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                    Select a JPG or PNG cover image to attach directly with this title.
+                  </small>
+                </div>
+                {bookForm.coverPreview && (
+                  <div className="cover-preview-box mt-3" style={{ maxWidth: '140px', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                    <img src={bookForm.coverPreview} alt="Cover Preview" style={{ width: '100%', height: 'auto', display: 'block' }} />
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)}>Cancel</button>
@@ -2294,22 +2906,48 @@ export default function App() {
             </div>
             <form onSubmit={handleEditBookSubmit}>
               <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Book Title</label>
+                <div className="form-group mb-4">
+                  <label className="form-label">Book Title <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
                   <input type="text" className="form-input" required value={bookForm.title} onChange={e => setBookForm({ ...bookForm, title: e.target.value })} />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Author Name</label>
+                <div className="form-group mb-4">
+                  <label className="form-label">Author Name <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
                   <input type="text" className="form-input" required value={bookForm.author} onChange={e => setBookForm({ ...bookForm, author: e.target.value })} />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">ISBN Number</label>
+                <div className="form-group mb-4">
+                  <label className="form-label">ISBN Number <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
                   <input type="text" className="form-input" required value={bookForm.isbn} onChange={e => setBookForm({ ...bookForm, isbn: e.target.value })} />
                 </div>
-                <div className="form-group">
+                <div className="form-group mb-4">
                   <label className="form-label">Total Book Count (Copies) <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
                   <input type="number" min="1" className="form-input" required value={bookForm.totalBookCount} onChange={e => setBookForm({ ...bookForm, totalBookCount: e.target.value })} />
                 </div>
+                <div className="form-group mb-2">
+                  <label className="form-label">Change Cover Image (Optional)</label>
+                  <input
+                    type="file"
+                    className="form-input"
+                    accept="image/*"
+                    onChange={e => {
+                      if (e.target.files && e.target.files[0]) {
+                        const f = e.target.files[0];
+                        setBookForm(prev => ({ ...prev, coverFile: f, coverPreview: URL.createObjectURL(f) }));
+                      }
+                    }}
+                  />
+                  <small className="text-muted" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                    Select a new image file to update or replace the existing book cover.
+                  </small>
+                </div>
+                {(bookForm.coverPreview || bookForm.existingCoverUrl) && (
+                  <div className="cover-preview-box mt-3" style={{ maxWidth: '140px', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                    <img
+                      src={bookForm.coverPreview || getCoverUrl(bookForm.existingCoverUrl)}
+                      alt="Cover Preview"
+                      style={{ width: '100%', height: 'auto', display: 'block' }}
+                    />
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)}>Cancel</button>
@@ -2320,41 +2958,210 @@ export default function App() {
         </div>
       )}
 
-      {/* 3. Upload Cover Modal */}
-      {activeModal === 'uploadCover' && (
+      {/* 3. Donate Book Modal (User / Member) */}
+      {activeModal === 'createDonation' && (
         <div className="modal-backdrop open">
           <div className="modal-card">
             <div className="modal-header">
-              <h3>Upload Book Cover Image</h3>
+              <h3>Donate a Book to Padips Library</h3>
               <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
             </div>
-            <form onSubmit={handleUploadCoverSubmit}>
+            <form onSubmit={handleCreateDonationSubmit}>
               <div className="modal-body">
-                <p className="text-subtle mb-4">Select an image file for: <strong>{selectedBookForCover.title}</strong></p>
-                <div className="form-group">
-                  <label className="form-label">Cover Image File</label>
+                <div className="form-group mb-4">
+                  <label className="form-label">Book Title <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    required
+                    value={donationForm.title}
+                    onChange={e => setDonationForm({ ...donationForm, title: e.target.value })}
+                    placeholder="e.g. Clean Code"
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Author Name <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    required
+                    value={donationForm.author}
+                    onChange={e => setDonationForm({ ...donationForm, author: e.target.value })}
+                    placeholder="e.g. Robert C. Martin"
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">ISBN Number <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    required
+                    value={donationForm.isbn}
+                    onChange={e => setDonationForm({ ...donationForm, isbn: e.target.value })}
+                    placeholder="e.g. 9780132350884"
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Number of Copies Donated <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="form-input"
+                    required
+                    value={donationForm.donatedBookCount}
+                    onChange={e => setDonationForm({ ...donationForm, donatedBookCount: e.target.value })}
+                  />
+                </div>
+                <div className="form-group mb-2">
+                  <label className="form-label">Book Cover Image (Optional)</label>
                   <input
                     type="file"
                     className="form-input"
                     accept="image/*"
-                    required
                     onChange={e => {
                       if (e.target.files && e.target.files[0]) {
-                        setCoverFile(e.target.files[0]);
-                        setCoverPreview(URL.createObjectURL(e.target.files[0]));
+                        const f = e.target.files[0];
+                        setDonationForm(prev => ({ ...prev, coverFile: f, coverPreview: URL.createObjectURL(f) }));
                       }
                     }}
                   />
+                  <small className="text-muted" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                    Attach a cover image photo or illustration for this book.
+                  </small>
                 </div>
-                {coverPreview && (
-                  <div className="cover-preview-box mt-4">
-                    <img src={coverPreview} alt="Preview" />
+                {donationForm.coverPreview && (
+                  <div className="cover-preview-box mt-3" style={{ maxWidth: '140px', height: '140px', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-app)' }}>
+                    <img src={donationForm.coverPreview} alt="Donation Cover Preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />
                   </div>
                 )}
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Upload & Apply</button>
+                <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)} disabled={isSubmittingDonation}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={isSubmittingDonation}>
+                  {isSubmittingDonation ? 'Submitting...' : 'Submit Donation'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 3.1 Edit Donation Modal */}
+      {activeModal === 'editDonation' && (
+        <div className="modal-backdrop open">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3>Edit Book Donation</h3>
+              <button className="btn-close" onClick={() => setActiveModal(null)} disabled={isSubmittingDonation}>&times;</button>
+            </div>
+            <form onSubmit={handleEditDonationSubmit}>
+              <div className="modal-body">
+                <div className="form-group mb-4">
+                  <label className="form-label">Book Title <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    required
+                    value={editDonationForm.title}
+                    onChange={e => setEditDonationForm({ ...editDonationForm, title: e.target.value })}
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Author Name <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    required
+                    value={editDonationForm.author}
+                    onChange={e => setEditDonationForm({ ...editDonationForm, author: e.target.value })}
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">ISBN Number <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    required
+                    value={editDonationForm.isbn}
+                    onChange={e => setEditDonationForm({ ...editDonationForm, isbn: e.target.value })}
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Number of Copies Donated <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="form-input"
+                    required
+                    value={editDonationForm.donatedBookCount}
+                    onChange={e => setEditDonationForm({ ...editDonationForm, donatedBookCount: e.target.value })}
+                  />
+                </div>
+                <div className="form-group mb-2">
+                  <label className="form-label">Change Cover Image (Optional)</label>
+                  <input
+                    type="file"
+                    className="form-input"
+                    accept="image/*"
+                    onChange={e => {
+                      if (e.target.files && e.target.files[0]) {
+                        const f = e.target.files[0];
+                        setEditDonationForm(prev => ({ ...prev, coverFile: f, coverPreview: URL.createObjectURL(f) }));
+                      }
+                    }}
+                  />
+                  <small className="text-muted" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                    Select a new image file to update the cover for this donation request.
+                  </small>
+                </div>
+                {(editDonationForm.coverPreview || editDonationForm.existingCoverUrl) && (
+                  <div className="cover-preview-box mt-3" style={{ maxWidth: '140px', height: '140px', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-app)' }}>
+                    <img
+                      src={editDonationForm.coverPreview || getCoverUrl(editDonationForm.existingCoverUrl)}
+                      alt="Donation Cover Preview"
+                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }}
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setActiveModal(null)} disabled={isSubmittingDonation}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={isSubmittingDonation}>
+                  {isSubmittingDonation ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 3.1 Reject Donation Modal (Admin) */}
+      {rejectionModal.open && (
+        <div className="modal-backdrop open">
+          <div className="modal-card max-w-sm">
+            <div className="modal-header">
+              <h3>Reject Book Donation</h3>
+              <button className="btn-close" onClick={() => setRejectionModal({ open: false, donationId: null, reason: '' })}>&times;</button>
+            </div>
+            <form onSubmit={handleRejectDonationSubmit}>
+              <div className="modal-body">
+                <p className="text-subtle mb-4">
+                  Please provide an optional reason for rejecting Donation #{rejectionModal.donationId}.
+                </p>
+                <div className="form-group">
+                  <label className="form-label">Rejection Reason</label>
+                  <textarea
+                    className="form-input"
+                    rows="3"
+                    value={rejectionModal.reason}
+                    onChange={e => setRejectionModal({ ...rejectionModal, reason: e.target.value })}
+                    placeholder="e.g. Duplicate title, damaged physical copies, or invalid ISBN"
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setRejectionModal({ open: false, donationId: null, reason: '' })}>Cancel</button>
+                <button type="submit" className="btn btn-danger">Reject Donation</button>
               </div>
             </form>
           </div>
@@ -2544,7 +3351,7 @@ export default function App() {
                   <label className="form-label">Select Book Title</label>
                   <select className="form-select" required value={adminBorrowSelect.bookId} onChange={e => setAdminBorrowSelect({ ...adminBorrowSelect, bookId: e.target.value })}>
                     <option value="">-- Choose Book --</option>
-                    {books.map((b, idx) => (
+                    {(modalBooks.length > 0 ? modalBooks : books).map((b, idx) => (
                       <option key={b.id ?? b.uuid ?? b.isbn ?? `admin-b-b-${idx}`} value={b.id ?? b.uuid ?? ''}>{b.title}</option>
                     ))}
                   </select>
@@ -2573,7 +3380,7 @@ export default function App() {
                   <label className="form-label">Select Book from Catalog</label>
                   <select className="form-select" required value={userBorrowBookId} onChange={e => setUserBorrowBookId(e.target.value)}>
                     <option value="">-- Choose Book --</option>
-                    {books.map((b, idx) => (
+                    {(modalBooks.length > 0 ? modalBooks : books).map((b, idx) => (
                       <option key={b.id ?? b.uuid ?? b.isbn ?? `user-b-${idx}`} value={b.id ?? b.uuid ?? ''}>{b.title} (by {b.author})</option>
                     ))}
                   </select>

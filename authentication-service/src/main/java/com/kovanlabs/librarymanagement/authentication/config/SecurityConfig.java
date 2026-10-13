@@ -152,7 +152,11 @@ public class SecurityConfig {
                         .requestMatchers("/fines", "/fines/**")
                         .hasAnyAuthority("fines:read", "fines:write", "fines:pay", "ROLE_USER", "ROLE_ADMIN")
 
-                        // All other endpoints require authentication
+                        // Donation Endpoints (Permission, Role, or Authenticated User)
+                        .requestMatchers(HttpMethod.GET, "/donations/me").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/donations").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/donations").hasAnyAuthority("ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/donations/*/approve", "/donations/*/reject").hasAnyAuthority("donations:write", "ROLE_ADMIN")
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
