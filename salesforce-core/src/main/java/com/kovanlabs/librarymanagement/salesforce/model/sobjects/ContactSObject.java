@@ -35,4 +35,19 @@ public class ContactSObject extends SObjectBase {
 
     @JsonProperty(ContactFields.PHONE)
     private String phone;
+
+    @JsonProperty(ContactFields.STATUS)
+    private String status;
+
+    @JsonProperty(ContactFields.LAST_LOGIN_AT)
+    private String lastLoginAt;
+
+    @JsonProperty(ContactFields.REACTIVATION_REQUEST_STATUS)
+    private String reactivationRequestStatus;
+
+    @JsonProperty(ContactFields.INACTIVITY_WARNING_SENT_AT)
+    private String inactivityWarningSentAt;
+
+    @JsonProperty(ContactFields.REWARD)
+    private Integer reward;
 }

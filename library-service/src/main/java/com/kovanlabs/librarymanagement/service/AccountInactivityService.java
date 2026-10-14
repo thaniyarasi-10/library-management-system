@@ -6,7 +6,10 @@ import com.kovanlabs.librarymanagement.communication.enums.NotificationTypeEnum;
 import com.kovanlabs.librarymanagement.communication.factory.NotificationFactory;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
+import com.kovanlabs.librarymanagement.user.mapping.UserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -18,6 +21,19 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * Service managing user account inactivity lifecycles, warning dispatches,
+ * automatic account deactivations, and external Salesforce CRM synchronization.
+ * <p>
+ * Business rules:
+ * <ul>
+ *     <li>Inactivity period threshold: 30 days. Accounts inactive for &ge; 30 days are automatically transitioned
+ *         to {@link AccountStatus#DEACTIVATED} in both MySQL and Salesforce.</li>
+ *     <li>Advance warning notice: Sent at 23 days of inactivity (7 days before deactivation cutoff).
+ *         Records {@code inactivityWarningSentAt} in both MySQL and Salesforce to prevent repeated notifications.</li>
+ *     <li>Stale warning reset: Active users who log back in have their warning timestamps cleared and synchronized.</li>
+ * </ul>
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -27,20 +43,20 @@ public class AccountInactivityService {
 
     public static final int WARNING_DAYS_BEFORE = 7;
 
-
     public static final int WARNING_THRESHOLD_DAYS = INACTIVITY_DAYS - WARNING_DAYS_BEFORE;
 
     private final NotificationFactory notificationFactory;
     private final UserRepository userRepository;
+    private final SalesforceSync salesforceSyncDelegate;
 
     /**
      * Executes the daily batch processing of account inactivity using optimized, targeted database queries.
      * <p>
      * Instead of scanning every active user, this method queries MySQL directly for:
      * <ol>
-     *     <li>Users inactive for &ge; 30 days (deactivates them and sends deactivation notice).</li>
-     *     <li>Users inactive for &ge; 23 and &lt; 30 days without prior warning (sends warning notice and sets timestamp).</li>
-     *     <li>Active users (&lt; 23 days) who logged back in (clears stale warning timestamps).</li>
+     *     <li>Users inactive for &ge; 30 days (deactivates them, syncs to Salesforce, and sends deactivation notice).</li>
+     *     <li>Users inactive for &ge; 23 and &lt; 30 days without prior warning (sends warning notice, sets timestamp, and syncs).</li>
+     *     <li>Active users (&lt; 23 days) who logged back in (clears stale warning timestamps and syncs to Salesforce).</li>
      * </ol>
      */
     @Transactional
@@ -85,6 +101,7 @@ public class AccountInactivityService {
             for (User user : usersToReset) {
                 user.setInactivityWarningSentAt(null);
                 userRepository.save(user);
+                syncUserToSalesforce(user);
             }
         }
 
@@ -121,11 +138,13 @@ public class AccountInactivityService {
         if (Objects.nonNull(user.getInactivityWarningSentAt())) {
             user.setInactivityWarningSentAt(null);
             userRepository.save(user);
+            syncUserToSalesforce(user);
         }
     }
 
     /**
-     * Deactivates an inactive user account in the database and dispatches a deactivation notice email.
+     * Deactivates an inactive user account in MySQL, synchronizes the DEACTIVATED status to Salesforce,
+     * and dispatches a deactivation notice email.
      *
      * @param user         The user entity to deactivate
      * @param inactiveDays Total elapsed inactive days
@@ -135,10 +154,11 @@ public class AccountInactivityService {
                 user.getEmail(), user.getId(), inactiveDays, INACTIVITY_DAYS);
 
         user.setStatus(AccountStatus.DEACTIVATED);
-        user.setDeactivatedAt(LocalDateTime.now());
+        user.setReactivationRequestStatus(null);
         userRepository.save(user);
+        syncUserToSalesforce(user);
 
-        log.info("Successfully deactivated user account in MySQL [ID: {}, Email: {}]",
+        log.info("Successfully deactivated user account in MySQL and initiated Salesforce sync [ID: {}, Email: {}]",
                 user.getId(), user.getEmail());
 
         try {
@@ -162,8 +182,9 @@ public class AccountInactivityService {
     }
 
     /**
-     * Handles sending the advance inactivity warning email if not previously sent.
-     * Calculates remaining days until deactivation and records the notification dispatch timestamp.
+     * Handles sending the advance inactivity warning email if not previously sent,
+     * records the warning timestamp in MySQL, and synchronizes to Salesforce.
+     * Calculates remaining days until deactivation.
      *
      * @param user         The user entity nearing deactivation
      * @param inactiveDays Current number of inactive days
@@ -171,7 +192,7 @@ public class AccountInactivityService {
     private void handleWarning(User user, long inactiveDays) {
         if (Objects.nonNull(user.getInactivityWarningSentAt())) {
             log.debug("Inactivity warning already sent to {} on {}. Skipping duplicate email.",
-                user.getEmail(), user.getInactivityWarningSentAt());
+                    user.getEmail(), user.getInactivityWarningSentAt());
             return;
         }
 
@@ -197,9 +218,32 @@ public class AccountInactivityService {
             notificationFactory.get(NotificationTypeEnum.EMAIL).send(warningNotice);
             user.setInactivityWarningSentAt(LocalDateTime.now());
             userRepository.save(user);
-            log.info("Persisted inactivity warning timestamp for user {}", user.getEmail());
+            syncUserToSalesforce(user);
+            log.info("Persisted and synced inactivity warning timestamp for user {}", user.getEmail());
         } catch (Exception e) {
             log.error("Failed to send inactivity warning to {}: {}", user.getEmail(), e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Synchronizes a user's status and inactivity metadata to Salesforce with failure handling.
+     *
+     * @param user The user entity to sync
+     */
+    private void syncUserToSalesforce(User user) {
+        if (Objects.nonNull(salesforceSyncDelegate) && Objects.nonNull(user) && Objects.nonNull(user.getUuid())) {
+            try {
+                salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(user));
+                user.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                userRepository.save(user);
+            } catch (Exception e) {
+                int retryCount = user.getSalesforceRetryCount() + 1;
+                user.setSalesforceRetryCount(retryCount);
+                user.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+                userRepository.save(user);
+                log.error("Salesforce dual-write failed for user [User ID: {}, UUID: {}, RetryCount: {}]: {}",
+                        user.getId(), user.getUuid(), retryCount, e.getMessage());
+            }
         }
     }
 

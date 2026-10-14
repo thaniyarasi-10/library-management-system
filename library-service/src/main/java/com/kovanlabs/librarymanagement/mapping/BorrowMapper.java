@@ -134,6 +134,11 @@ public interface BorrowMapper {
     @Mapping(target = "lastName", expression = "java((Objects.nonNull(user.getName()) && !user.getName().isBlank()) ? user.getName() : \"User\")")
     @Mapping(target = "email", source = "email")
     @Mapping(target = "role", expression = "java(Objects.nonNull(user.getRole()) ? user.getRole().name() : null)")
+    @Mapping(target = "phone", source = "phone")
+    @Mapping(target = "status", expression = "java(Objects.nonNull(user.getStatus()) ? user.getStatus().name() : null)")
+    @Mapping(target = "lastLoginAt", expression = "java(Objects.nonNull(user.getLastLoginAt()) ? user.getLastLoginAt().toString() : null)")
+    @Mapping(target = "reactivationRequestStatus", expression = "java(Objects.nonNull(user.getReactivationRequestStatus()) ? user.getReactivationRequestStatus().name() : null)")
+    @Mapping(target = "inactivityWarningSentAt", expression = "java(Objects.nonNull(user.getInactivityWarningSentAt()) ? user.getInactivityWarningSentAt().toString() : null)")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     ContactSObject toContactSObject(User user);

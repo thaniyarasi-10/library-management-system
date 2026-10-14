@@ -218,7 +218,7 @@ public class BorrowServiceImpl implements BorrowService {
     private void syncBorrowToSalesforce(Borrow borrow, String operation) {
         if (Objects.nonNull(salesforceSyncService)) {
             try {
-                salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(BorrowMapper.INSTANCE.mapToResponse(borrow)));
+                salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(borrow));
                 borrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
                 borrowRepository.save(borrow);
             } catch (Exception e) {

@@ -12,4 +12,9 @@ public final class ContactFields {
     public static final String LEGACY_USER_ID = "Legacy_User_ID__c";
     public static final String ROLE = "Role__c";
     public static final String PHONE = "Phone";
+    public static final String STATUS = "Status__c";
+    public static final String LAST_LOGIN_AT = "Last_Login_At__c";
+    public static final String REACTIVATION_REQUEST_STATUS = "Reactivation_Request_Status__c";
+    public static final String INACTIVITY_WARNING_SENT_AT = "Inactivity_Warning_Sent_At__c";
+    public static final String REWARD = "Reward__c";
 }

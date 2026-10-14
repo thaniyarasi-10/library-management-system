@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.database.entity;
 
 import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
+import com.kovanlabs.librarymanagement.database.enums.ReactivationRequestStatus;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import jakarta.persistence.Column;
@@ -14,8 +15,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -62,14 +61,11 @@ public class User extends BaseEntity {
     @Column(name = "inactivity_warning_sent_at")
     private LocalDateTime inactivityWarningSentAt;
 
-    @Column(name = "deactivated_at")
-    private LocalDateTime deactivatedAt;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reactivation_request_status")
+    private ReactivationRequestStatus reactivationRequestStatus;
 
-    @JdbcTypeCode(SqlTypes.TINYINT)
-    @Column(name = "reactivation_requested", nullable = false)
-    @Builder.Default
-    private boolean reactivationRequested = false;
-
-    @Column(name = "reactivation_requested_at")
-    private LocalDateTime reactivationRequestedAt;
+    public boolean isReactivationRequested() {
+        return reactivationRequestStatus == ReactivationRequestStatus.PENDING;
+    }
 }

@@ -106,7 +106,7 @@ class BorrowControllerTest {
     @Test
     @DisplayName("borrowBook with principal should call service with identifier and return 201 Created")
     void borrowBook_withPrincipal_shouldReturnCreated() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L, null, null);
         BorrowResponseDto response = BorrowResponseDto.builder()
                 .id(1L)
                 .borrowUuid(borrowUuid)
@@ -126,7 +126,7 @@ class BorrowControllerTest {
     @Test
     @DisplayName("borrowBook with null principal should call service with null identifier and return 201 Created")
     void borrowBook_withNullPrincipal_shouldReturnCreated() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = new BorrowRequestDto(10L, 1L, null, null);
         BorrowResponseDto response = BorrowResponseDto.builder()
                 .id(1L)
                 .borrowUuid(borrowUuid)

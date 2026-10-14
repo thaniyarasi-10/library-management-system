@@ -122,6 +122,7 @@ export default function App() {
   const [memberSortBy, setMemberSortBy] = useState('id');
   const [memberSortDir, setMemberSortDir] = useState('asc');
   const [reactivationRequests, setReactivationRequests] = useState([]);
+  const [reactivationTab, setReactivationTab] = useState('PENDING');
   const [requestingReactivation, setRequestingReactivation] = useState(false);
 
   // Borrows
@@ -167,6 +168,13 @@ export default function App() {
 
   // Toasts
   const [toasts, setToasts] = useState([]);
+
+  // Reactivation request counts
+  const pendingRequestsCount = reactivationRequests.filter(r =>
+    r.reactivationRequestStatus === 'PENDING' || (r.reactivationRequested && r.reactivationRequestStatus !== 'APPROVED' && r.reactivationRequestStatus !== 'REJECTED')
+  ).length;
+  const approvedRequestsCount = reactivationRequests.filter(r => r.reactivationRequestStatus === 'APPROVED').length;
+  const rejectedRequestsCount = reactivationRequests.filter(r => r.reactivationRequestStatus === 'REJECTED').length;
 
   const baseUrl = 'http://localhost:8080';
 
@@ -684,7 +692,8 @@ export default function App() {
     if (query) url = `/user/search?query=${encodeURIComponent(query)}&page=${page}&size=10&sortBy=${sortBy}&sortDir=${sortDir}`;
     const res = await fetchApi(url);
     if (res.ok && res.data) {
-      setMembers(res.data.content || res.data || []);
+      const list = res.data.content || res.data || [];
+      setMembers(list);
       setMembersTotalPages(res.data.totalPages || 1);
     }
     const reqRes = await fetchApi('/user/reactivation-requests');
@@ -1462,7 +1471,25 @@ export default function App() {
                 You can only submit a reactivation request after all outstanding fines have been cleared. Please contact library support or settle pending dues first.
               </p>
             </div>
-          ) : currentUser.reactivationRequested ? (
+          ) : currentUser.reactivationRequestStatus === 'REJECTED' ? (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                <X size={18} color="#ef4444" />
+                <strong style={{ fontSize: '14px', color: '#ef4444' }}>Reactivation Request Rejected</strong>
+              </div>
+              <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '14px' }}>
+                Your previous account reactivation request was rejected by an administrator. If you believe this is in error, you may submit a new reactivation request.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary btn-block"
+                onClick={handleReactivateRequest}
+                disabled={requestingReactivation}
+              >
+                {requestingReactivation ? 'Submitting Request...' : 'Submit New Request'}
+              </button>
+            </div>
+          ) : (currentUser.reactivationRequested || currentUser.reactivationRequestStatus === 'PENDING') ? (
             <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
                 <Check size={18} color="#3b82f6" />
@@ -1979,7 +2006,7 @@ export default function App() {
                 </button>
               </div>
 
-              {reactivationRequests.length > 0 && (
+              {pendingRequestsCount > 0 && (
                 <div
                   role="button"
                   tabIndex={0}
@@ -2004,7 +2031,7 @@ export default function App() {
                     <span style={{ fontSize: '20px' }}>🔔</span>
                     <div>
                       <strong style={{ color: '#f59e0b', fontSize: '14px' }}>
-                        {reactivationRequests.length} Pending Account Reactivation Request{reactivationRequests.length > 1 ? 's' : ''}
+                        {pendingRequestsCount} Pending Account Reactivation Request{pendingRequestsCount > 1 ? 's' : ''}
                       </strong>
                       <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
                         Deactivated members have requested reactivation and are awaiting review. Click to take action.
@@ -2037,9 +2064,9 @@ export default function App() {
                       <th>Member Name</th>
                       <th>Email Address</th>
                       <th width="150">Phone Number</th>
-                      <th width="130">Status</th>
+                      <th width="140">Status</th>
                       <th width="130">Reward Points</th>
-                      <th width="220" className="text-right">Actions</th>
+                      <th width="240" className="text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2063,19 +2090,31 @@ export default function App() {
                           </td>
                           <td>
                             {String(m.status || '').toUpperCase() === 'DEACTIVATED' ? (
-                              m.reactivationRequested ? (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '11px' }}>
-                                  Pending Reactivation
-                                </span>
-                              ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '11px' }}>
                                   Deactivated
                                 </span>
-                              )
+                                {(m.reactivationRequestStatus === 'PENDING' || m.reactivationRequested) ? (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '1px 6px', borderRadius: '8px', fontWeight: '500', fontSize: '10px' }}>
+                                    Pending Review
+                                  </span>
+                                ) : m.reactivationRequestStatus === 'REJECTED' ? (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '1px 6px', borderRadius: '8px', fontWeight: '500', fontSize: '10px' }}>
+                                    Request Rejected
+                                  </span>
+                                ) : null}
+                              </div>
                             ) : (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '11px' }}>
-                                Active
-                              </span>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '11px' }}>
+                                  Active
+                                </span>
+                                {m.reactivationRequestStatus === 'APPROVED' && (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.2)', padding: '1px 6px', borderRadius: '8px', fontWeight: '500', fontSize: '10px' }}>
+                                    Reactivated
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </td>
                           <td>
@@ -2086,13 +2125,26 @@ export default function App() {
                           <td className="text-right">
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
                               {String(m.status || '').toUpperCase() === 'DEACTIVATED' ? (
-                                <button
-                                  className="btn btn-sm"
-                                  style={{ background: 'var(--accent-primary, #3b82f6)', color: '#fff', fontSize: '11px', padding: '3px 8px' }}
-                                  onClick={() => handleApproveReactivation(m.id, m.name || m.email)}
-                                >
-                                  {m.reactivationRequested ? 'Approve' : 'Reactivate'}
-                                </button>
+                                <>
+                                  <button
+                                    className="btn btn-sm"
+                                    style={{ background: 'var(--accent-primary, #3b82f6)', color: '#fff', fontSize: '11px', padding: '3px 8px' }}
+                                    title="Approve / Reactivate account"
+                                    onClick={() => handleApproveReactivation(m.id, m.name || m.email)}
+                                  >
+                                    {(m.reactivationRequestStatus === 'PENDING' || m.reactivationRequested) ? 'Approve' : 'Reactivate'}
+                                  </button>
+                                  {(m.reactivationRequestStatus === 'PENDING' || m.reactivationRequested) && (
+                                    <button
+                                      className="btn btn-sm btn-danger"
+                                      style={{ fontSize: '11px', padding: '3px 8px' }}
+                                      title="Reject reactivation request"
+                                      onClick={() => handleRejectReactivation(m.id, m.name || m.email)}
+                                    >
+                                      Reject
+                                    </button>
+                                  )}
+                                </>
                               ) : (
                                 <button
                                   className="btn btn-sm"
@@ -3677,115 +3729,260 @@ export default function App() {
         </div>
       )}
 
-      {/* 9. Pending Reactivation Requests Modal */}
+      {/* 9. Reactivation Requests Modal */}
       {activeModal === 'reactivationRequests' && (
         <div className="modal-backdrop open">
-          <div className="modal-card" style={{ maxWidth: '640px', width: '100%' }}>
+          <div className="modal-card" style={{ maxWidth: '680px', width: '100%' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span style={{ fontSize: '20px' }}>🔔</span>
                 <div>
-                  <h3 style={{ margin: 0 }}>Pending Reactivation Requests</h3>
+                  <h3 style={{ margin: 0 }}>Account Reactivation Requests</h3>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    {reactivationRequests.length} pending request{reactivationRequests.length === 1 ? '' : 's'} awaiting review
+                    {pendingRequestsCount} pending, {approvedRequestsCount} approved, {rejectedRequestsCount} rejected
                   </span>
                 </div>
               </div>
               <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
             </div>
+
+            {/* Filter Tabs */}
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              padding: '12px 20px',
+              borderBottom: '1px solid var(--border-subtle)',
+              background: 'var(--bg-app, rgba(255,255,255,0.02))'
+            }}>
+              {[
+                { id: 'PENDING', label: 'Pending', count: pendingRequestsCount, color: '#f59e0b' },
+                { id: 'APPROVED', label: 'Approved', count: approvedRequestsCount, color: '#10b981' },
+                { id: 'REJECTED', label: 'Rejected', count: rejectedRequestsCount, color: '#ef4444' },
+                { id: 'ALL', label: 'All Requests', count: reactivationRequests.length, color: 'var(--accent-primary)' }
+              ].map(tab => {
+                const isActive = reactivationTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setReactivationTab(tab.id)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.15s ease',
+                      border: isActive ? `1px solid ${tab.color}` : '1px solid var(--border-subtle)',
+                      background: isActive ? `${tab.color}22` : 'transparent',
+                      color: isActive ? tab.color : 'var(--text-muted)'
+                    }}
+                  >
+                    <span>{tab.label}</span>
+                    <span style={{
+                      fontSize: '10px',
+                      padding: '1px 6px',
+                      borderRadius: '10px',
+                      background: isActive ? tab.color : 'rgba(255,255,255,0.1)',
+                      color: isActive ? '#fff' : 'var(--text-muted)'
+                    }}>
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-              {reactivationRequests.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '36px 16px' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '8px' }}>✨</div>
-                  <p style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '600', margin: '0 0 4px' }}>
-                    No Pending Requests
-                  </p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: 0 }}>
-                    All account reactivation requests have been reviewed.
-                  </p>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {reactivationRequests.map((req, idx) => (
-                    <div
-                      key={req.id ?? req.uuid ?? req.email ?? `req-${idx}`}
-                      style={{
-                        padding: '14px 16px',
-                        borderRadius: '8px',
-                        background: 'var(--bg-app, rgba(255,255,255,0.03))',
-                        border: '1px solid var(--border-subtle)',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        flexWrap: 'wrap',
-                        gap: '12px'
-                      }}
-                    >
-                      <div style={{ flex: '1 1 240px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                          <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>
-                            {req.name || req.email}
-                          </strong>
-                          <span style={{
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            padding: '2px 8px',
-                            borderRadius: '10px',
-                            background: 'rgba(245, 158, 11, 0.15)',
-                            color: '#f59e0b',
-                            border: '1px solid rgba(245, 158, 11, 0.3)'
-                          }}>
-                            Pending Review
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                          <div>📧 <code>{req.email}</code></div>
-                          {req.phone && <div>📞 <code>{req.phone}</code></div>}
-                          {req.rewardPoints !== undefined && (
-                            <div style={{ color: '#eab308', fontWeight: '500' }}>🏆 {req.rewardPoints} Reward Points</div>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          style={{
-                            background: 'var(--accent-primary, #3b82f6)',
-                            color: '#fff',
-                            fontSize: '12px',
-                            padding: '6px 14px',
-                            fontWeight: '600',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                          onClick={() => handleApproveReactivation(req.id, req.name || req.email)}
-                        >
-                          <Check size={14} />
-                          <span>Approve</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          style={{
-                            fontSize: '12px',
-                            padding: '6px 14px',
-                            fontWeight: '600',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                          onClick={() => handleRejectReactivation(req.id, req.name || req.email)}
-                        >
-                          <X size={14} />
-                          <span>Reject</span>
-                        </button>
-                      </div>
+              {(() => {
+                const displayedRequests = reactivationRequests.filter(req => {
+                  const reqStatus = (req.reactivationRequestStatus || (req.reactivationRequested ? 'PENDING' : 'NONE')).toUpperCase();
+                  if (reactivationTab === 'ALL') return true;
+                  if (reactivationTab === 'PENDING') return reqStatus === 'PENDING' || (req.reactivationRequested && reqStatus !== 'APPROVED' && reqStatus !== 'REJECTED');
+                  if (reactivationTab === 'APPROVED') return reqStatus === 'APPROVED';
+                  if (reactivationTab === 'REJECTED') return reqStatus === 'REJECTED';
+                  return true;
+                });
+
+                if (displayedRequests.length === 0) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '36px 16px' }}>
+                      <div style={{ fontSize: '32px', marginBottom: '8px' }}>✨</div>
+                      <p style={{ color: 'var(--text-main)', fontSize: '14px', fontWeight: '600', margin: '0 0 4px' }}>
+                        No {reactivationTab !== 'ALL' ? reactivationTab.toLowerCase() : ''} requests found
+                      </p>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: 0 }}>
+                        {reactivationTab === 'PENDING'
+                          ? 'All account reactivation requests have been reviewed.'
+                          : `There are currently no ${reactivationTab.toLowerCase()} account requests.`}
+                      </p>
                     </div>
-                  ))}
-                </div>
-              )}
+                  );
+                }
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {displayedRequests.map((req, idx) => {
+                      const reqStatus = (req.reactivationRequestStatus || (req.reactivationRequested ? 'PENDING' : 'NONE')).toUpperCase();
+                      const isPending = reqStatus === 'PENDING' || (req.reactivationRequested && reqStatus !== 'APPROVED' && reqStatus !== 'REJECTED');
+                      const isApproved = reqStatus === 'APPROVED';
+                      const isRejected = reqStatus === 'REJECTED';
+
+                      return (
+                        <div
+                          key={req.id ?? req.uuid ?? req.email ?? `req-${idx}`}
+                          style={{
+                            padding: '14px 16px',
+                            borderRadius: '8px',
+                            background: 'var(--bg-app, rgba(255,255,255,0.03))',
+                            border: '1px solid var(--border-subtle)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: '12px'
+                          }}
+                        >
+                          <div style={{ flex: '1 1 240px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                              <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>
+                                {req.name || req.email}
+                              </strong>
+                              {isPending && (
+                                <span style={{
+                                  fontSize: '11px',
+                                  fontWeight: '600',
+                                  padding: '2px 8px',
+                                  borderRadius: '10px',
+                                  background: 'rgba(245, 158, 11, 0.15)',
+                                  color: '#f59e0b',
+                                  border: '1px solid rgba(245, 158, 11, 0.3)'
+                                }}>
+                                  Pending Review
+                                </span>
+                              )}
+                              {isApproved && (
+                                <span style={{
+                                  fontSize: '11px',
+                                  fontWeight: '600',
+                                  padding: '2px 8px',
+                                  borderRadius: '10px',
+                                  background: 'rgba(16, 185, 129, 0.15)',
+                                  color: '#10b981',
+                                  border: '1px solid rgba(16, 185, 129, 0.3)'
+                                }}>
+                                  Approved
+                                </span>
+                              )}
+                              {isRejected && (
+                                <span style={{
+                                  fontSize: '11px',
+                                  fontWeight: '600',
+                                  padding: '2px 8px',
+                                  borderRadius: '10px',
+                                  background: 'rgba(239, 68, 68, 0.15)',
+                                  color: '#ef4444',
+                                  border: '1px solid rgba(239, 68, 68, 0.3)'
+                                }}>
+                                  Rejected
+                                </span>
+                              )}
+                              <span style={{
+                                fontSize: '10px',
+                                fontWeight: '500',
+                                padding: '1px 6px',
+                                borderRadius: '6px',
+                                background: String(req.status || '').toUpperCase() === 'ACTIVE' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                color: String(req.status || '').toUpperCase() === 'ACTIVE' ? '#10b981' : '#ef4444'
+                              }}>
+                                {String(req.status || '').toUpperCase() === 'ACTIVE' ? 'Active Account' : 'Deactivated Account'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                              <div>📧 <code>{req.email}</code></div>
+                              {req.phone && <div>📞 <code>{req.phone}</code></div>}
+                              {req.rewardPoints !== undefined && (
+                                <div style={{ color: '#eab308', fontWeight: '500' }}>🏆 {req.rewardPoints} Reward Points</div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {isPending && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm"
+                                  style={{
+                                    background: 'var(--accent-primary, #3b82f6)',
+                                    color: '#fff',
+                                    fontSize: '12px',
+                                    padding: '6px 14px',
+                                    fontWeight: '600',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                  onClick={() => handleApproveReactivation(req.id, req.name || req.email)}
+                                >
+                                  <Check size={14} />
+                                  <span>Approve</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-danger"
+                                  style={{
+                                    fontSize: '12px',
+                                    padding: '6px 14px',
+                                    fontWeight: '600',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                  onClick={() => handleRejectReactivation(req.id, req.name || req.email)}
+                                >
+                                  <X size={14} />
+                                  <span>Reject</span>
+                                </button>
+                              </>
+                            )}
+                            {isRejected && (
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                style={{
+                                  background: 'var(--accent-primary, #3b82f6)',
+                                  color: '#fff',
+                                  fontSize: '12px',
+                                  padding: '6px 14px',
+                                  fontWeight: '600',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                title="Approve previously rejected request"
+                                onClick={() => handleApproveReactivation(req.id, req.name || req.email)}
+                              >
+                                <Check size={14} />
+                                <span>Approve</span>
+                              </button>
+                            )}
+                            {isApproved && (
+                              <span style={{ fontSize: '12px', color: '#10b981', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <Check size={14} />
+                                <span>Restored</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" onClick={() => setActiveModal(null)}>

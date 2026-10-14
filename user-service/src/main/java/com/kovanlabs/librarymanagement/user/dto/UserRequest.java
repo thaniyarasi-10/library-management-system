@@ -17,8 +17,4 @@ public record UserRequest(
         message = "Invalid mobile number. Please enter a valid mobile number with country code"
     )
     String phone
-) {
-    public UserRequest(String email, String name) {
-        this(email, name, null);
-    }
-}
+) {}

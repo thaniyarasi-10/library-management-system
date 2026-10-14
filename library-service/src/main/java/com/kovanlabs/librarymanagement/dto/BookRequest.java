@@ -11,8 +11,4 @@ public record BookRequest(
         @NotNull(message = "Total book count is required")
         @Min(value = 1, message = "Total book count must be at least 1")
         Integer totalBookCount
-) {
-    public BookRequest(String title, String author, String isbn) {
-        this(title, author, isbn, 1);
-    }
-}
+) {}

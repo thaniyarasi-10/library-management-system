@@ -46,7 +46,7 @@ public class NotificationScheduler {
      * Updates borrow record statuses, calculates accrued overdue fines, and enqueues
      * notification requests to SQS for asynchronous email delivery.
      */
-    @Scheduled(cron = "${notification.scheduling.cron:0 0/2 * * * *}")
+    @Scheduled(cron = "${notification.scheduling.cron:0 0 0 * * *}")
     @Transactional
     public void sendOverdueNotifications() {
         log.info("Executing scheduled task at midnight to process overdue borrow records and send notifications");

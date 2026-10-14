@@ -7,7 +7,9 @@ import com.kovanlabs.librarymanagement.communication.factory.NotificationFactory
 import com.kovanlabs.librarymanagement.communication.service.NotificationService;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import com.kovanlabs.librarymanagement.service.AccountInactivityService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,6 +21,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class AccountInactivityServiceTest {
@@ -26,6 +29,7 @@ class AccountInactivityServiceTest {
     private NotificationFactory notificationFactory;
     private NotificationService emailNotificationService;
     private UserRepository userRepository;
+    private SalesforceSync salesforceSyncDelegate;
     private AccountInactivityService service;
 
     @BeforeEach
@@ -33,12 +37,14 @@ class AccountInactivityServiceTest {
         notificationFactory = mock(NotificationFactory.class);
         emailNotificationService = mock(NotificationService.class);
         userRepository = mock(UserRepository.class);
+        salesforceSyncDelegate = mock(SalesforceSync.class);
 
         when(notificationFactory.get(NotificationTypeEnum.EMAIL)).thenReturn(emailNotificationService);
 
         service = new AccountInactivityService(
                 notificationFactory,
-                userRepository
+                userRepository,
+                salesforceSyncDelegate
         );
     }
 
@@ -57,6 +63,7 @@ class AccountInactivityServiceTest {
         verifyNoInteractions(notificationFactory);
         verifyNoInteractions(emailNotificationService);
         verifyNoInteractions(userRepository);
+        verifyNoInteractions(salesforceSyncDelegate);
     }
 
     @Test
@@ -74,8 +81,9 @@ class AccountInactivityServiceTest {
         service.processUser(user);
 
         assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
-        assertNotNull(user.getDeactivatedAt());
-        verify(userRepository).save(user);
+        assertEquals(SalesforceSyncStatus.SUCCESS, user.getSalesforceSyncStatus());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any());
 
         ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
         verify(emailNotificationService, times(1)).send(captor.capture());
@@ -101,8 +109,9 @@ class AccountInactivityServiceTest {
         service.processUser(user);
 
         assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
-        assertNotNull(user.getDeactivatedAt());
-        verify(userRepository).save(user);
+        assertEquals(SalesforceSyncStatus.SUCCESS, user.getSalesforceSyncStatus());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any());
 
         verify(emailNotificationService, times(1)).send(any(NotificationRequest.class));
     }
@@ -123,6 +132,7 @@ class AccountInactivityServiceTest {
 
         assertEquals(AccountStatus.ACTIVE, user.getStatus());
         assertNotNull(user.getInactivityWarningSentAt());
+        assertEquals(SalesforceSyncStatus.SUCCESS, user.getSalesforceSyncStatus());
 
         ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
         verify(emailNotificationService, times(1)).send(captor.capture());
@@ -132,7 +142,8 @@ class AccountInactivityServiceTest {
         assertEquals(EmailTemplateType.INACTIVITY_WARNING, sent.templateType());
         assertTrue(sent.inactiveDays() >= 23);
 
-        verify(userRepository).save(user);
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any());
     }
 
     @Test
@@ -152,6 +163,7 @@ class AccountInactivityServiceTest {
 
         verifyNoInteractions(notificationFactory);
         verifyNoInteractions(emailNotificationService);
+        verifyNoInteractions(salesforceSyncDelegate);
         verify(userRepository, never()).save(any());
     }
 
@@ -189,7 +201,8 @@ class AccountInactivityServiceTest {
 
         assertDoesNotThrow(() -> service.processUser(user));
         assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
-        verify(userRepository).save(user);
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any());
     }
 
     @Test
@@ -208,7 +221,8 @@ class AccountInactivityServiceTest {
         service.processUser(user);
 
         assertNull(user.getInactivityWarningSentAt());
-        verify(userRepository).save(user);
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any());
         verifyNoInteractions(emailNotificationService);
     }
 
@@ -228,6 +242,7 @@ class AccountInactivityServiceTest {
 
         verifyNoInteractions(notificationFactory);
         verifyNoInteractions(emailNotificationService);
+        verifyNoInteractions(salesforceSyncDelegate);
         verify(userRepository, never()).save(any());
     }
 
@@ -249,6 +264,30 @@ class AccountInactivityServiceTest {
         assertEquals(AccountStatus.ACTIVE, user.getStatus());
         verify(userRepository, never()).save(any());
         verifyNoInteractions(emailNotificationService);
+        verifyNoInteractions(salesforceSyncDelegate);
+    }
+
+    @Test
+    @DisplayName("processUser when Salesforce sync throws exception should increment retry count and set status PENDING")
+    void processUser_salesforceSyncFails_shouldTrackRetry() {
+        User user = User.builder()
+                .id(999L)
+                .uuid("u-999")
+                .email("sffail@test.com")
+                .name("SF Fail User")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(35))
+                .salesforceRetryCount(0)
+                .build();
+
+        doThrow(new RuntimeException("SF timeout")).when(salesforceSyncDelegate).syncContact(any());
+
+        service.processUser(user);
+
+        assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
+        assertEquals(SalesforceSyncStatus.PENDING, user.getSalesforceSyncStatus());
+        assertEquals(1, user.getSalesforceRetryCount());
+        verify(userRepository, atLeastOnce()).save(user);
     }
 
     @Test
@@ -292,15 +331,16 @@ class AccountInactivityServiceTest {
         service.processInactiveAccounts();
 
         assertEquals(AccountStatus.DEACTIVATED, userToDeactivate.getStatus());
-        assertNotNull(userToDeactivate.getDeactivatedAt());
-        verify(userRepository).save(userToDeactivate);
+        verify(userRepository, atLeastOnce()).save(userToDeactivate);
 
         assertEquals(AccountStatus.ACTIVE, userToWarn.getStatus());
         assertNotNull(userToWarn.getInactivityWarningSentAt());
-        verify(userRepository).save(userToWarn);
+        verify(userRepository, atLeastOnce()).save(userToWarn);
 
         assertNull(userToReset.getInactivityWarningSentAt());
-        verify(userRepository).save(userToReset);
+        verify(userRepository, atLeastOnce()).save(userToReset);
+
+        verify(salesforceSyncDelegate, times(3)).syncContact(any());
 
         ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
         verify(emailNotificationService, times(2)).send(captor.capture());
@@ -332,6 +372,7 @@ class AccountInactivityServiceTest {
         assertDoesNotThrow(() -> service.processInactiveAccounts());
 
         verify(emailNotificationService, never()).send(any());
+        verify(salesforceSyncDelegate, never()).syncContact(any());
         verify(userRepository, never()).save(any());
     }
 
@@ -362,7 +403,8 @@ class AccountInactivityServiceTest {
         assertDoesNotThrow(() -> service.processInactiveAccounts());
 
         assertEquals(AccountStatus.DEACTIVATED, succeedingUser.getStatus());
-        verify(userRepository).save(succeedingUser);
+        verify(userRepository, atLeastOnce()).save(succeedingUser);
+        verify(salesforceSyncDelegate, times(1)).syncContact(any());
         verify(emailNotificationService, times(1)).send(any());
     }
 
@@ -394,7 +436,8 @@ class AccountInactivityServiceTest {
 
         assertEquals(AccountStatus.ACTIVE, succeedingWarnUser.getStatus());
         assertNotNull(succeedingWarnUser.getInactivityWarningSentAt());
-        verify(userRepository).save(succeedingWarnUser);
+        verify(userRepository, atLeastOnce()).save(succeedingWarnUser);
+        verify(salesforceSyncDelegate, times(1)).syncContact(any());
         verify(emailNotificationService, times(1)).send(any());
     }
 }

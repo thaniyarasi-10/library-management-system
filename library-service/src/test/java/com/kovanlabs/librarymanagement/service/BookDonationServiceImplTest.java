@@ -4,6 +4,7 @@ import com.kovanlabs.librarymanagement.aws.s3.dto.S3UploadResponse;
 import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.BookDonation;
+import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.entity.UserProvider;
 import com.kovanlabs.librarymanagement.database.enums.DonationStatus;
@@ -589,12 +590,16 @@ class BookDonationServiceImplTest {
         when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
         when(bookDonationRepository.save(any(BookDonation.class))).thenAnswer(inv -> inv.getArgument(0));
         when(rewardRepository.incrementPoints(sampleDonation.getUser().getUuid(), 6)).thenReturn(1);
+        when(rewardRepository.findByUserUuid(sampleDonation.getUser().getUuid())).thenReturn(Optional.of(
+                Reward.builder().userUuid(sampleDonation.getUser().getUuid()).points(12).build()
+        ));
 
         BookDonationResponse response = bookDonationService.approveDonation(sampleDonation.getUuid(), "admin@example.com");
 
         assertNotNull(response);
         assertEquals(DonationStatus.APPROVED, response.status());
         verify(rewardRepository, never()).save(any());
+        verify(salesforceSyncService).syncContact(argThat(c -> sampleDonation.getUser().getUuid().equals(c.getExternalUserUuid()) && Integer.valueOf(12).equals(c.getReward())));
     }
 
     @Test

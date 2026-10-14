@@ -86,4 +86,16 @@
         </sql>
     </changeSet>
 
+    <changeSet id="24-align-account-inactivity-and-reactivation-columns" author="thani">
+        <addColumn tableName="user">
+            <column name="reactivation_request_status" type="varchar(20)"/>
+        </addColumn>
+        <sql>
+            UPDATE user SET reactivation_request_status = 'PENDING' WHERE reactivation_requested = 1;
+        </sql>
+        <dropColumn tableName="user" columnName="reactivation_requested"/>
+        <dropColumn tableName="user" columnName="reactivation_requested_at"/>
+        <dropColumn tableName="user" columnName="deactivated_at"/>
+    </changeSet>
+
 </databaseChangeLog>

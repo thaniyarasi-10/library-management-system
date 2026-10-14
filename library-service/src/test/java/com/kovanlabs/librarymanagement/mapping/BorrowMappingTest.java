@@ -95,7 +95,7 @@ class BorrowMappingTest {
 
     @Test
     void testMapToEntity_BorrowRequest() {
-        BorrowRequestDto request = new BorrowRequestDto(100L, 200L);
+        BorrowRequestDto request = new BorrowRequestDto(100L, 200L, null, null);
         Book book = Book.builder().id(100L).build();
         User user = User.builder().id(200L).build();
 

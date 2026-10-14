@@ -18,6 +18,7 @@ import com.kovanlabs.librarymanagement.dto.BookDonationRequest;
 import com.kovanlabs.librarymanagement.dto.BookDonationResponse;
 import com.kovanlabs.librarymanagement.mapping.BookDonationMapper;
 import com.kovanlabs.librarymanagement.mapping.BookMapper;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -357,6 +358,21 @@ public class BookDonationServiceImpl implements BookDonationService {
                 rewardRepository.save(newReward);
             }
             log.info("Awarded {} reward points to donor [UUID: {}] for approved book donation", pointsEarned, donorUuid);
+
+            if (Objects.nonNull(salesforceSyncService)) {
+                try {
+                    int totalPoints = rewardRepository.findByUserUuid(donorUuid)
+                            .map(Reward::getPoints)
+                            .orElse(pointsEarned);
+                    salesforceSyncService.syncContact(ContactSObject.builder()
+                            .externalUserUuid(donorUuid)
+                            .reward(totalPoints)
+                            .build());
+                    log.info("Synchronized reward points ({}) to Salesforce for donor [{}]", totalPoints, donorUuid);
+                } catch (Exception e) {
+                    log.error("Failed to sync reward points to Salesforce for donor [UUID: {}]: {}", donorUuid, e.getMessage());
+                }
+            }
         }
 
         donation.setBook(targetBook);

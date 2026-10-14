@@ -68,7 +68,7 @@ class UserMapperTest {
 
     @Test
     void testMapToEntity() {
-        UserRequest request = new UserRequest("test@example.com", "Test User");
+        UserRequest request = new UserRequest("test@example.com", "Test User", null);
 
         User entity = userMapper.mapToEntity(request);
 
@@ -85,6 +85,7 @@ class UserMapperTest {
     @Test
     void testToContactSObject_withUserEntity() {
         String uuid = UUID.randomUUID().toString();
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
         User user = User.builder()
                 .uuid(uuid)
                 .id(1L)
@@ -92,6 +93,10 @@ class UserMapperTest {
                 .email("alice@example.com")
                 .role(com.kovanlabs.librarymanagement.database.enums.RoleEnum.ADMIN)
                 .phone("+15555555555")
+                .status(com.kovanlabs.librarymanagement.database.enums.AccountStatus.DEACTIVATED)
+                .reactivationRequestStatus(com.kovanlabs.librarymanagement.database.enums.ReactivationRequestStatus.PENDING)
+                .lastLoginAt(now)
+                .inactivityWarningSentAt(now.minusDays(5))
                 .build();
 
         var sObject = userMapper.toContactSObject(user);
@@ -102,6 +107,10 @@ class UserMapperTest {
         assertEquals("alice@example.com", sObject.getEmail());
         assertEquals("ADMIN", sObject.getRole());
         assertEquals("+15555555555", sObject.getPhone());
+        assertEquals("DEACTIVATED", sObject.getStatus());
+        assertEquals("PENDING", sObject.getReactivationRequestStatus());
+        assertEquals(now.toString(), sObject.getLastLoginAt());
+        assertEquals(now.minusDays(5).toString(), sObject.getInactivityWarningSentAt());
 
         assertNull(userMapper.toContactSObject((User) null));
     }
@@ -109,7 +118,7 @@ class UserMapperTest {
     @Test
     void testToContactSObject_withUserResponse() {
         String uuid = UUID.randomUUID().toString();
-        UserResponse dto = new UserResponse(uuid, 2L, "Bob", "bob@example.com", "USER", 10, "+15555555555");
+        UserResponse dto = new UserResponse(uuid, 2L, "Bob", "bob@example.com", "USER", 10, "+15555555555", "DEACTIVATED", true, false, 0.0, "PENDING");
 
         var sObject = userMapper.toContactSObject(dto);
         assertNotNull(sObject);
@@ -119,6 +128,10 @@ class UserMapperTest {
         assertEquals("bob@example.com", sObject.getEmail());
         assertEquals("USER", sObject.getRole());
         assertEquals("+15555555555", sObject.getPhone());
+        assertEquals("DEACTIVATED", sObject.getStatus());
+        assertEquals("PENDING", sObject.getReactivationRequestStatus());
+
+        assertEquals(10, sObject.getReward());
 
         assertNull(userMapper.toContactSObject((UserResponse) null));
     }
@@ -133,6 +146,9 @@ class UserMapperTest {
                 .email("charlie@example.com")
                 .role("ADMIN")
                 .phone("+15555555555")
+                .status("DEACTIVATED")
+                .reactivationRequestStatus("PENDING")
+                .reward(75)
                 .build();
 
         UserResponse res = userMapper.toUserResponse(contact);
@@ -143,10 +159,15 @@ class UserMapperTest {
         assertEquals("charlie@example.com", res.email());
         assertEquals("ADMIN", res.role());
         assertEquals("+15555555555", res.phone());
+        assertEquals("DEACTIVATED", res.status());
+        assertEquals("PENDING", res.reactivationRequestStatus());
+        assertEquals(75, res.rewardPoints());
+        assertTrue(res.reactivationRequested());
 
         List<UserResponse> list = userMapper.toUserResponseList(List.of(contact));
         assertEquals(1, list.size());
         assertEquals("+15555555555", list.get(0).phone());
+        assertEquals(75, list.get(0).rewardPoints());
         assertNull(userMapper.toUserResponseList(null));
     }
 
@@ -161,6 +182,7 @@ class UserMapperTest {
                 .role(com.kovanlabs.librarymanagement.database.enums.RoleEnum.USER)
                 .phone("+11234567890")
                 .status(com.kovanlabs.librarymanagement.database.enums.AccountStatus.DEACTIVATED)
+                .reactivationRequestStatus(com.kovanlabs.librarymanagement.database.enums.ReactivationRequestStatus.APPROVED)
                 .build();
 
         UserResponse res = userMapper.mapToResponse(user, 150);
@@ -174,6 +196,7 @@ class UserMapperTest {
         assertEquals("+11234567890", res.phone());
         assertEquals(150, res.rewardPoints());
         assertEquals("DEACTIVATED", res.status());
+        assertEquals("APPROVED", res.reactivationRequestStatus());
 
         assertNull(userMapper.mapToResponse((User) null, 50));
     }
