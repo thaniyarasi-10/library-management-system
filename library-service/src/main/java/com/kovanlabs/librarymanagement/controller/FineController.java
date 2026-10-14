@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Objects;
 
 @RestController
-@RequestMapping("/fines")
+@RequestMapping({"/api/fines", "/fines"})
 @RequiredArgsConstructor
 public class FineController {
 

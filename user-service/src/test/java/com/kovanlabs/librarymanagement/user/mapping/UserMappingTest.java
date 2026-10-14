@@ -111,6 +111,16 @@ class UserMapperTest {
         assertEquals("PENDING", sObject.getReactivationRequestStatus());
         assertEquals(now.toString(), sObject.getLastLoginAt());
         assertEquals(now.minusDays(5).toString(), sObject.getInactivityWarningSentAt());
+        assertEquals(0, sObject.getReward());
+
+        User activeUser = User.builder()
+                .uuid(uuid)
+                .id(2L)
+                .name("Active User")
+                .status(com.kovanlabs.librarymanagement.database.enums.AccountStatus.ACTIVE)
+                .build();
+        var activeSObject = userMapper.toContactSObject(activeUser);
+        assertNull(activeSObject.getReward());
 
         assertNull(userMapper.toContactSObject((User) null));
     }

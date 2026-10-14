@@ -3,6 +3,7 @@ package com.kovanlabs.librarymanagement.service;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
@@ -136,5 +137,56 @@ class RewardServiceTest {
 
         assertDoesNotThrow(() -> rewardService.processOnTimeReturnRewards());
         verify(borrowRepository).markBorrowsAsRewardProcessed(any());
+    }
+
+    @Test
+    void testProcessOnTimeReturnRewards_withDeactivatedUser_doesNotAwardRewardPoints() {
+        User deactUser = User.builder()
+                .uuid(UUID.randomUUID().toString())
+                .email("deact@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+        Borrow deactBorrow = Borrow.builder()
+                .uuid(UUID.randomUUID().toString())
+                .user(deactUser)
+                .rewardProcessed(false)
+                .build();
+
+        when(borrowRepository.findUnprocessedOnTimeBorrows()).thenReturn(List.of(deactBorrow));
+        when(borrowRepository.markBorrowsAsRewardProcessed(any())).thenReturn(1);
+
+        int processed = rewardService.processOnTimeReturnRewards();
+
+        assertEquals(1, processed);
+        verify(rewardRepository, never()).incrementPoints(any(), anyInt());
+        verify(rewardRepository, never()).save(any(Reward.class));
+        verifyNoInteractions(salesforceSyncService);
+    }
+
+    @Test
+    void testProcessOnTimeReturnRewards_withReactivatedUser_awardsRewardPointsNormally() {
+        String reactivatedUuid = UUID.randomUUID().toString();
+        User reactivatedUser = User.builder()
+                .uuid(reactivatedUuid)
+                .email("reactivated@example.com")
+                .status(AccountStatus.ACTIVE)
+                .build();
+        Borrow reactivatedBorrow = Borrow.builder()
+                .uuid(UUID.randomUUID().toString())
+                .user(reactivatedUser)
+                .rewardProcessed(false)
+                .build();
+
+        when(borrowRepository.findUnprocessedOnTimeBorrows()).thenReturn(List.of(reactivatedBorrow));
+        when(rewardRepository.incrementPoints(eq(reactivatedUuid), eq(1))).thenReturn(1);
+        when(rewardRepository.findByUserUuid(reactivatedUuid))
+                .thenReturn(Optional.of(Reward.builder().userUuid(reactivatedUuid).points(1).build()));
+        when(borrowRepository.markBorrowsAsRewardProcessed(any())).thenReturn(1);
+
+        int processed = rewardService.processOnTimeReturnRewards();
+
+        assertEquals(1, processed);
+        verify(rewardRepository).incrementPoints(reactivatedUuid, 1);
+        verify(salesforceSyncService).syncContact(argThat(c -> reactivatedUuid.equals(c.getExternalUserUuid()) && Integer.valueOf(1).equals(c.getReward())));
     }
 }

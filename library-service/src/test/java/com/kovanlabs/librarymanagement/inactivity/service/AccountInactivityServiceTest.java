@@ -8,7 +8,9 @@ import com.kovanlabs.librarymanagement.communication.service.NotificationService
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
+import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import com.kovanlabs.librarymanagement.service.AccountInactivityService;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +31,7 @@ class AccountInactivityServiceTest {
     private NotificationFactory notificationFactory;
     private NotificationService emailNotificationService;
     private UserRepository userRepository;
+    private RewardRepository rewardRepository;
     private SalesforceSync salesforceSyncDelegate;
     private AccountInactivityService service;
 
@@ -37,6 +40,7 @@ class AccountInactivityServiceTest {
         notificationFactory = mock(NotificationFactory.class);
         emailNotificationService = mock(NotificationService.class);
         userRepository = mock(UserRepository.class);
+        rewardRepository = mock(RewardRepository.class);
         salesforceSyncDelegate = mock(SalesforceSync.class);
 
         when(notificationFactory.get(NotificationTypeEnum.EMAIL)).thenReturn(emailNotificationService);
@@ -44,6 +48,7 @@ class AccountInactivityServiceTest {
         service = new AccountInactivityService(
                 notificationFactory,
                 userRepository,
+                rewardRepository,
                 salesforceSyncDelegate
         );
     }
@@ -78,12 +83,19 @@ class AccountInactivityServiceTest {
                 .lastLoginAt(LocalDateTime.now().minusDays(31))
                 .build();
 
+        when(rewardRepository.resetPoints("u-2")).thenReturn(1);
+
         service.processUser(user);
 
         assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
         assertEquals(SalesforceSyncStatus.SUCCESS, user.getSalesforceSyncStatus());
         verify(userRepository, atLeastOnce()).save(user);
-        verify(salesforceSyncDelegate).syncContact(any());
+        verify(rewardRepository).resetPoints("u-2");
+
+        ArgumentCaptor<ContactSObject> contactCaptor = ArgumentCaptor.forClass(ContactSObject.class);
+        verify(salesforceSyncDelegate).syncContact(contactCaptor.capture());
+        assertEquals(Integer.valueOf(0), contactCaptor.getValue().getReward());
+        assertEquals("DEACTIVATED", contactCaptor.getValue().getStatus());
 
         ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
         verify(emailNotificationService, times(1)).send(captor.capture());
@@ -91,6 +103,27 @@ class AccountInactivityServiceTest {
         assertEquals("inactive@test.com", sent.recipient());
         assertEquals(EmailTemplateType.ACCOUNT_DEACTIVATED, sent.templateType());
         assertTrue(sent.inactiveDays() >= 30);
+    }
+
+    @Test
+    @DisplayName("processUser inactive >= 30 days when reward record missing should create record with 0 points")
+    void processUser_inactivity30Days_missingRewardRecord_shouldCreateRecordWithZeroPoints() {
+        User user = User.builder()
+                .id(22L)
+                .uuid("u-22")
+                .email("inactive-noreward@test.com")
+                .name("No Reward Inactive User")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(35))
+                .build();
+
+        when(rewardRepository.resetPoints("u-22")).thenReturn(0);
+
+        service.processUser(user);
+
+        assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
+        verify(rewardRepository).resetPoints("u-22");
+        verify(rewardRepository).save(argThat(r -> "u-22".equals(r.getUserUuid()) && Integer.valueOf(0).equals(r.getPoints())));
     }
 
     @Test

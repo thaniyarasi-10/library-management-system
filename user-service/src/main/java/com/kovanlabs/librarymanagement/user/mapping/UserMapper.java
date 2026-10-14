@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.user.mapping;
 
 import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.SObjectAttributes;
@@ -18,7 +19,7 @@ import java.util.UUID;
 /**
  * MapStruct mapper for converting between {@link User} entities and User DTOs.
  */
-@Mapper(imports = {SObjectAttributes.class, SObject.class, UUID.class, Objects.class})
+@Mapper(imports = {SObjectAttributes.class, SObject.class, UUID.class, Objects.class, AccountStatus.class})
 public interface UserMapper {
 
     UserMapper INSTANCE = Mappers.getMapper(UserMapper.class);
@@ -161,6 +162,7 @@ public interface UserMapper {
 
     /**
      * Converts a {@link User} entity to a {@link ContactSObject}.
+     * When user status is DEACTIVATED, reward is explicitly set to 0.
      */
     @Mapping(target = "attributes", expression = "java(SObjectAttributes.builder().type(SObject.CONTACT.getObjectName()).build())")
     @Mapping(target = "externalUserUuid", source = "uuid")
@@ -173,7 +175,7 @@ public interface UserMapper {
     @Mapping(target = "lastLoginAt", expression = "java(Objects.nonNull(user.getLastLoginAt()) ? user.getLastLoginAt().toString() : null)")
     @Mapping(target = "reactivationRequestStatus", expression = "java(Objects.nonNull(user.getReactivationRequestStatus()) ? user.getReactivationRequestStatus().name() : null)")
     @Mapping(target = "inactivityWarningSentAt", expression = "java(Objects.nonNull(user.getInactivityWarningSentAt()) ? user.getInactivityWarningSentAt().toString() : null)")
-    @Mapping(target = "reward", ignore = true)
+    @Mapping(target = "reward", expression = "java(AccountStatus.DEACTIVATED.equals(user.getStatus()) ? Integer.valueOf(0) : null)")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     ContactSObject toContactSObject(User user);

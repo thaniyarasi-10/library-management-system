@@ -249,13 +249,13 @@ class UserControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/auth/me should return current user profile")
-    void getCurrentUser_ApiAuthMe_ShouldReturnProfile() throws Exception {
+    @DisplayName("GET /api/user/me should return current user profile")
+    void getCurrentUser_ApiUserMe_ShouldReturnProfile() throws Exception {
         UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
         java.security.Principal mockPrincipal = mock(java.security.Principal.class);
         when(userService.getCurrentUser(mockPrincipal)).thenReturn(response);
 
-        mockMvc.perform(get("/api/auth/me").principal(mockPrincipal))
+        mockMvc.perform(get("/api/user/me").principal(mockPrincipal))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Alice"))
                 .andExpect(jsonPath("$.email").value("alice@example.com"));
@@ -279,13 +279,13 @@ class UserControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/auth/callback should record login activity and return profile")
-    void recordLogin_ApiAuthCallback_ShouldReturnProfile() throws Exception {
+    @DisplayName("POST /api/user/callback should record login activity and return profile")
+    void recordLogin_ApiUserCallback_ShouldReturnProfile() throws Exception {
         UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
         java.security.Principal mockPrincipal = mock(java.security.Principal.class);
         when(userService.recordLogin(mockPrincipal)).thenReturn(response);
 
-        mockMvc.perform(post("/api/auth/callback").principal(mockPrincipal))
+        mockMvc.perform(post("/api/user/callback").principal(mockPrincipal))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Alice"))
                 .andExpect(jsonPath("$.email").value("alice@example.com"));
@@ -415,5 +415,38 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.reactivationRequested").value(false));
 
         verify(userService).rejectReactivation(id1);
+    }
+
+    @Test
+    @DisplayName("GET /api/user with default query params should return 200 OK")
+    void getAllUsers_WithApiPrefix_ShouldReturnPagedUsers() throws Exception {
+        UserResponse u1 = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        PagedResponse<UserResponse> pagedResponse = new PagedResponse<>(
+                List.of(u1), 0, 10, 1L, 1, true
+        );
+
+        when(userService.getAllUsers(0, 10, "id", "asc")).thenReturn(pagedResponse);
+
+        mockMvc.perform(get("/api/user")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].name").value("Alice"));
+
+        verify(userService, times(1)).getAllUsers(0, 10, "id", "asc");
+    }
+
+    @Test
+    @DisplayName("GET /api/user/me should return current user")
+    void getCurrentUser_WithApiPrefix_ShouldReturnCurrentUser() throws Exception {
+        Principal mockPrincipal = mock(Principal.class);
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+
+        when(userService.getCurrentUser(mockPrincipal)).thenReturn(response);
+
+        mockMvc.perform(get("/api/user/me").principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"));
+
+        verify(userService, times(1)).getCurrentUser(mockPrincipal);
     }
 }

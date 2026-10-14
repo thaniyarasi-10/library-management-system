@@ -14,7 +14,7 @@ import java.security.Principal;
 import java.util.List;
 
 @RestController
-@RequestMapping({"/user", "/api/auth"})
+@RequestMapping({"/api/user", "/user"})
 @RequiredArgsConstructor
 public class UserController {
 

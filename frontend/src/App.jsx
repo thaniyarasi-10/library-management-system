@@ -178,7 +178,7 @@ export default function App() {
   const approvedRequestsCount = reactivationRequests.filter(r => r.reactivationRequestStatus === 'APPROVED').length;
   const rejectedRequestsCount = reactivationRequests.filter(r => r.reactivationRequestStatus === 'REJECTED').length;
 
-  const baseUrl = 'http://localhost:8080';
+  const baseUrl = '/api';
 
   const showToast = (message, type = 'info') => {
     const id = Date.now();
@@ -206,8 +206,14 @@ export default function App() {
       headers['Content-Type'] = 'application/json';
     }
 
+    const resolvedUrl = endpoint.startsWith('http://') || endpoint.startsWith('https://')
+      ? endpoint
+      : endpoint.startsWith('/api')
+        ? endpoint
+        : `${baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+
     try {
-      const res = await fetch(`${baseUrl}${endpoint}`, { ...options, headers });
+      const res = await fetch(resolvedUrl, { ...options, headers });
       if (res.status === 401) {
         showToast('Session expired or unauthenticated. Please sign in again.', 'error');
         return { ok: false, status: 401 };
@@ -396,6 +402,7 @@ export default function App() {
   const getCoverUrl = (url) => {
     if (!url) return null;
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('/api')) return url;
     return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
   };
 

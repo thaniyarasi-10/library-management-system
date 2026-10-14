@@ -23,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -1194,7 +1195,7 @@ class UserServiceImplTest {
     }
 
     @Test
-    @DisplayName("deactivateUser when user exists should set DEACTIVATED and clear request status")
+    @DisplayName("deactivateUser when user exists should set DEACTIVATED, reset reward points to 0, and sync to Salesforce")
     void deactivateUser_whenUserExists_shouldSetDeactivated() {
         User user = User.builder()
                 .id(200L)
@@ -1207,6 +1208,7 @@ class UserServiceImplTest {
 
         when(userRepository.findById(200L)).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(rewardRepository.resetPoints("u-200")).thenReturn(1);
 
         UserResponse response = userService.deactivateUser(200L);
 
@@ -1215,7 +1217,35 @@ class UserServiceImplTest {
         assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
         assertNull(user.getReactivationRequestStatus());
         verify(userRepository, atLeastOnce()).save(user);
-        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+        verify(rewardRepository).resetPoints("u-200");
+
+        ArgumentCaptor<ContactSObject> captor = ArgumentCaptor.forClass(ContactSObject.class);
+        verify(salesforceSyncDelegate).syncContact(captor.capture());
+        assertEquals(Integer.valueOf(0), captor.getValue().getReward());
+        assertEquals("DEACTIVATED", captor.getValue().getStatus());
+    }
+
+    @Test
+    @DisplayName("deactivateUser when reward record does not exist should create new reward record with 0 points")
+    void deactivateUser_whenRewardRecordDoesNotExist_shouldCreateRewardRecordWithZeroPoints() {
+        User user = User.builder()
+                .id(201L)
+                .uuid("u-201")
+                .name("No Reward Bob")
+                .email("noreward@example.com")
+                .status(AccountStatus.ACTIVE)
+                .build();
+
+        when(userRepository.findById(201L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(rewardRepository.resetPoints("u-201")).thenReturn(0);
+
+        UserResponse response = userService.deactivateUser(201L);
+
+        assertNotNull(response);
+        assertEquals(AccountStatus.DEACTIVATED.name(), response.status());
+        verify(rewardRepository).resetPoints("u-201");
+        verify(rewardRepository).save(argThat(r -> "u-201".equals(r.getUserUuid()) && Integer.valueOf(0).equals(r.getPoints())));
     }
 
     @Test

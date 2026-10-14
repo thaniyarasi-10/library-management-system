@@ -4,9 +4,11 @@ import com.kovanlabs.librarymanagement.communication.dto.NotificationRequest;
 import com.kovanlabs.librarymanagement.communication.enums.EmailTemplateType;
 import com.kovanlabs.librarymanagement.communication.enums.NotificationTypeEnum;
 import com.kovanlabs.librarymanagement.communication.factory.NotificationFactory;
+import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
+import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import com.kovanlabs.librarymanagement.user.mapping.UserMapper;
@@ -47,6 +49,7 @@ public class AccountInactivityService {
 
     private final NotificationFactory notificationFactory;
     private final UserRepository userRepository;
+    private final RewardRepository rewardRepository;
     private final SalesforceSync salesforceSyncDelegate;
 
     /**
@@ -155,6 +158,16 @@ public class AccountInactivityService {
 
         user.setStatus(AccountStatus.DEACTIVATED);
         user.setReactivationRequestStatus(null);
+        if (Objects.nonNull(rewardRepository) && Objects.nonNull(user.getUuid())) {
+            int updated = rewardRepository.resetPoints(user.getUuid());
+            if (updated == 0) {
+                rewardRepository.save(Reward.builder()
+                        .userUuid(user.getUuid())
+                        .points(0)
+                        .build());
+            }
+            log.info("Reset reward points to 0 in MySQL for inactive user [ID: {}, UUID: {}]", user.getId(), user.getUuid());
+        }
         userRepository.save(user);
         syncUserToSalesforce(user);
 

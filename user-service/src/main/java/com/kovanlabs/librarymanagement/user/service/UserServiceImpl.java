@@ -703,6 +703,19 @@ public class UserServiceImpl implements UserService {
                 : (claim instanceof String s && !s.isBlank() ? List.of(s) : Collections.emptyList());
     }
 
+    private void resetUserRewardPoints(String userUuid) {
+        if (Objects.nonNull(userUuid) && Objects.nonNull(rewardRepository)) {
+            int updated = rewardRepository.resetPoints(userUuid);
+            if (updated == 0) {
+                rewardRepository.save(Reward.builder()
+                        .userUuid(userUuid)
+                        .points(0)
+                        .build());
+            }
+            log.info("Reset reward points to 0 for user [UUID: {}]", userUuid);
+        }
+    }
+
     private void syncUserToSalesforce(User user) {
         if (Objects.nonNull(salesforceSyncDelegate) && Objects.nonNull(user) && Objects.nonNull(user.getUuid())) {
             try {
@@ -762,6 +775,7 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
         user.setStatus(AccountStatus.DEACTIVATED);
         user.setReactivationRequestStatus(null);
+        resetUserRewardPoints(user.getUuid());
         User savedUser = userRepository.save(user);
         syncUserToSalesforce(savedUser);
         log.info("Successfully deactivated user account ID: {}, Email: {}", id, savedUser.getEmail());
@@ -893,6 +907,7 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
         user.setStatus(AccountStatus.DEACTIVATED);
         user.setReactivationRequestStatus(ReactivationRequestStatus.REJECTED);
+        resetUserRewardPoints(user.getUuid());
         User savedUser = userRepository.save(user);
         syncUserToSalesforce(savedUser);
         log.info("Successfully rejected account reactivation request for user ID: {}, Email: {}", id,

@@ -16,7 +16,7 @@ import java.security.Principal;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/memberships")
+@RequestMapping({"/api/memberships", "/memberships"})
 @RequiredArgsConstructor
 public class MembershipController {
 

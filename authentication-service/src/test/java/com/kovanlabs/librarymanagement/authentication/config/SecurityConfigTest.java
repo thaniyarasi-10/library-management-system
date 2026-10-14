@@ -46,32 +46,32 @@ class SecurityConfigTest {
 
     @RestController
     static class TestSecurityController {
-        @GetMapping("/books")
+        @GetMapping({"/api/books", "/books"})
         public ResponseEntity<String> getBooks() {
             return ResponseEntity.ok("books");
         }
 
-        @PostMapping("/books")
+        @PostMapping({"/api/books", "/books"})
         public ResponseEntity<String> createBook() {
             return ResponseEntity.ok("created");
         }
 
-        @DeleteMapping("/books/{id}")
+        @DeleteMapping({"/api/books/{id}", "/books/{id}"})
         public ResponseEntity<String> deleteBook(@PathVariable String id) {
             return ResponseEntity.ok("deleted");
         }
 
-        @GetMapping({"/user/me", "/api/auth/me"})
+        @GetMapping({"/api/user/me", "/api/auth/me", "/user/me"})
         public ResponseEntity<String> getMe() {
             return ResponseEntity.ok("me");
         }
 
-        @PostMapping("/user/callback")
+        @PostMapping({"/api/user/callback", "/user/callback"})
         public ResponseEntity<String> userCallback() {
             return ResponseEntity.ok("callback");
         }
 
-        @GetMapping("/user")
+        @GetMapping({"/api/user", "/user"})
         public ResponseEntity<String> getUsers() {
             return ResponseEntity.ok("users");
         }

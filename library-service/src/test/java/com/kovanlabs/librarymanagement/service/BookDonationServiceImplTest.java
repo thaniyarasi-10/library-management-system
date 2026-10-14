@@ -7,6 +7,7 @@ import com.kovanlabs.librarymanagement.database.entity.BookDonation;
 import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.entity.UserProvider;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.DonationStatus;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
@@ -606,6 +607,31 @@ class BookDonationServiceImplTest {
     @DisplayName("approveDonation - Success when donation has null user (no rewards awarded)")
     void approveDonation_success_nullUser_noReward() {
         sampleDonation.setUser(null);
+
+        when(userProviderRepository.findByProviderId("admin@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.of(adminUser));
+        when(bookDonationRepository.findByUuid(sampleDonation.getUuid())).thenReturn(Optional.of(sampleDonation));
+        when(bookRepository.findByIsbn(sampleDonation.getIsbn())).thenReturn(Optional.of(existingBook));
+        when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(bookDonationRepository.save(any(BookDonation.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BookDonationResponse response = bookDonationService.approveDonation(sampleDonation.getUuid(), "admin@example.com");
+
+        assertNotNull(response);
+        assertEquals(DonationStatus.APPROVED, response.status());
+        verifyNoInteractions(rewardRepository);
+    }
+
+    @Test
+    @DisplayName("approveDonation - Success when donation user is DEACTIVATED (no rewards awarded)")
+    void approveDonation_success_deactivatedUser_noReward() {
+        User deactUser = User.builder()
+                .id(88L)
+                .uuid("u-88")
+                .email("deact-donor@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+        sampleDonation.setUser(deactUser);
 
         when(userProviderRepository.findByProviderId("admin@example.com")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.of(adminUser));
