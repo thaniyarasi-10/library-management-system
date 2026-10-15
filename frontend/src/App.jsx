@@ -4,7 +4,7 @@ import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
-  User as UserIcon, Edit2, Phone, Gift
+  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell
 } from 'lucide-react';
 import './styles.css';
 
@@ -121,6 +121,11 @@ export default function App() {
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [memberSortBy, setMemberSortBy] = useState('id');
   const [memberSortDir, setMemberSortDir] = useState('asc');
+  const [membersTab, setMembersTab] = useState('members'); // 'members' | 'reactivation'
+  const [reactivationSearchQuery, setReactivationSearchQuery] = useState('');
+  const [reactivationRequests, setReactivationRequests] = useState([]);
+  const [reactivationTab, setReactivationTab] = useState('PENDING');
+  const [requestingReactivation, setRequestingReactivation] = useState(false);
 
   // Borrows
   const [adminBorrows, setAdminBorrows] = useState([]);
@@ -166,7 +171,14 @@ export default function App() {
   // Toasts
   const [toasts, setToasts] = useState([]);
 
-  const baseUrl = 'http://localhost:8080';
+  // Reactivation request counts
+  const pendingRequestsCount = reactivationRequests.filter(r =>
+    r.reactivationRequestStatus === 'PENDING' || (r.reactivationRequested && r.reactivationRequestStatus !== 'APPROVED' && r.reactivationRequestStatus !== 'REJECTED')
+  ).length;
+  const approvedRequestsCount = reactivationRequests.filter(r => r.reactivationRequestStatus === 'APPROVED').length;
+  const rejectedRequestsCount = reactivationRequests.filter(r => r.reactivationRequestStatus === 'REJECTED').length;
+
+  const baseUrl = '/api';
 
   const showToast = (message, type = 'info') => {
     const id = Date.now();
@@ -194,8 +206,14 @@ export default function App() {
       headers['Content-Type'] = 'application/json';
     }
 
+    const resolvedUrl = endpoint.startsWith('http://') || endpoint.startsWith('https://')
+      ? endpoint
+      : endpoint.startsWith('/api')
+        ? endpoint
+        : `${baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+
     try {
-      const res = await fetch(`${baseUrl}${endpoint}`, { ...options, headers });
+      const res = await fetch(resolvedUrl, { ...options, headers });
       if (res.status === 401) {
         showToast('Session expired or unauthenticated. Please sign in again.', 'error');
         return { ok: false, status: 401 };
@@ -321,7 +339,10 @@ export default function App() {
         reqHeaders['X-User-Name'] = pendingUsername.trim();
       }
 
-      const res = await fetchApi('/user/me', { headers: reqHeaders });
+      let res = await fetchApi('/user/callback', { method: 'POST', headers: reqHeaders });
+      if (!res.ok) {
+        res = await fetchApi('/user/me', { headers: reqHeaders });
+      }
       if (res.ok && res.data) {
         setCurrentUser(res.data);
         sessionStorage.removeItem('auth0_pending_username');
@@ -381,6 +402,7 @@ export default function App() {
   const getCoverUrl = (url) => {
     if (!url) return null;
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('/api')) return url;
     return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
   };
 
@@ -679,8 +701,13 @@ export default function App() {
     if (query) url = `/user/search?query=${encodeURIComponent(query)}&page=${page}&size=10&sortBy=${sortBy}&sortDir=${sortDir}`;
     const res = await fetchApi(url);
     if (res.ok && res.data) {
-      setMembers(res.data.content || res.data || []);
+      const list = res.data.content || res.data || [];
+      setMembers(list);
       setMembersTotalPages(res.data.totalPages || 1);
+    }
+    const reqRes = await fetchApi('/user/reactivation-requests');
+    if (reqRes.ok && reqRes.data) {
+      setReactivationRequests(Array.isArray(reqRes.data) ? reqRes.data : []);
     }
   };
 
@@ -768,6 +795,58 @@ export default function App() {
           loadMembers(membersPage, memberSearchQuery);
         } else {
           showToast(res.data?.message || 'Failed to delete member', 'error');
+        }
+      }
+    });
+    setActiveModal('confirm');
+  };
+
+  const handleApproveReactivation = async (userId, name) => {
+    setReactivationRequests(prev => prev.map(r => {
+      if (r.id === userId || r.uuid === userId) {
+        return { ...r, status: 'ACTIVE', reactivationRequestStatus: 'APPROVED', reactivationRequested: false };
+      }
+      return r;
+    }));
+    const res = await fetchApi(`/user/${userId}/approve-reactivation`, { method: 'POST' });
+    if (res.ok) {
+      showToast(`Member "${name}" reactivated successfully`, 'success');
+      await loadMembers(membersPage, memberSearchQuery);
+    } else {
+      showToast(res.data?.message || 'Failed to reactivate member', 'error');
+      await loadMembers(membersPage, memberSearchQuery);
+    }
+  };
+
+  const handleRejectReactivation = async (userId, name) => {
+    setReactivationRequests(prev => prev.map(r => {
+      if (r.id === userId || r.uuid === userId) {
+        return { ...r, status: 'DEACTIVATED', reactivationRequestStatus: 'REJECTED', reactivationRequested: false };
+      }
+      return r;
+    }));
+    const res = await fetchApi(`/user/${userId}/reject-reactivation`, { method: 'POST' });
+    if (res.ok) {
+      showToast(`Reactivation request for "${name}" rejected`, 'info');
+      await loadMembers(membersPage, memberSearchQuery);
+    } else {
+      showToast(res.data?.message || 'Failed to reject reactivation request', 'error');
+      await loadMembers(membersPage, memberSearchQuery);
+    }
+  };
+
+  const handleDeactivateMember = async (userId, name) => {
+    setConfirmConfig({
+      title: 'Deactivate Member',
+      message: `Are you sure you want to deactivate member "${name}"?`,
+      actionBtnText: 'Deactivate Account',
+      onConfirm: async () => {
+        const res = await fetchApi(`/user/${userId}/deactivate`, { method: 'POST' });
+        if (res.ok) {
+          showToast(`Member "${name}" deactivated successfully`, 'success');
+          loadMembers(membersPage, memberSearchQuery);
+        } else {
+          showToast(res.data?.message || 'Failed to deactivate member', 'error');
         }
       }
     });
@@ -1254,7 +1333,7 @@ export default function App() {
               }}
               onClick={() => { setAuthMode('signup'); setSignupError(''); }}
             >
-              Register (Sign Up)
+              Sign Up
             </button>
           </div>
 
@@ -1356,6 +1435,124 @@ export default function App() {
     );
   }
 
+  // Render Deactivated Account Screen if account status is DEACTIVATED
+  if (currentUser && currentUser.status === 'DEACTIVATED') {
+    const handleReactivateRequest = async () => {
+      setRequestingReactivation(true);
+      const res = await fetchApi('/user/me/request-reactivation', { method: 'POST' });
+      setRequestingReactivation(false);
+      if (res.ok && res.data) {
+        setCurrentUser(res.data);
+        showToast('Account reactivation requested successfully. Awaiting admin approval.', 'success');
+      } else {
+        const errMsg = res.data?.message || 'Failed to request reactivation';
+        showToast(errMsg, 'error');
+      }
+    };
+
+    return (
+      <div className="auth-screen">
+        <div className="auth-card" style={{ maxWidth: '540px', textAlign: 'center', padding: '36px' }}>
+          <div className="auth-brand" style={{ marginBottom: '24px' }}>
+            <div className="brand-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Shield size={32} />
+            </div>
+            <h1 className="brand-title" style={{ fontSize: '24px', fontWeight: 700 }}>Account Deactivated</h1>
+            <p className="brand-subtitle" style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
+              Logged in as <strong>{currentUser.name || currentUser.email}</strong>
+            </p>
+          </div>
+
+          <div style={{ textAlign: 'left', marginBottom: '20px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <span style={{ fontSize: '22px', lineHeight: 1 }}>⚠️</span>
+              <div>
+                <strong style={{ display: 'block', fontSize: '15px', marginBottom: '4px', color: '#ef4444' }}>
+                  Your account has been deactivated
+                </strong>
+                <span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-main)', opacity: 0.9 }}>
+                  Your account has been deactivated due to inactivity. You cannot access the dashboard until an administrator approves your reactivation request.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {currentUser.hasPendingFines ? (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                <CreditCard size={18} color="#f59e0b" />
+                <strong style={{ fontSize: '14px', color: '#f59e0b' }}>Outstanding Fines Detected</strong>
+              </div>
+              <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '8px' }}>
+                You have unpaid pending fines of <strong style={{ color: '#f59e0b', fontSize: '15px' }}>${Number(currentUser.pendingFineAmount || 0).toFixed(2)}</strong>.
+              </p>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                You can only submit a reactivation request after all outstanding fines have been cleared. Please contact library support or settle pending dues first.
+              </p>
+            </div>
+          ) : currentUser.reactivationRequestStatus === 'REJECTED' ? (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                <X size={18} color="#ef4444" />
+                <strong style={{ fontSize: '14px', color: '#ef4444' }}>Reactivation Request Rejected</strong>
+              </div>
+              <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '14px' }}>
+                Your previous account reactivation request was rejected by an administrator. If you believe this is in error, you may submit a new reactivation request.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary btn-block"
+                onClick={handleReactivateRequest}
+                disabled={requestingReactivation}
+              >
+                {requestingReactivation ? 'Submitting Request...' : 'Submit New Request'}
+              </button>
+            </div>
+          ) : (currentUser.reactivationRequested || currentUser.reactivationRequestStatus === 'PENDING') ? (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                <Check size={18} color="#3b82f6" />
+                <strong style={{ fontSize: '14px', color: '#3b82f6' }}>Reactivation Request Submitted</strong>
+              </div>
+              <p style={{ fontSize: '13px', color: 'var(--text-main)', margin: 0 }}>
+                Your reactivation request has been submitted and is currently awaiting administrator review. Once approved, you will be able to access your dashboard.
+              </p>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-subtle)' }}>
+              <strong style={{ display: 'block', fontSize: '14px', marginBottom: '6px' }}>
+                Request Account Reactivation
+              </strong>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                You have no pending fines. Would you like to request the library administrator to reactivate your account?
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary btn-block"
+                onClick={handleReactivateRequest}
+                disabled={requestingReactivation}
+              >
+                {requestingReactivation ? 'Submitting Request...' : 'Request Reactivation'}
+              </button>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleSignOut}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <LogOut size={16} />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Production App Shell
   const userName = currentUser ? (currentUser.name || currentUser.email) : (userRole === 'ADMIN' ? 'Library Staff' : 'Library Member');
   const userEmail = currentUser ? currentUser.email : '';
@@ -1397,10 +1594,23 @@ export default function App() {
           {userRole === 'ADMIN' && (
             <button
               className={`nav-link ${currentPage === 'members' ? 'active' : ''}`}
-              onClick={() => setCurrentPage('members')}
+              onClick={() => { setCurrentPage('members'); setMembersTab('members'); }}
             >
               <Users className="nav-icon" size={18} />
-              <span>Members</span>
+              <span style={{ flex: 1, textAlign: 'left' }}>Members</span>
+              {pendingRequestsCount > 0 && (
+                <span style={{
+                  background: '#ef4444',
+                  color: '#fff',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  lineHeight: '1.2'
+                }}>
+                  {pendingRequestsCount}
+                </span>
+              )}
             </button>
           )}
 
@@ -1418,14 +1628,6 @@ export default function App() {
           >
             <CreditCard className="nav-icon" size={18} />
             <span>{userRole === 'ADMIN' ? 'Fine Management' : 'My Fines & Dues'}</span>
-          </button>
-
-          <button
-            className={`nav-link ${currentPage === 'membership' ? 'active' : ''}`}
-            onClick={() => setCurrentPage('membership')}
-          >
-            <Award className="nav-icon" size={18} />
-            <span>{userRole === 'ADMIN' ? 'Membership' : 'Digital Membership'}</span>
           </button>
 
           <button
@@ -1461,16 +1663,18 @@ export default function App() {
             <h1 className="header-page-title">
               {currentPage === 'dashboard' && 'Dashboard'}
               {currentPage === 'books' && (userRole === 'ADMIN' ? 'Books Catalog' : 'Browse Catalog')}
-              {currentPage === 'members' && 'Members Directory'}
+              {currentPage === 'members' && (membersTab === 'reactivation' ? 'Account Reactivation Requests' : 'Members Directory')}
               {currentPage === 'borrow' && (userRole === 'ADMIN' ? 'Circulation Log' : 'My Loans')}
               {currentPage === 'fines' && (userRole === 'ADMIN' ? 'Fine Settlement' : 'Fines & Dues')}
               {currentPage === 'membership' && 'Digital Membership'}
               {currentPage === 'donations' && (userRole === 'ADMIN' ? 'Donation Management' : 'Book Donations')}
             </h1>
             <p className="header-page-subtitle">
-              {currentPage === 'donations'
-                ? (userRole === 'ADMIN' ? 'Review, approve, or reject user book donation requests' : 'Donate books to expand the library collection and view your donation history')
-                : 'Overview of library holdings and staff operations'}
+              {currentPage === 'members' && (membersTab === 'reactivation'
+                ? 'Review, approve, or reject account reactivation requests from deactivated members'
+                : 'Manage library patrons, membership statuses, and sync to CRM')}
+              {currentPage === 'donations' && (userRole === 'ADMIN' ? 'Review, approve, or reject user book donation requests' : 'Donate books to expand the library collection and view your donation history')}
+              {currentPage !== 'members' && currentPage !== 'donations' && 'Overview of library holdings and staff operations'}
             </p>
           </div>
 
@@ -1502,6 +1706,17 @@ export default function App() {
                   <button className="dropdown-item" onClick={handleOpenEditProfile} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <UserIcon size={14} />
                     <span>Edit Profile</span>
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setCurrentPage('membership');
+                      setShowUserDropdown(false);
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <Award size={14} />
+                    <span>{userRole === 'ADMIN' ? 'Membership' : 'Digital Membership'}</span>
                   </button>
                   <div className="dropdown-divider"></div>
                   <button className="dropdown-item danger" onClick={handleSignOut}>Sign Out</button>
@@ -1780,111 +1995,573 @@ export default function App() {
           {/* PAGE 3: MEMBERS */}
           {currentPage === 'members' && userRole === 'ADMIN' && (
             <div className="page-pane active">
-              <div className="action-bar">
-                <div className="filter-controls">
-                  <div className="search-input-group">
-                    <Search size={16} />
-                    <input
-                      type="text"
-                      placeholder="Search member by name or email..."
-                      value={memberSearchQuery}
-                      onChange={(e) => setMemberSearchQuery(e.target.value)}
-                    />
-                  </div>
-                  <button className="btn btn-secondary" onClick={() => { setMembersPage(0); loadMembers(0, memberSearchQuery, memberSortBy, memberSortDir); }}>Search</button>
-                  <button className="btn btn-ghost" onClick={() => { setMemberSearchQuery(''); loadMembers(0, '', 'id', 'asc'); }}>Clear</button>
+              {/* Tab Navigation between Members Directory and Reactivation Requests */}
+              <div style={{
+                display: 'flex',
+                gap: '10px',
+                marginBottom: '20px',
+                borderBottom: '1px solid var(--border-subtle)',
+                paddingBottom: '12px'
+              }}>
+                <button
+                  type="button"
+                  className={`btn ${membersTab === 'members' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setMembersTab('members')}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', borderRadius: '8px' }}
+                >
+                  <Users size={16} />
+                  <span>All Members</span>
+                  <span style={{
+                    background: membersTab === 'members' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: '600'
+                  }}>
+                    {members.length}
+                  </span>
+                </button>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
-                    <span className="text-xs text-muted font-medium">Sort by:</span>
-                    <select
-                      className="form-select"
-                      style={{ padding: '6px 12px', fontSize: '13px' }}
-                      value={memberSortBy}
-                      onChange={(e) => { setMemberSortBy(e.target.value); loadMembers(0, memberSearchQuery, e.target.value, memberSortDir); }}
-                    >
-                      <option value="id">ID</option>
-                      <option value="name">Name</option>
-                      <option value="email">Email</option>
-                      <option value="rewardPoints">Reward Points</option>
-                    </select>
-                    <select
-                      className="form-select"
-                      style={{ padding: '6px 12px', fontSize: '13px' }}
-                      value={memberSortDir}
-                      onChange={(e) => { setMemberSortDir(e.target.value); loadMembers(0, memberSearchQuery, memberSortBy, e.target.value); }}
-                    >
-                      <option value="asc">Ascending ⬆</option>
-                      <option value="desc">Descending ⬇</option>
-                    </select>
-                  </div>
-                </div>
-
-                <button className="btn btn-primary" onClick={() => { setUserForm({ id: '', name: '', email: '', password: '', countryCode: '+1', phoneNumber: '', phoneError: '' }); setActiveModal('createUser'); }}>
-                  <Plus size={16} />
-                  <span>Register Member</span>
+                <button
+                  type="button"
+                  className={`btn ${membersTab === 'reactivation' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setMembersTab('reactivation')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    borderRadius: '8px',
+                    border: membersTab !== 'reactivation' && pendingRequestsCount > 0 ? '1px solid rgba(245, 158, 11, 0.4)' : undefined,
+                    background: membersTab !== 'reactivation' && pendingRequestsCount > 0 ? 'rgba(245, 158, 11, 0.08)' : undefined
+                  }}
+                >
+                  <Bell size={16} style={{ color: pendingRequestsCount > 0 && membersTab !== 'reactivation' ? '#f59e0b' : 'inherit' }} />
+                  <span>Reactivation Requests</span>
+                  <span style={{
+                    background: pendingRequestsCount > 0 ? (membersTab === 'reactivation' ? 'rgba(255,255,255,0.25)' : '#f59e0b') : 'rgba(255,255,255,0.08)',
+                    color: pendingRequestsCount > 0 && membersTab !== 'reactivation' ? '#fff' : 'inherit',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: '700'
+                  }}>
+                    {pendingRequestsCount}
+                  </span>
                 </button>
               </div>
 
-              <div className="table-container mt-4">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th width="60">ID</th>
-                      <th>Member Name</th>
-                      <th>Email Address</th>
-                      <th width="150">Phone Number</th>
-                      <th width="130">Reward Points</th>
-                      <th width="170" className="text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {members.length === 0 ? (
-                      <tr><td colSpan="6" className="empty-cell">No members found.</td></tr>
-                    ) : (
-                      members.map((m, idx) => (
-                        <tr key={m.id ?? m.uuid ?? m.email ?? `member-${idx}`}>
-                          <td>#{m.id || '—'}</td>
-                          <td><strong>{m.name || m.username}</strong></td>
-                          <td>{m.email}</td>
-                          <td>
-                            {m.phone ? (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', fontWeight: '500' }}>
-                                <Phone size={13} style={{ color: 'var(--accent-primary)', opacity: 0.8 }} />
-                                <code>{m.phone}</code>
-                              </span>
-                            ) : (
-                              <span className="text-subtle" style={{ fontSize: '12px' }}>—</span>
-                            )}
-                          </td>
-                          <td>
-                            <span style={{ color: '#eab308', fontWeight: '600', fontSize: '13px' }}>
-                              🏆 {m.rewardPoints || 0} pts
-                            </span>
-                          </td>
-                          <td className="text-right">
-                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                              <button className="btn btn-secondary btn-sm" onClick={() => {
-                                const parsed = parsePhoneNumber(m.phone || '');
-                                setUserForm({
-                                  id: m.id,
-                                  name: m.name || m.username,
-                                  email: m.email,
-                                  password: '',
-                                  countryCode: parsed.countryDial,
-                                  phoneNumber: parsed.localNumber,
-                                  phoneError: ''
-                                });
-                                setActiveModal('editUser');
-                              }}>Edit</button>
-                              <button className="btn btn-danger btn-sm" onClick={() => handleDeleteUser(m.id, m.name || m.email)}>Delete</button>
-                            </div>
-                          </td>
+              {/* VIEW 1: ALL MEMBERS DIRECTORY */}
+              {membersTab === 'members' && (
+                <div>
+                  <div className="action-bar">
+                    <div className="filter-controls">
+                      <div className="search-input-group">
+                        <Search size={16} />
+                        <input
+                          type="text"
+                          placeholder="Search member by name or email..."
+                          value={memberSearchQuery}
+                          onChange={(e) => setMemberSearchQuery(e.target.value)}
+                        />
+                      </div>
+                      <button className="btn btn-secondary" onClick={() => { setMembersPage(0); loadMembers(0, memberSearchQuery, memberSortBy, memberSortDir); }}>Search</button>
+                      <button className="btn btn-ghost" onClick={() => { setMemberSearchQuery(''); loadMembers(0, '', 'id', 'asc'); }}>Clear</button>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
+                        <span className="text-xs text-muted font-medium">Sort by:</span>
+                        <select
+                          className="form-select"
+                          style={{ padding: '6px 12px', fontSize: '13px' }}
+                          value={memberSortBy}
+                          onChange={(e) => { setMemberSortBy(e.target.value); loadMembers(0, memberSearchQuery, e.target.value, memberSortDir); }}
+                        >
+                          <option value="id">ID</option>
+                          <option value="name">Name</option>
+                          <option value="email">Email</option>
+                          <option value="rewardPoints">Reward Points</option>
+                        </select>
+                        <select
+                          className="form-select"
+                          style={{ padding: '6px 12px', fontSize: '13px' }}
+                          value={memberSortDir}
+                          onChange={(e) => { setMemberSortDir(e.target.value); loadMembers(0, memberSearchQuery, memberSortBy, e.target.value); }}
+                        >
+                          <option value="asc">Ascending ⬆</option>
+                          <option value="desc">Descending ⬇</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+
+                      <button className="btn btn-primary" onClick={() => { setUserForm({ id: '', name: '', email: '', password: '', countryCode: '+1', phoneNumber: '', phoneError: '' }); setActiveModal('createUser'); }}>
+                        <Plus size={16} />
+                        <span>Register Member</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="table-container mt-4">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th width="60">ID</th>
+                          <th>Member Name</th>
+                          <th>Email Address</th>
+                          <th width="150">Phone Number</th>
+                          <th width="140">Status</th>
+                          <th width="130">Reward Points</th>
+                          <th width="100" className="text-right">Actions</th>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      </thead>
+                      <tbody>
+                        {members.length === 0 ? (
+                          <tr><td colSpan="7" className="empty-cell">No members found.</td></tr>
+                        ) : (
+                          members.map((m, idx) => (
+                            <tr key={m.id ?? m.uuid ?? m.email ?? `member-${idx}`}>
+                              <td>#{m.id || '—'}</td>
+                              <td><strong>{m.name || m.username}</strong></td>
+                              <td>{m.email}</td>
+                              <td>
+                                {m.phone ? (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', fontWeight: '500' }}>
+                                    <Phone size={13} style={{ color: 'var(--accent-primary)', opacity: 0.8 }} />
+                                    <code>{m.phone}</code>
+                                  </span>
+                                ) : (
+                                  <span className="text-subtle" style={{ fontSize: '12px' }}>—</span>
+                                )}
+                              </td>
+                              <td>
+                                {String(m.status || '').toUpperCase() === 'DEACTIVATED' ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                                    <span style={{ color: '#ef4444', fontWeight: '600', fontSize: '13px' }}>
+                                      Deactivated
+                                    </span>
+                                    {(m.reactivationRequestStatus === 'PENDING' || m.reactivationRequested) ? (
+                                      <span style={{ color: '#f59e0b', fontWeight: '500', fontSize: '11px' }}>
+                                        Pending Review
+                                      </span>
+                                    ) : m.reactivationRequestStatus === 'REJECTED' ? (
+                                      <span style={{ color: '#f87171', fontWeight: '500', fontSize: '11px' }}>
+                                        Request Rejected
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                                    <span style={{ color: '#10b981', fontWeight: '600', fontSize: '13px' }}>
+                                      Active
+                                    </span>
+                                    {m.reactivationRequestStatus === 'APPROVED' && (
+                                      <span style={{ color: '#38bdf8', fontWeight: '500', fontSize: '11px' }}>
+                                        Reactivated
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                <span style={{ color: '#eab308', fontWeight: '600', fontSize: '13px' }}>
+                                  🏆 {m.rewardPoints || 0} pts
+                                </span>
+                              </td>
+                              <td className="text-right">
+                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                  <button
+                                    className="btn btn-secondary btn-sm"
+                                    style={{ padding: '5px 8px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                    title="Edit Member"
+                                    aria-label="Edit Member"
+                                    onClick={() => {
+                                      const parsed = parsePhoneNumber(m.phone || '');
+                                      setUserForm({
+                                        id: m.id,
+                                        name: m.name || m.username,
+                                        email: m.email,
+                                        password: '',
+                                        countryCode: parsed.countryDial,
+                                        phoneNumber: parsed.localNumber,
+                                        phoneError: ''
+                                      });
+                                      setActiveModal('editUser');
+                                    }}
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                  <button
+                                    className="btn btn-danger btn-sm"
+                                    style={{ padding: '5px 8px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                    title="Delete Member"
+                                    aria-label="Delete Member"
+                                    onClick={() => handleDeleteUser(m.id, m.name || m.email)}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="pagination-footer mt-4">
+                    <span className="pagination-info">Showing page {membersPage + 1} of {membersTotalPages}</span>
+                    <div className="pagination-buttons">
+                      <button className="btn btn-secondary btn-sm" disabled={membersPage <= 0} onClick={() => { setMembersPage(prev => prev - 1); loadMembers(membersPage - 1, memberSearchQuery, memberSortBy, memberSortDir); }}>&larr; Previous</button>
+                      <button className="btn btn-secondary btn-sm" disabled={membersPage >= membersTotalPages - 1} onClick={() => { setMembersPage(prev => prev + 1); loadMembers(membersPage + 1, memberSearchQuery, memberSortBy, memberSortDir); }}>Next &rarr;</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* VIEW 2: REACTIVATION REQUESTS (FULL PAGE VIEW, NOT A POPUP) */}
+              {membersTab === 'reactivation' && (
+                <div>
+                  {/* Summary Metric Cards */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gap: '16px',
+                    marginBottom: '20px'
+                  }}>
+                    <div style={{
+                      background: 'var(--bg-surface, #1e293b)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '12px',
+                      padding: '16px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px'
+                    }}>
+                      <div style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '10px',
+                        background: 'rgba(59, 130, 246, 0.15)',
+                        color: '#3b82f6',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <Users size={22} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500' }}>Total Requests</div>
+                        <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--text-main)' }}>{reactivationRequests.length}</div>
+                      </div>
+                    </div>
+
+                    <div style={{
+                      background: 'var(--bg-surface, #1e293b)',
+                      border: pendingRequestsCount > 0 ? '1px solid rgba(245, 158, 11, 0.5)' : '1px solid var(--border-subtle)',
+                      borderRadius: '12px',
+                      padding: '16px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px'
+                    }}>
+                      <div style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '10px',
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        color: '#f59e0b',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <Bell size={22} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500' }}>Pending Review</div>
+                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{pendingRequestsCount}</div>
+                      </div>
+                    </div>
+
+                    <div style={{
+                      background: 'var(--bg-surface, #1e293b)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '12px',
+                      padding: '16px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px'
+                    }}>
+                      <div style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '10px',
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        color: '#10b981',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <Check size={22} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500' }}>Approved</div>
+                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981' }}>{approvedRequestsCount}</div>
+                      </div>
+                    </div>
+
+                    <div style={{
+                      background: 'var(--bg-surface, #1e293b)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '12px',
+                      padding: '16px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px'
+                    }}>
+                      <div style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '10px',
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        color: '#ef4444',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <X size={22} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500' }}>Rejected</div>
+                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#ef4444' }}>{rejectedRequestsCount}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Filter and Action Bar */}
+                  <div className="action-bar mb-4" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div className="filter-controls" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div className="search-input-group">
+                        <Search size={16} />
+                        <input
+                          type="text"
+                          placeholder="Search request by member name or email..."
+                          value={reactivationSearchQuery}
+                          onChange={(e) => setReactivationSearchQuery(e.target.value)}
+                        />
+                      </div>
+                      {reactivationSearchQuery && (
+                        <button className="btn btn-ghost" onClick={() => setReactivationSearchQuery('')}>Clear</button>
+                      )}
+
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginLeft: '8px', flexWrap: 'wrap' }}>
+                        {[
+                          { id: 'PENDING', label: 'Pending', count: pendingRequestsCount, color: '#f59e0b' },
+                          { id: 'APPROVED', label: 'Approved', count: approvedRequestsCount, color: '#10b981' },
+                          { id: 'REJECTED', label: 'Rejected', count: rejectedRequestsCount, color: '#ef4444' },
+                          { id: 'ALL', label: 'All Requests', count: reactivationRequests.length, color: 'var(--accent-primary)' }
+                        ].map(tab => {
+                          const isActive = reactivationTab === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setReactivationTab(tab.id)}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <span>{tab.label}</span>
+                              <span style={{
+                                background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)',
+                                padding: '1px 6px',
+                                borderRadius: '10px',
+                                fontSize: '11px',
+                                fontWeight: '600'
+                              }}>
+                                {tab.count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setMembersTab('members')}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        &larr; Back to All Members
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Reactivation Requests Data Table */}
+                  <div className="table-container mt-4">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th width="60">ID</th>
+                          <th>Member Name</th>
+                          <th>Email Address</th>
+                          <th width="150">Phone Number</th>
+                          <th width="140">Account Status</th>
+                          <th width="130">Reward Points</th>
+                          <th width="140">Request Status</th>
+                          <th width="200" className="text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const filtered = reactivationRequests.filter(req => {
+                            const reqStatus = (req.reactivationRequestStatus || (req.reactivationRequested ? 'PENDING' : 'NONE')).toUpperCase();
+                            const matchesTab =
+                              reactivationTab === 'ALL' ? true :
+                              reactivationTab === 'PENDING' ? (reqStatus === 'PENDING' || (req.reactivationRequested && reqStatus !== 'APPROVED' && reqStatus !== 'REJECTED')) :
+                              reactivationTab === 'APPROVED' ? reqStatus === 'APPROVED' :
+                              reactivationTab === 'REJECTED' ? reqStatus === 'REJECTED' : true;
+
+                            if (!matchesTab) return false;
+
+                            if (reactivationSearchQuery.trim()) {
+                              const q = reactivationSearchQuery.toLowerCase();
+                              const name = (req.name || '').toLowerCase();
+                              const email = (req.email || '').toLowerCase();
+                              return name.includes(q) || email.includes(q);
+                            }
+                            return true;
+                          });
+
+                          if (filtered.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan="8" className="empty-cell" style={{ padding: '48px 20px', textAlign: 'center' }}>
+                                  <div style={{ fontSize: '36px', marginBottom: '10px' }}>
+                                    {reactivationTab === 'PENDING' ? '✨' : reactivationTab === 'APPROVED' ? '✅' : reactivationTab === 'REJECTED' ? '📋' : '📭'}
+                                  </div>
+                                  <h4 style={{ color: 'var(--text-main)', fontSize: '15px', fontWeight: '600', margin: '0 0 6px' }}>
+                                    {reactivationTab === 'ALL'
+                                      ? 'No Reactivation Requests Found'
+                                      : `No ${reactivationTab.charAt(0) + reactivationTab.slice(1).toLowerCase()} Reactivation Requests`}
+                                  </h4>
+                                  <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: 0, maxWidth: '440px', marginInline: 'auto' }}>
+                                    {reactivationTab === 'PENDING'
+                                      ? ' No pending request'
+                                      : reactivationTab === 'APPROVED'
+                                      ? 'No reactivation requests have been approved yet.'
+                                      : reactivationTab === 'REJECTED'
+                                      ? 'No account reactivation requests are currently marked as rejected.'
+                                      : 'There are currently no account reactivation requests recorded in the system.'}
+                                  </p>
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return filtered.map((req, idx) => {
+                            const reqStatus = (req.reactivationRequestStatus || (req.reactivationRequested ? 'PENDING' : 'NONE')).toUpperCase();
+                            const isPending = reqStatus === 'PENDING' || (req.reactivationRequested && reqStatus !== 'APPROVED' && reqStatus !== 'REJECTED');
+                            const isApproved = reqStatus === 'APPROVED';
+                            const isRejected = reqStatus === 'REJECTED';
+
+                            return (
+                              <tr key={req.id ?? req.uuid ?? req.email ?? `req-${idx}`}>
+                                <td>#{req.id || '—'}</td>
+                                <td><strong>{req.name || req.email}</strong></td>
+                                <td>{req.email}</td>
+                                <td>
+                                  {req.phone ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', fontWeight: '500' }}>
+                                      <Phone size={13} style={{ color: 'var(--accent-primary)', opacity: 0.8 }} />
+                                      <code>{req.phone}</code>
+                                    </span>
+                                  ) : (
+                                    <span className="text-subtle" style={{ fontSize: '12px' }}>—</span>
+                                  )}
+                                </td>
+                                <td>
+                                  <span style={{ color: String(req.status || '').toUpperCase() === 'ACTIVE' ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '13px' }}>
+                                    {String(req.status || '').toUpperCase() === 'ACTIVE' ? 'Active' : 'Deactivated'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ color: '#eab308', fontWeight: '600', fontSize: '13px' }}>
+                                    🏆 {req.rewardPoints || 0} pts
+                                  </span>
+                                </td>
+                                <td>
+                                  {isPending && (
+                                    <span style={{ color: '#f59e0b', fontWeight: '600', fontSize: '13px' }}>
+                                      Pending Review
+                                    </span>
+                                  )}
+                                  {isApproved && (
+                                    <span style={{ color: '#10b981', fontWeight: '600', fontSize: '13px' }}>
+                                      Approved
+                                    </span>
+                                  )}
+                                  {isRejected && (
+                                    <span style={{ color: '#ef4444', fontWeight: '600', fontSize: '13px' }}>
+                                      Rejected
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="text-right">
+                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
+                                    {isPending && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm"
+                                          style={{ background: 'var(--accent-primary, #3b82f6)', color: '#fff', fontSize: '11px', padding: '4px 10px', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                          title="Approve reactivation request"
+                                          onClick={() => handleApproveReactivation(req.id, req.name || req.email)}
+                                        >
+                                          <Check size={13} />
+                                          <span>Approve</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-danger"
+                                          style={{ fontSize: '11px', padding: '4px 10px', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                          title="Reject reactivation request"
+                                          onClick={() => handleRejectReactivation(req.id, req.name || req.email)}
+                                        >
+                                          <X size={13} />
+                                          <span>Reject</span>
+                                        </button>
+                                      </>
+                                    )}
+                                    {isRejected && (
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm"
+                                        style={{ background: 'var(--accent-primary, #3b82f6)', color: '#fff', fontSize: '11px', padding: '4px 10px', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                        title="Approve previously rejected request"
+                                        onClick={() => handleApproveReactivation(req.id, req.name || req.email)}
+                                      >
+                                        <Check size={13} />
+                                        <span>Approve</span>
+                                      </button>
+                                    )}
+                                    {isApproved && (
+                                      <span style={{ fontSize: '12px', color: '#10b981', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                        <Check size={13} />
+                                        <span>Active</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -3421,6 +4098,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+
 
 
       {/* TOAST NOTIFICATIONS */}

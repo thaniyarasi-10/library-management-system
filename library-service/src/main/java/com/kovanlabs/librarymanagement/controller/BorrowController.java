@@ -3,6 +3,7 @@ package com.kovanlabs.librarymanagement.controller;
 import com.kovanlabs.librarymanagement.dto.BorrowRequestDto;
 import com.kovanlabs.librarymanagement.dto.BorrowResponseDto;
 import com.kovanlabs.librarymanagement.service.BorrowService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,13 +14,11 @@ import java.util.List;
 import java.util.Objects;
 
 @RestController
-@RequestMapping("/borrow")
+@RequestMapping({"/api/borrow", "/borrow"})
+@RequiredArgsConstructor
 public class BorrowController {
 
     private final BorrowService borrowService;
-    public BorrowController(BorrowService borrowService){
-        this.borrowService = borrowService;
-    }
 
     @GetMapping
     public List<BorrowResponseDto> getAllBorrows() {

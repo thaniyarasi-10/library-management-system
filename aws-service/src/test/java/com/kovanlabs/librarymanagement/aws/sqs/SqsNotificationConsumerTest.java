@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.kovanlabs.librarymanagement.aws.sqs.consumer.SqsNotificationConsumer;
 import com.kovanlabs.librarymanagement.communication.dto.NotificationRequest;
+import com.kovanlabs.librarymanagement.communication.enums.EmailTemplateType;
 import com.kovanlabs.librarymanagement.communication.enums.NotificationTypeEnum;
 import com.kovanlabs.librarymanagement.communication.factory.NotificationFactory;
 import com.kovanlabs.librarymanagement.communication.service.NotificationService;
@@ -56,7 +57,14 @@ class SqsNotificationConsumerTest {
         NotificationRequest request = new NotificationRequest(
                 "user@example.com",
                 "Overdue Books Notice",
-                "Please return overdue books"
+                "Please return overdue books",
+                "User",
+                null,
+                null,
+                EmailTemplateType.OVERDUE_FINE,
+                null,
+                null,
+                null
         );
         String jsonPayload = objectMapper.writeValueAsString(request);
 

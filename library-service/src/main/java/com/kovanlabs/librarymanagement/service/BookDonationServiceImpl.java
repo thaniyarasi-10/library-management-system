@@ -18,6 +18,7 @@ import com.kovanlabs.librarymanagement.dto.BookDonationRequest;
 import com.kovanlabs.librarymanagement.dto.BookDonationResponse;
 import com.kovanlabs.librarymanagement.mapping.BookDonationMapper;
 import com.kovanlabs.librarymanagement.mapping.BookMapper;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,16 +52,21 @@ public class BookDonationServiceImpl implements BookDonationService {
     /**
      * Creates a new book donation request in {@link DonationStatus#PENDING} status.
      * <p>
-     * Validates required book details (title, author, ISBN, copy count) and authenticates the submitting user.
-     * If an image file is attached, it uploads the file to Amazon S3 via {@link S3Service} and persists
+     * Validates required book details (title, author, ISBN, copy count) and
+     * authenticates the submitting user.
+     * If an image file is attached, it uploads the file to Amazon S3 via
+     * {@link S3Service} and persists
      * the resulting S3 key and URL on the donation entity.
      * </p>
      *
-     * @param request  the book donation payload containing title, author, ISBN, and copy count
+     * @param request  the book donation payload containing title, author, ISBN, and
+     *                 copy count
      * @param file     the optional multipart image file for the book cover
-     * @param userUuid the unique identifier (Auth0 sub, email, or UUID) of the donor user
+     * @param userUuid the unique identifier (Auth0 sub, email, or UUID) of the
+     *                 donor user
      * @return the saved {@link BookDonationResponse}
-     * @throws ResponseStatusException if request validation fails or donor user is not found
+     * @throws ResponseStatusException if request validation fails or donor user is
+     *                                 not found
      */
     @Override
     @Transactional
@@ -94,7 +100,8 @@ public class BookDonationServiceImpl implements BookDonationService {
                 log.info("Uploaded cover image for new donation request: {}", coverImageKey);
             } catch (IOException e) {
                 log.error("Failed to upload cover image for book donation: {}", e.getMessage());
-                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload cover image: " + e.getMessage());
+                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Failed to upload cover image: " + e.getMessage());
             }
         }
 
@@ -117,8 +124,10 @@ public class BookDonationServiceImpl implements BookDonationService {
     /**
      * Retrieves all book donation records submitted by the authenticated user.
      *
-     * @param userUuid the unique identifier (Auth0 sub, email, or UUID) of the donor user
-     * @return a list of {@link BookDonationResponse} belonging to the user, ordered by creation date descending
+     * @param userUuid the unique identifier (Auth0 sub, email, or UUID) of the
+     *                 donor user
+     * @return a list of {@link BookDonationResponse} belonging to the user, ordered
+     *         by creation date descending
      */
     @Override
     public List<BookDonationResponse> getMyDonations(String userUuid) {
@@ -133,14 +142,16 @@ public class BookDonationServiceImpl implements BookDonationService {
     /**
      * Retrieves a single book donation by its ID or UUID.
      * <p>
-     * Enforces ownership validation: only the donor who submitted the donation or an administrator
+     * Enforces ownership validation: only the donor who submitted the donation or
+     * an administrator
      * is authorized to view the record.
      * </p>
      *
      * @param donationUuid the numeric ID or UUID string of the donation record
      * @param userUuid     the unique identifier of the requesting user
      * @return the {@link BookDonationResponse} details
-     * @throws ResponseStatusException if the donation is not found or the user is not authorized
+     * @throws ResponseStatusException if the donation is not found or the user is
+     *                                 not authorized
      */
     @Override
     public BookDonationResponse getDonationByUuid(String donationUuid, String userUuid) {
@@ -148,10 +159,12 @@ public class BookDonationServiceImpl implements BookDonationService {
         User user = findUserByIdentifier(userUuid);
 
         boolean isAdmin = RoleEnum.ADMIN.equals(user.getRole());
-        boolean isOwner = Objects.nonNull(donation.getUser()) && Objects.equals(donation.getUser().getUuid(), user.getUuid());
+        boolean isOwner = Objects.nonNull(donation.getUser())
+                && Objects.equals(donation.getUser().getUuid(), user.getUuid());
 
         if (!isAdmin && !isOwner) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied: You can only view your own donation records");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Access denied: You can only view your own donation records");
         }
 
         return BookDonationMapper.INSTANCE.mapToResponse(donation);
@@ -160,7 +173,8 @@ public class BookDonationServiceImpl implements BookDonationService {
     /**
      * Retrieves all book donation records across the entire system.
      *
-     * @return a list of all {@link BookDonationResponse} records ordered by creation date descending
+     * @return a list of all {@link BookDonationResponse} records ordered by
+     *         creation date descending
      */
     @Override
     public List<BookDonationResponse> getAllDonations() {
@@ -171,20 +185,24 @@ public class BookDonationServiceImpl implements BookDonationService {
     /**
      * Updates an existing pending book donation request.
      * <p>
-     * Only the owner who created the donation or an administrator may update it, and only while
+     * Only the owner who created the donation or an administrator may update it,
+     * and only while
      * the donation is still in {@link DonationStatus#PENDING} status.
      * </p>
      *
      * @param donationUuid the numeric ID or UUID string of the donation to update
      * @param request      the updated book donation details
      * @param file         the optional updated multipart cover image file
-     * @param userUuid     the unique identifier of the user making the update request
+     * @param userUuid     the unique identifier of the user making the update
+     *                     request
      * @return the updated {@link BookDonationResponse}
-     * @throws ResponseStatusException if request validation fails, donation not found, non-pending, or unauthorized
+     * @throws ResponseStatusException if request validation fails, donation not
+     *                                 found, non-pending, or unauthorized
      */
     @Override
     @Transactional
-    public BookDonationResponse updateDonation(String donationUuid, BookDonationRequest request, MultipartFile file, String userUuid) {
+    public BookDonationResponse updateDonation(String donationUuid, BookDonationRequest request, MultipartFile file,
+            String userUuid) {
         if (Objects.isNull(request)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Donation request cannot be null");
         }
@@ -205,14 +223,17 @@ public class BookDonationServiceImpl implements BookDonationService {
         BookDonation donation = findDonationByIdentifier(donationUuid);
 
         boolean isAdmin = RoleEnum.ADMIN.equals(user.getRole());
-        boolean isOwner = Objects.nonNull(donation.getUser()) && Objects.equals(donation.getUser().getUuid(), user.getUuid());
+        boolean isOwner = Objects.nonNull(donation.getUser())
+                && Objects.equals(donation.getUser().getUuid(), user.getUuid());
 
         if (!isAdmin && !isOwner) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied: You can only edit your own pending donations");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Access denied: You can only edit your own pending donations");
         }
 
         if (!DonationStatus.PENDING.equals(donation.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot edit a donation that has already been reviewed");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot edit a donation that has already been reviewed");
         }
 
         if (Objects.nonNull(file) && !file.isEmpty()) {
@@ -223,7 +244,8 @@ public class BookDonationServiceImpl implements BookDonationService {
                 log.info("Updated cover image for donation request: {}", uploadResponse.coverImageKey());
             } catch (IOException e) {
                 log.error("Failed to upload updated cover image for donation: {}", e.getMessage());
-                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload cover image: " + e.getMessage());
+                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Failed to upload cover image: " + e.getMessage());
             }
         }
 
@@ -240,13 +262,16 @@ public class BookDonationServiceImpl implements BookDonationService {
     /**
      * Deletes a pending book donation request.
      * <p>
-     * Only the owner who created the donation or an administrator may delete it, and only while
+     * Only the owner who created the donation or an administrator may delete it,
+     * and only while
      * the donation is still in {@link DonationStatus#PENDING} status.
      * </p>
      *
      * @param donationUuid the numeric ID or UUID string of the donation to delete
-     * @param userUuid     the unique identifier of the user making the delete request
-     * @throws ResponseStatusException if donation not found, non-pending, or unauthorized
+     * @param userUuid     the unique identifier of the user making the delete
+     *                     request
+     * @throws ResponseStatusException if donation not found, non-pending, or
+     *                                 unauthorized
      */
     @Override
     @Transactional
@@ -255,14 +280,17 @@ public class BookDonationServiceImpl implements BookDonationService {
         BookDonation donation = findDonationByIdentifier(donationUuid);
 
         boolean isAdmin = RoleEnum.ADMIN.equals(user.getRole());
-        boolean isOwner = Objects.nonNull(donation.getUser()) && Objects.equals(donation.getUser().getUuid(), user.getUuid());
+        boolean isOwner = Objects.nonNull(donation.getUser())
+                && Objects.equals(donation.getUser().getUuid(), user.getUuid());
 
         if (!isAdmin && !isOwner) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied: You can only delete your own pending donations");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Access denied: You can only delete your own pending donations");
         }
 
         if (!DonationStatus.PENDING.equals(donation.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot delete a donation that has already been reviewed");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot delete a donation that has already been reviewed");
         }
 
         bookDonationRepository.delete(donation);
@@ -274,25 +302,32 @@ public class BookDonationServiceImpl implements BookDonationService {
      * <p>
      * Performs atomic inventory update and CRM replication:
      * <ul>
-     *     <li>Checks if a {@link Book} with matching ISBN already exists in the catalog.</li>
-     *     <li>If found: Increments {@code totalBookCount} and updates cover image if not previously set.</li>
-     *     <li>If not found: Creates a new {@link Book} record with the donated details and quantity.</li>
-     *     <li>Replicates the new/updated book state to Salesforce.</li>
-     *     <li>Associates the donation with the catalog book, records admin UUID, sets status to {@link DonationStatus#APPROVED}.</li>
+     * <li>Checks if a {@link Book} with matching ISBN already exists in the
+     * catalog.</li>
+     * <li>If found: Increments {@code totalBookCount} and updates cover image if
+     * not previously set.</li>
+     * <li>If not found: Creates a new {@link Book} record with the donated details
+     * and quantity.</li>
+     * <li>Replicates the new/updated book state to Salesforce.</li>
+     * <li>Associates the donation with the catalog book, records admin UUID, sets
+     * status to {@link DonationStatus#APPROVED}.</li>
      * </ul>
      * </p>
      *
-     * @param donationUuid the numeric ID or UUID string of the donation record to approve
+     * @param donationUuid the numeric ID or UUID string of the donation record to
+     *                     approve
      * @param adminUuid    the unique identifier of the reviewing administrator
      * @return the approved {@link BookDonationResponse}
-     * @throws ResponseStatusException if caller is not admin, donation not found, or donation is not pending
+     * @throws ResponseStatusException if caller is not admin, donation not found,
+     *                                 or donation is not pending
      */
     @Override
     @Transactional
     public synchronized BookDonationResponse approveDonation(String donationUuid, String adminUuid) {
         User admin = findUserByIdentifier(adminUuid);
         if (!RoleEnum.ADMIN.equals(admin.getRole())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only administrators are authorized to approve donations");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only administrators are authorized to approve donations");
         }
 
         BookDonation donation = findDonationByIdentifier(donationUuid);
@@ -345,7 +380,8 @@ public class BookDonationServiceImpl implements BookDonationService {
         syncBookToSalesforce(targetBook);
 
         // Award reward points (2 points per approved donated copy) to the donor
-        if (Objects.nonNull(donation.getUser()) && Objects.nonNull(donation.getUser().getUuid()) && Objects.nonNull(rewardRepository)) {
+        if (Objects.nonNull(donation.getUser()) && Objects.nonNull(donation.getUser().getUuid())
+                && Objects.nonNull(rewardRepository)) {
             String donorUuid = donation.getUser().getUuid();
             int pointsEarned = count * 2;
             int updated = rewardRepository.incrementPoints(donorUuid, pointsEarned);
@@ -356,7 +392,24 @@ public class BookDonationServiceImpl implements BookDonationService {
                         .build();
                 rewardRepository.save(newReward);
             }
-            log.info("Awarded {} reward points to donor [UUID: {}] for approved book donation", pointsEarned, donorUuid);
+            log.info("Awarded {} reward points to donor [UUID: {}] for approved book donation", pointsEarned,
+                    donorUuid);
+
+            if (Objects.nonNull(salesforceSyncService)) {
+                try {
+                    int totalPoints = rewardRepository.findByUserUuid(donorUuid)
+                            .map(Reward::getPoints)
+                            .orElse(pointsEarned);
+                    salesforceSyncService.syncContact(ContactSObject.builder()
+                            .externalUserUuid(donorUuid)
+                            .reward(totalPoints)
+                            .build());
+                    log.info("Synchronized reward points ({}) to Salesforce for donor [{}]", totalPoints, donorUuid);
+                } catch (Exception e) {
+                    log.error("Failed to sync reward points to Salesforce for donor [UUID: {}]: {}", donorUuid,
+                            e.getMessage());
+                }
+            }
         }
 
         donation.setBook(targetBook);
@@ -365,29 +418,34 @@ public class BookDonationServiceImpl implements BookDonationService {
         donation.setReviewedAt(LocalDateTime.now());
 
         BookDonation savedDonation = bookDonationRepository.save(donation);
-        log.info("Donation [UUID: {}] successfully approved by admin [UUID: {}]", savedDonation.getUuid(), admin.getUuid());
+        log.info("Donation [UUID: {}] successfully approved by admin [UUID: {}]", savedDonation.getUuid(),
+                admin.getUuid());
         return BookDonationMapper.INSTANCE.mapToResponse(savedDonation);
     }
 
     /**
      * Rejects a pending book donation request (Administrator only).
      * <p>
-     * Marks the donation record with {@link DonationStatus#REJECTED}, attaches the admin reviewer's UUID,
+     * Marks the donation record with {@link DonationStatus#REJECTED}, attaches the
+     * admin reviewer's UUID,
      * timestamp, and optional rejection reason.
      * </p>
      *
-     * @param donationUuid the numeric ID or UUID string of the donation record to reject
+     * @param donationUuid the numeric ID or UUID string of the donation record to
+     *                     reject
      * @param reason       the optional feedback explanation for rejection
      * @param adminUuid    the unique identifier of the reviewing administrator
      * @return the rejected {@link BookDonationResponse}
-     * @throws ResponseStatusException if caller is not admin, donation not found, or donation is not pending
+     * @throws ResponseStatusException if caller is not admin, donation not found,
+     *                                 or donation is not pending
      */
     @Override
     @Transactional
     public synchronized BookDonationResponse rejectDonation(String donationUuid, String reason, String adminUuid) {
         User admin = findUserByIdentifier(adminUuid);
         if (!RoleEnum.ADMIN.equals(admin.getRole())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only administrators are authorized to reject donations");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only administrators are authorized to reject donations");
         }
 
         BookDonation donation = findDonationByIdentifier(donationUuid);
@@ -416,11 +474,13 @@ public class BookDonationServiceImpl implements BookDonationService {
 
     /**
      * Resolves a {@link User} entity flexibly from an identifier string.
-     * Supports matching by Auth0 provider ID (with or without pipe prefix), email, or user UUID.
+     * Supports matching by Auth0 provider ID (with or without pipe prefix), email,
+     * or user UUID.
      *
      * @param identifier the input user identifier
      * @return the resolved {@link User}
-     * @throws ResponseStatusException if identifier is blank or no matching user is found
+     * @throws ResponseStatusException if identifier is blank or no matching user is
+     *                                 found
      */
     private User findUserByIdentifier(String identifier) {
         if (Objects.isNull(identifier) || identifier.isBlank()) {
@@ -440,15 +500,18 @@ public class BookDonationServiceImpl implements BookDonationService {
                 })
                 .or(() -> userRepository.findByEmail(identifier))
                 .or(() -> userRepository.findByUuid(identifier))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found for identifier: " + identifier));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "User not found for identifier: " + identifier));
     }
 
     /**
-     * Resolves a {@link BookDonation} entity by either UUID string or numeric database ID.
+     * Resolves a {@link BookDonation} entity by either UUID string or numeric
+     * database ID.
      *
      * @param identifier the UUID string or numeric ID
      * @return the resolved {@link BookDonation}
-     * @throws ResponseStatusException if identifier is blank or donation is not found
+     * @throws ResponseStatusException if identifier is blank or donation is not
+     *                                 found
      */
     private BookDonation findDonationByIdentifier(String identifier) {
         if (Objects.isNull(identifier) || identifier.isBlank()) {
@@ -463,11 +526,13 @@ public class BookDonationServiceImpl implements BookDonationService {
                         return Optional.empty();
                     }
                 })
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Donation record not found for identifier: " + identifier));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Donation record not found for identifier: " + identifier));
     }
 
     /**
-     * Replicates book catalog changes to Salesforce CRM with error logging and retry incrementation.
+     * Replicates book catalog changes to Salesforce CRM with error logging and
+     * retry incrementation.
      *
      * @param book the {@link Book} entity to synchronize
      */
@@ -482,7 +547,8 @@ public class BookDonationServiceImpl implements BookDonationService {
                 book.setSalesforceRetryCount(retryCount);
                 book.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
                 bookRepository.save(book);
-                log.error("Salesforce dual-write failed for book count update from donation [Book ID: {}, UUID: {}, Operation: UPSERT, RetryCount: {}]: {}",
+                log.error(
+                        "Salesforce dual-write failed for book count update from donation [Book ID: {}, UUID: {}, Operation: UPSERT, RetryCount: {}]: {}",
                         book.getId(), book.getUuid(), retryCount, e.getMessage());
             }
         }

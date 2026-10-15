@@ -11,9 +11,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.util.List;
 
 @RestController
-@RequestMapping("/user")
+@RequestMapping({"/api/user", "/user"})
 @RequiredArgsConstructor
 public class UserController {
 
@@ -45,9 +46,14 @@ public class UserController {
         return userService.searchUsers(query, page, size, sortBy, sortDir);
     }
 
-    @GetMapping("/me")
+    @GetMapping({"/me", "/auth/me"})
     public UserResponse getCurrentUser(Principal principal) {
         return userService.getCurrentUser(principal);
+    }
+
+    @PostMapping({"/callback", "/login-success", "/login"})
+    public UserResponse recordLogin(Principal principal) {
+        return userService.recordLogin(principal);
     }
 
     @PutMapping("/me")
@@ -76,6 +82,31 @@ public class UserController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteUser(@PathVariable("id") Long id) {
         userService.deleteUser(id);
+    }
+
+    @PostMapping("/me/request-reactivation")
+    public UserResponse requestReactivation(Principal principal) {
+        return userService.requestReactivation(principal);
+    }
+
+    @GetMapping("/reactivation-requests")
+    public List<UserResponse> getReactivationRequests() {
+        return userService.getReactivationRequests();
+    }
+
+    @PostMapping("/{id}/approve-reactivation")
+    public UserResponse approveReactivation(@PathVariable("id") Long id) {
+        return userService.reactivateUser(id);
+    }
+
+    @PostMapping("/{id}/reject-reactivation")
+    public UserResponse rejectReactivation(@PathVariable("id") Long id) {
+        return userService.rejectReactivation(id);
+    }
+
+    @PostMapping("/{id}/deactivate")
+    public UserResponse deactivateUser(@PathVariable("id") Long id) {
+        return userService.deactivateUser(id);
     }
 
 }

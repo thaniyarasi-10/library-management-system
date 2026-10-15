@@ -53,11 +53,23 @@ class UserControllerTest {
         id2 = 2L;
     }
 
+    private UserResponse createUserResponse(String uuid, Long id, String name, String email, String role, Integer points) {
+        return new UserResponse(uuid, id, name, email, role, points, null, "ACTIVE", false, false, 0.0, null);
+    }
+
+    private UserResponse createUserResponse(String uuid, Long id, String name, String email, String role, Integer points, String phone) {
+        return new UserResponse(uuid, id, name, email, role, points, phone, "ACTIVE", false, false, 0.0, null);
+    }
+
+    private UserResponse createUserResponse(String uuid, Long id, String name, String email, String role, Integer points, String phone, String status, boolean reactivationRequested, String reactivationRequestStatus) {
+        return new UserResponse(uuid, id, name, email, role, points, phone, status, reactivationRequested, false, 0.0, reactivationRequestStatus);
+    }
+
     @Test
     @DisplayName("GET /user with default query params should return 200 OK and PagedResponse")
     void getAllUsers_WithDefaultParams_ShouldReturnPagedUsers() throws Exception {
-        UserResponse u1 = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
-        UserResponse u2 = new UserResponse(uuid2, id2, "Bob", "bob@example.com", "USER", 0);
+        UserResponse u1 = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        UserResponse u2 = createUserResponse(uuid2, id2, "Bob", "bob@example.com", "USER", 0);
         PagedResponse<UserResponse> pagedResponse = new PagedResponse<>(
                 List.of(u1, u2), 0, 10, 2L, 1, true
         );
@@ -82,7 +94,7 @@ class UserControllerTest {
     @Test
     @DisplayName("PUT /user/{id} with valid payload should return 200 OK and updated UserResponse")
     void updateUser_WithValidPayload_ShouldReturnUpdatedUser() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice Updated", "updated@example.com", "USER", 0);
+        UserResponse response = createUserResponse(uuid1, id1, "Alice Updated", "updated@example.com", "USER", 0);
 
         when(userService.updateUser(eq(id1), any(UserRequest.class))).thenReturn(response);
 
@@ -106,7 +118,7 @@ class UserControllerTest {
     @Test
     @DisplayName("PUT /user/{id} with valid phone should return 200 OK and updated phone")
     void updateUser_WithValidPhone_ShouldReturnUpdatedUser() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice Updated", "updated@example.com", "USER", 0, "+15555555555");
+        UserResponse response = createUserResponse(uuid1, id1, "Alice Updated", "updated@example.com", "USER", 0, "+15555555555");
 
         when(userService.updateUser(eq(id1), any(UserRequest.class))).thenReturn(response);
 
@@ -179,7 +191,7 @@ class UserControllerTest {
     @Test
     @DisplayName("POST /user should create and return user")
     void createUser_ShouldReturnCreatedUser() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
         when(userService.createUser(any(UserRequest.class))).thenReturn(response);
 
         String jsonPayload = """
@@ -199,7 +211,7 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /user/{id} should return user by id")
     void getUserById_ShouldReturnUser() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
         when(userService.getUserById(id1)).thenReturn(response);
 
         mockMvc.perform(get("/user/" + id1))
@@ -210,7 +222,7 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /user/search should return paged users")
     void searchUsers_ShouldReturnPagedUsers() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
         PagedResponse<UserResponse> pagedResponse = new PagedResponse<>(
                 List.of(response), 0, 10, 1L, 1, true
         );
@@ -224,7 +236,7 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /user/me should return current user profile")
     void getCurrentUser_ShouldReturnProfile() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
         java.security.Principal mockPrincipal = mock(java.security.Principal.class);
         when(userService.getCurrentUser(mockPrincipal)).thenReturn(response);
 
@@ -237,9 +249,68 @@ class UserControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/user/me should return current user profile")
+    void getCurrentUser_ApiUserMe_ShouldReturnProfile() throws Exception {
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        java.security.Principal mockPrincipal = mock(java.security.Principal.class);
+        when(userService.getCurrentUser(mockPrincipal)).thenReturn(response);
+
+        mockMvc.perform(get("/api/user/me").principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"))
+                .andExpect(jsonPath("$.email").value("alice@example.com"));
+
+        verify(userService).getCurrentUser(mockPrincipal);
+    }
+
+    @Test
+    @DisplayName("POST /user/callback should record login activity and return profile")
+    void recordLogin_UserCallback_ShouldReturnProfile() throws Exception {
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        java.security.Principal mockPrincipal = mock(java.security.Principal.class);
+        when(userService.recordLogin(mockPrincipal)).thenReturn(response);
+
+        mockMvc.perform(post("/user/callback").principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"))
+                .andExpect(jsonPath("$.email").value("alice@example.com"));
+
+        verify(userService).recordLogin(mockPrincipal);
+    }
+
+    @Test
+    @DisplayName("POST /api/user/callback should record login activity and return profile")
+    void recordLogin_ApiUserCallback_ShouldReturnProfile() throws Exception {
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        java.security.Principal mockPrincipal = mock(java.security.Principal.class);
+        when(userService.recordLogin(mockPrincipal)).thenReturn(response);
+
+        mockMvc.perform(post("/api/user/callback").principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"))
+                .andExpect(jsonPath("$.email").value("alice@example.com"));
+
+        verify(userService).recordLogin(mockPrincipal);
+    }
+
+    @Test
+    @DisplayName("POST /user/login-success should record login activity and return profile")
+    void recordLogin_LoginSuccess_ShouldReturnProfile() throws Exception {
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        java.security.Principal mockPrincipal = mock(java.security.Principal.class);
+        when(userService.recordLogin(mockPrincipal)).thenReturn(response);
+
+        mockMvc.perform(post("/user/login-success").principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"));
+
+        verify(userService).recordLogin(mockPrincipal);
+    }
+
+    @Test
     @DisplayName("PATCH /user/{id}/role should update and return user profile")
     void updateUserRole_ShouldReturnUpdatedProfile() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice", "alice@example.com", "ADMIN", 0);
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "ADMIN", 0);
         when(userService.updateUserRole(eq(id1), eq(RoleEnum.ADMIN)))
                 .thenReturn(response);
 
@@ -255,7 +326,7 @@ class UserControllerTest {
     @Test
     @DisplayName("PUT /user/me should update current user and return profile")
     void updateCurrentUser_ShouldReturnUpdatedProfile() throws Exception {
-        UserResponse response = new UserResponse(uuid1, id1, "Alice Updated", "alice@example.com", "USER", 0);
+        UserResponse response = createUserResponse(uuid1, id1, "Alice Updated", "alice@example.com", "USER", 0);
         java.security.Principal mockPrincipal = mock(java.security.Principal.class);
         when(userService.updateCurrentUser(eq(mockPrincipal), any(UserRequest.class))).thenReturn(response);
 
@@ -274,5 +345,108 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.name").value("Alice Updated"));
 
         verify(userService).updateCurrentUser(eq(mockPrincipal), any(UserRequest.class));
+    }
+
+    @Test
+    @DisplayName("POST /user/{id}/deactivate should deactivate user and return response")
+    void deactivateUser_ShouldReturnDeactivatedUser() throws Exception {
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0, null, "DEACTIVATED", false, null);
+        when(userService.deactivateUser(id1)).thenReturn(response);
+
+        mockMvc.perform(post("/user/{id}/deactivate", id1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DEACTIVATED"));
+
+        verify(userService).deactivateUser(id1);
+    }
+
+    @Test
+    @DisplayName("POST /user/me/request-reactivation should invoke requestReactivation on service")
+    void requestReactivation_ShouldReturnResponse() throws Exception {
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0, null, "DEACTIVATED", true, "PENDING");
+        when(userService.requestReactivation(any())).thenReturn(response);
+
+        mockMvc.perform(post("/user/me/request-reactivation"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DEACTIVATED"))
+                .andExpect(jsonPath("$.reactivationRequested").value(true));
+
+        verify(userService).requestReactivation(any());
+    }
+
+    @Test
+    @DisplayName("GET /user/reactivation-requests should return list of pending reactivation users")
+    void getReactivationRequests_ShouldReturnList() throws Exception {
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0, null, "DEACTIVATED", true, "PENDING");
+        when(userService.getReactivationRequests()).thenReturn(List.of(response));
+
+        mockMvc.perform(get("/user/reactivation-requests"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].email").value("alice@example.com"))
+                .andExpect(jsonPath("$[0].reactivationRequested").value(true));
+
+        verify(userService).getReactivationRequests();
+    }
+
+    @Test
+    @DisplayName("POST /user/{id}/approve-reactivation should reactivate user and return response")
+    void approveReactivation_ShouldReturnActiveUser() throws Exception {
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0, null, "ACTIVE", false, "APPROVED");
+        when(userService.reactivateUser(id1)).thenReturn(response);
+
+        mockMvc.perform(post("/user/{id}/approve-reactivation", id1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.reactivationRequested").value(false));
+
+        verify(userService).reactivateUser(id1);
+    }
+
+    @Test
+    @DisplayName("POST /user/{id}/reject-reactivation should reject request and return deactivated response")
+    void rejectReactivation_ShouldReturnDeactivatedUser() throws Exception {
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0, null, "DEACTIVATED", false, "REJECTED");
+        when(userService.rejectReactivation(id1)).thenReturn(response);
+
+        mockMvc.perform(post("/user/{id}/reject-reactivation", id1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DEACTIVATED"))
+                .andExpect(jsonPath("$.reactivationRequested").value(false));
+
+        verify(userService).rejectReactivation(id1);
+    }
+
+    @Test
+    @DisplayName("GET /api/user with default query params should return 200 OK")
+    void getAllUsers_WithApiPrefix_ShouldReturnPagedUsers() throws Exception {
+        UserResponse u1 = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+        PagedResponse<UserResponse> pagedResponse = new PagedResponse<>(
+                List.of(u1), 0, 10, 1L, 1, true
+        );
+
+        when(userService.getAllUsers(0, 10, "id", "asc")).thenReturn(pagedResponse);
+
+        mockMvc.perform(get("/api/user")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].name").value("Alice"));
+
+        verify(userService, times(1)).getAllUsers(0, 10, "id", "asc");
+    }
+
+    @Test
+    @DisplayName("GET /api/user/me should return current user")
+    void getCurrentUser_WithApiPrefix_ShouldReturnCurrentUser() throws Exception {
+        Principal mockPrincipal = mock(Principal.class);
+        UserResponse response = createUserResponse(uuid1, id1, "Alice", "alice@example.com", "USER", 0);
+
+        when(userService.getCurrentUser(mockPrincipal)).thenReturn(response);
+
+        mockMvc.perform(get("/api/user/me").principal(mockPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"));
+
+        verify(userService, times(1)).getCurrentUser(mockPrincipal);
     }
 }

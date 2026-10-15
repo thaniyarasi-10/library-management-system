@@ -1,15 +1,21 @@
 package com.kovanlabs.librarymanagement.user.service;
 
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.database.entity.Fine;
 import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.entity.UserProvider;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
+import com.kovanlabs.librarymanagement.database.enums.FineStatus;
+import com.kovanlabs.librarymanagement.database.enums.ReactivationRequestStatus;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
+import com.kovanlabs.librarymanagement.database.repository.FineRepository;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
@@ -31,7 +37,9 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.math.BigDecimal;
 import java.security.Principal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -40,6 +48,11 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+/**
+ * Primary implementation of {@link UserService} managing user lifecycle,
+ * authentication synchronization, role mappings, account deactivations,
+ * reactivation approval workflows, and external Salesforce CRM synchronization.
+ */
 @Service
 @Transactional(readOnly = true)
 @Slf4j
@@ -49,41 +62,40 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final UserProviderRepository userProviderRepository;
     private final RewardRepository rewardRepository;
+    private final FineRepository fineRepository;
     private final SalesforceSync salesforceSyncDelegate;
 
     /**
-     * Helper method to map a single User entity to {@link UserResponse} along with
-     * their calculated reward points.
-     *
-     * @param user The user entity
-     * @return The populated {@link UserResponse}
+     * Maps a single User entity to {@link UserResponse} with reward points and
+     * pending fine status via {@link UserMapper}.
      */
-    private UserResponse mapToUserResponseWithRewards(User user) {
-        if (Objects.isNull(user))
+    private UserResponse toUserResponse(User user) {
+        if (Objects.isNull(user)) {
             return null;
+        }
         Integer points = Objects.nonNull(user.getUuid())
                 ? rewardRepository.findByUserUuid(user.getUuid()).map(Reward::getPoints).orElse(0)
                 : 0;
-        return new UserResponse(
-                user.getUuid(),
-                user.getId(),
-                user.getName(),
-                user.getEmail(),
-                user.getRole().name(),
-                points,
-                user.getPhone());
+        BigDecimal pendingFineAmount = BigDecimal.ZERO;
+        if (Objects.nonNull(user.getUuid())) {
+            List<Fine> pendingFines = fineRepository.findByUserUuidAndStatus(user.getUuid(), FineStatus.PENDING);
+            pendingFineAmount = pendingFines.stream()
+                    .map(Fine::getPendingFineAmount)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+        boolean hasPendingFines = pendingFineAmount.compareTo(BigDecimal.ZERO) > 0;
+        return UserMapper.INSTANCE.mapToResponse(user, points, hasPendingFines, pendingFineAmount.doubleValue());
     }
 
     /**
-     * Helper method to batch map a list of User entities to {@link UserResponse}
-     * DTOs with reward points.
-     *
-     * @param users List of user entities
-     * @return List of mapped {@link UserResponse} DTOs
+     * Maps a list of User entities to {@link UserResponse} DTOs with reward points
+     * via {@link UserMapper}.
      */
-    private List<UserResponse> mapToUserResponseListWithRewards(List<User> users) {
-        if (Objects.isNull(users) || users.isEmpty())
+    private List<UserResponse> toUserResponseList(List<User> users) {
+        if (Objects.isNull(users) || users.isEmpty()) {
             return List.of();
+        }
         List<String> uuids = users.stream()
                 .map(User::getUuid)
                 .filter(Objects::nonNull)
@@ -95,14 +107,7 @@ public class UserServiceImpl implements UserService {
                         Reward::getPoints,
                         (p1, p2) -> p1));
 
-        return users.stream().map(user -> new UserResponse(
-                user.getUuid(),
-                user.getId(),
-                user.getName(),
-                user.getEmail(),
-                user.getRole().name(),
-                Objects.nonNull(user.getUuid()) ? rewardMap.getOrDefault(user.getUuid(), 0) : 0,
-                user.getPhone())).toList();
+        return UserMapper.INSTANCE.mapToResponse(users, rewardMap);
     }
 
     /**
@@ -121,7 +126,7 @@ public class UserServiceImpl implements UserService {
             user.setRole(RoleEnum.USER);
         }
         User savedUser = userRepository.save(user);
-        UserResponse response = mapToUserResponseWithRewards(savedUser);
+        UserResponse response = toUserResponse(savedUser);
 
         if (Objects.nonNull(salesforceSyncDelegate)) {
             try {
@@ -133,7 +138,8 @@ public class UserServiceImpl implements UserService {
                 savedUser.setSalesforceRetryCount(retryCount);
                 savedUser.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
                 userRepository.save(savedUser);
-                log.error("Salesforce dual-write failed for user creation [User ID: {}, UUID: {}, Operation: CREATE, RetryCount: {}]: {}",
+                log.error(
+                        "Salesforce dual-write failed for user creation [User ID: {}, UUID: {}, Operation: CREATE, RetryCount: {}]: {}",
                         savedUser.getId(), savedUser.getUuid(), retryCount, e.getMessage());
             }
         }
@@ -163,7 +169,7 @@ public class UserServiceImpl implements UserService {
             }
         }
         log.info("[DATA SOURCE: MYSQL] Fetching users from MySQL database");
-        return UserMapper.INSTANCE.mapToResponse(userRepository.findAll());
+        return toUserResponseList(userRepository.findAll());
     }
 
     /**
@@ -209,7 +215,7 @@ public class UserServiceImpl implements UserService {
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<User> usersPage = userRepository.findAll(pageable);
-        List<UserResponse> content = mapToUserResponseListWithRewards(usersPage.getContent());
+        List<UserResponse> content = toUserResponseList(usersPage.getContent());
 
         return new PagedResponse<>(
                 content,
@@ -236,7 +242,7 @@ public class UserServiceImpl implements UserService {
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<User> usersPage = userRepository.searchUsers(query, pageable);
-        List<UserResponse> content = mapToUserResponseListWithRewards(usersPage.getContent());
+        List<UserResponse> content = toUserResponseList(usersPage.getContent());
 
         return new PagedResponse<>(
                 content,
@@ -259,7 +265,7 @@ public class UserServiceImpl implements UserService {
         log.info("CACHE MISS - Fetching user {} from DATABASE", id);
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
-        return mapToUserResponseWithRewards(user);
+        return toUserResponse(user);
     }
 
     /**
@@ -287,7 +293,7 @@ public class UserServiceImpl implements UserService {
         }
 
         User updatedUser = userRepository.save(user);
-        UserResponse response = mapToUserResponseWithRewards(updatedUser);
+        UserResponse response = toUserResponse(updatedUser);
 
         if (Objects.nonNull(salesforceSyncDelegate)) {
             try {
@@ -299,7 +305,8 @@ public class UserServiceImpl implements UserService {
                 updatedUser.setSalesforceRetryCount(retryCount);
                 updatedUser.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
                 userRepository.save(updatedUser);
-                log.error("Salesforce dual-write failed for user update [User ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
+                log.error(
+                        "Salesforce dual-write failed for user update [User ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
                         updatedUser.getId(), updatedUser.getUuid(), retryCount, e.getMessage());
             }
         }
@@ -344,10 +351,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserResponse getUserByIdentifier(String identifier) {
+        return toUserResponse(findUserEntityByIdentifier(identifier));
+    }
+
+    private User findUserEntityByIdentifier(String identifier) {
         if (Objects.isNull(identifier) || identifier.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User identifier must not be empty");
         }
-        User user = userProviderRepository.findByProviderId(identifier)
+        return userProviderRepository.findByProviderId(identifier)
                 .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
                 .or(() -> {
                     if (identifier.contains("|")) {
@@ -363,7 +374,6 @@ public class UserServiceImpl implements UserService {
                 .or(() -> userRepository.findByUuid(identifier))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "User not found with identifier: " + identifier));
-        return mapToUserResponseWithRewards(user);
     }
 
     /**
@@ -388,7 +398,7 @@ public class UserServiceImpl implements UserService {
 
         user.setRole(newRole);
         User updatedUser = userRepository.save(user);
-        UserResponse response = mapToUserResponseWithRewards(updatedUser);
+        UserResponse response = toUserResponse(updatedUser);
 
         if (Objects.nonNull(salesforceSyncDelegate)) {
             try {
@@ -459,7 +469,7 @@ public class UserServiceImpl implements UserService {
                     UserProvider rawProvider = rawProviderOpt.get();
                     User existing = userRepository.findByUuid(rawProvider.getUserUuid())
                             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                                     "User not found for raw providerId: " + rawProvider.getProviderId()));
+                                    "User not found for raw providerId: " + rawProvider.getProviderId()));
 
                     // Insert the new provider mapping for this existing user if not already present
                     var existingSubMapping = userProviderRepository.findByProviderId(sub);
@@ -471,7 +481,6 @@ public class UserServiceImpl implements UserService {
                                 .build();
                         userProviderRepository.save(newProvider);
                     }
-
                     return existing;
                 }
             }
@@ -483,7 +492,8 @@ public class UserServiceImpl implements UserService {
             if (userByEmail.isPresent()) {
                 User existing = userByEmail.get();
 
-                // Create a new user_provider mapping for this providerId if not already present.
+                // Create a new user_provider mapping for this providerId if not already
+                // present.
                 // Multiple provider IDs for the same user are preserved as separate records.
                 // Do NOT modify user fields (name, email, role, etc.).
                 // Do NOT update or sync Salesforce.
@@ -496,7 +506,6 @@ public class UserServiceImpl implements UserService {
                             .build();
                     userProviderRepository.save(newProvider);
                 }
-
                 return existing;
             }
         }
@@ -514,6 +523,8 @@ public class UserServiceImpl implements UserService {
                 .email(email)
                 .name(effectiveName)
                 .role(initialRole)
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(java.time.LocalDateTime.now())
                 .build();
 
         User savedUser = userRepository.save(newUser);
@@ -529,6 +540,16 @@ public class UserServiceImpl implements UserService {
         return savedUser;
     }
 
+    /**
+     * Retrieves the current user's profile without altering login activity metadata
+     * or timestamps.
+     * Safe to call repeatedly on /me or /api/auth/me without resetting the account
+     * inactivity period.
+     *
+     * @param principal The security principal representing the current user
+     * @return The {@link UserResponse} DTO
+     * @throws ResponseStatusException 401 UNAUTHORIZED if principal is null
+     */
     @Override
     @Transactional
     public UserResponse getCurrentUser(Principal principal) {
@@ -566,10 +587,75 @@ public class UserServiceImpl implements UserService {
             RoleEnum role = extractRoleFromJwt(jwt);
 
             User syncedUser = syncAuth0User(sub, email, name, role);
-            return mapToUserResponseWithRewards(syncedUser);
+            return toUserResponse(syncedUser);
         }
 
         return getUserByIdentifier(principal.getName());
+    }
+
+    /**
+     * Records a genuine successful login completion event for an authenticated
+     * user.
+     * Updates {@code last_login_at} timestamp and clears any pending inactivity
+     * warning state.
+     * Separated from {@link #getCurrentUser(Principal)} to prevent repeated /me
+     * profile reads
+     * from inadvertently resetting the inactivity countdown.
+     *
+     * @param principal The authenticated security principal
+     * @return The updated {@link UserResponse} DTO
+     * @throws ResponseStatusException 401 UNAUTHORIZED if principal is null
+     */
+    @Override
+    @Transactional
+    public UserResponse recordLogin(Principal principal) {
+        if (Objects.isNull(principal)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+
+        User user;
+        if (principal instanceof Authentication auth
+                && auth.getPrincipal() instanceof Jwt jwt) {
+            String sub = jwt.getSubject();
+            String email = jwt.getClaimAsString("email");
+            if (Objects.isNull(email) || email.isBlank()) {
+                email = jwt.getClaimAsString("https://library.kovanlabs.com/email");
+            }
+            if (Objects.isNull(email) || email.isBlank()) {
+                email = jwt.getClaimAsString("https://library-management.com/email");
+            }
+
+            String customUsername = getHeaderFromRequestContext("X-User-Username");
+            if (Objects.isNull(customUsername) || customUsername.isBlank()) {
+                customUsername = getHeaderFromRequestContext("X-User-Name");
+            }
+
+            String name = (Objects.nonNull(customUsername) && !customUsername.isBlank()) ? customUsername.trim() : null;
+            if (Objects.isNull(name) || name.isBlank()) {
+                name = jwt.getClaimAsString("name");
+            }
+            if (Objects.isNull(name) || name.isBlank()) {
+                name = jwt.getClaimAsString("nickname");
+            }
+            if (Objects.isNull(name) || name.isBlank()) {
+                name = jwt.getClaimAsString("https://library.kovanlabs.com/name");
+            }
+
+            RoleEnum role = extractRoleFromJwt(jwt);
+
+            user = syncAuth0User(sub, email, name, role);
+        } else {
+            user = findUserEntityByIdentifier(principal.getName());
+        }
+
+        if (Objects.nonNull(user) && user.getStatus() == AccountStatus.ACTIVE) {
+            user.setLastLoginAt(LocalDateTime.now());
+            user.setInactivityWarningSentAt(null);
+            user = userRepository.save(user);
+            syncUserToSalesforce(user);
+        }
+
+        return toUserResponse(user);
     }
 
     @Override
@@ -617,6 +703,19 @@ public class UserServiceImpl implements UserService {
                 : (claim instanceof String s && !s.isBlank() ? List.of(s) : Collections.emptyList());
     }
 
+    private void resetUserRewardPoints(String userUuid) {
+        if (Objects.nonNull(userUuid) && Objects.nonNull(rewardRepository)) {
+            int updated = rewardRepository.resetPoints(userUuid);
+            if (updated == 0) {
+                rewardRepository.save(Reward.builder()
+                        .userUuid(userUuid)
+                        .points(0)
+                        .build());
+            }
+            log.info("Reset reward points to 0 for user [UUID: {}]", userUuid);
+        }
+    }
+
     private void syncUserToSalesforce(User user) {
         if (Objects.nonNull(salesforceSyncDelegate) && Objects.nonNull(user) && Objects.nonNull(user.getUuid())) {
             try {
@@ -635,12 +734,193 @@ public class UserServiceImpl implements UserService {
         }
     }
 
+    /**
+     * Approves and executes user account reactivation by restoring ACTIVE status and setting request status to APPROVED.
+     * Clears pending inactivity warning timestamps, resets last login baseline to the current time,
+     * updates MySQL transactionally, and synchronizes status and request status to Salesforce.
+     *
+     * @param id The primary key identifier of the user to reactivate
+     * @return The updated {@link UserResponse}
+     * @throws ResponseStatusException 404 NOT_FOUND if the user does not exist
+     */
+    @Override
+    @Transactional
+    @CacheEvict(value = "users", key = "#p0")
+    public UserResponse reactivateUser(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
+        user.setStatus(AccountStatus.ACTIVE);
+        user.setReactivationRequestStatus(ReactivationRequestStatus.APPROVED);
+        user.setInactivityWarningSentAt(null);
+        user.setLastLoginAt(LocalDateTime.now());
+        User savedUser = userRepository.save(user);
+        syncUserToSalesforce(savedUser);
+        log.info("Successfully reactivated user account ID: {}, Email: {}", id, savedUser.getEmail());
+        return toUserResponse(savedUser);
+    }
+
+    /**
+     * Deactivates a user account, setting its status to DEACTIVATED and clearing request status.
+     * Updates MySQL transactionally and synchronizes the DEACTIVATED status to Salesforce.
+     *
+     * @param id The primary key identifier of the user to deactivate
+     * @return The updated {@link UserResponse}
+     * @throws ResponseStatusException 404 NOT_FOUND if the user does not exist
+     */
+    @Override
+    @Transactional
+    @CacheEvict(value = "users", key = "#p0")
+    public UserResponse deactivateUser(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
+        user.setStatus(AccountStatus.DEACTIVATED);
+        user.setReactivationRequestStatus(null);
+        resetUserRewardPoints(user.getUuid());
+        User savedUser = userRepository.save(user);
+        syncUserToSalesforce(savedUser);
+        log.info("Successfully deactivated user account ID: {}, Email: {}", id, savedUser.getEmail());
+        return toUserResponse(savedUser);
+    }
+
+    /**
+     * Submits an account reactivation request on behalf of the currently authenticated user.
+     * <p>
+     * Verification rules:
+     * <ul>
+     *     <li>Account must currently be in DEACTIVATED status.</li>
+     *     <li>User must not have any outstanding unpaid fines. If pending fines exist, requests are rejected with 400 BAD_REQUEST.</li>
+     *     <li>User must not have a request already pending review to prevent duplicate pending requests.</li>
+     * </ul>
+     * When submitted, sets {@code reactivation_request_status} to {@code PENDING} in MySQL and
+     * synchronizes {@code Reactivation_Request_Status__c = PENDING} to Salesforce.
+     *
+     * @param principal The security principal representing the requesting user
+     * @return The updated {@link UserResponse}
+     * @throws ResponseStatusException 401 UNAUTHORIZED if unauthenticated, 404 NOT_FOUND if user not found,
+     *                                 or 400 BAD_REQUEST if account is not deactivated, fines pending, or duplicate request
+     */
+    @Override
+    @Transactional
+    public UserResponse requestReactivation(Principal principal) {
+        if (Objects.isNull(principal)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+        User user = null;
+        if (principal instanceof Authentication auth && auth.getPrincipal() instanceof Jwt jwt) {
+            String sub = jwt.getSubject();
+            var userProviderOpt = userProviderRepository.findByProviderId(sub);
+            if (userProviderOpt.isPresent()) {
+                user = userRepository.findByUuid(userProviderOpt.get().getUserUuid()).orElse(null);
+            }
+            if (Objects.isNull(user)) {
+                String email = jwt.getClaimAsString("email");
+                if (Objects.isNull(email) || email.isBlank()) {
+                    email = jwt.getClaimAsString("https://library.kovanlabs.com/email");
+                }
+                if (Objects.nonNull(email) && !email.isBlank()) {
+                    user = userRepository.findByEmail(email).orElse(null);
+                }
+            }
+        } else {
+            user = userRepository.findByEmail(principal.getName())
+                    .or(() -> userRepository.findByUuid(principal.getName()))
+                    .orElse(null);
+        }
+
+        if (Objects.isNull(user)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        }
+
+        if (user.getStatus() != AccountStatus.DEACTIVATED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account is not deactivated");
+        }
+
+        if (user.getReactivationRequestStatus() == ReactivationRequestStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A reactivation request is already pending review");
+        }
+
+        BigDecimal pendingFineAmount = BigDecimal.ZERO;
+        if (Objects.nonNull(user.getUuid())) {
+            List<Fine> pendingFines = fineRepository.findByUserUuidAndStatus(user.getUuid(), FineStatus.PENDING);
+            pendingFineAmount = pendingFines.stream()
+                    .map(Fine::getPendingFineAmount)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+
+        if (pendingFineAmount.compareTo(BigDecimal.ZERO) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot request reactivation with pending fines. Please clear all pending fines first.");
+        }
+
+        user.setReactivationRequestStatus(ReactivationRequestStatus.PENDING);
+        User savedUser = userRepository.save(user);
+        syncUserToSalesforce(savedUser);
+        log.info("User {} successfully requested account reactivation", savedUser.getEmail());
+        return toUserResponse(savedUser);
+    }
+
+    /**
+     * Retrieves all account reactivation requests awaiting administrative review.
+     * Fetches Salesforce as the primary read source when Salesforce integration is configured,
+     * falling back to MySQL if the Salesforce query fails or is unconfigured.
+     *
+     * @return List of {@link UserResponse} representing users with reactivation requests
+     */
+    @Override
+    public List<UserResponse> getReactivationRequests() {
+        if (Objects.nonNull(salesforceSyncDelegate)) {
+            try {
+                var sfContacts = salesforceSyncDelegate.fetchContactsFromSalesforce();
+                if (Objects.nonNull(sfContacts) && !sfContacts.isEmpty()) {
+                    List<ContactSObject> filteredContacts = sfContacts.stream()
+                            .filter(c -> Objects.nonNull(c.getReactivationRequestStatus()) && !c.getReactivationRequestStatus().isBlank())
+                            .toList();
+                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} reactivation requests from Salesforce SOQL",
+                            filteredContacts.size());
+                    return UserMapper.INSTANCE.toUserResponseList(filteredContacts);
+                }
+            } catch (Exception e) {
+                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for reactivation requests, falling back to MySQL: {}",
+                        e.getMessage());
+            }
+        }
+
+        log.info("[DATA SOURCE: MYSQL] Fetching all reactivation requests from MySQL database");
+        List<User> users = userRepository.findByReactivationRequestStatusIsNotNull();
+        return toUserResponseList(users);
+    }
+
+    /**
+     * Rejects an account reactivation request for a deactivated user, setting request status to REJECTED
+     * while preserving the DEACTIVATED account status in both MySQL and Salesforce.
+     *
+     * @param id The primary key identifier of the user whose request is being rejected
+     * @return The updated {@link UserResponse}
+     * @throws ResponseStatusException 404 NOT_FOUND if the user does not exist
+     */
+    @Override
+    @Transactional
+    @CacheEvict(value = "users", key = "#p0")
+    public UserResponse rejectReactivation(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
+        user.setStatus(AccountStatus.DEACTIVATED);
+        user.setReactivationRequestStatus(ReactivationRequestStatus.REJECTED);
+        resetUserRewardPoints(user.getUuid());
+        User savedUser = userRepository.save(user);
+        syncUserToSalesforce(savedUser);
+        log.info("Successfully rejected account reactivation request for user ID: {}, Email: {}", id,
+                savedUser.getEmail());
+        return toUserResponse(savedUser);
+    }
+
     private String getHeaderFromRequestContext(String headerName) {
         try {
             return (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes servletAttributes
                     && Objects.nonNull(servletAttributes.getRequest()))
-                    ? servletAttributes.getRequest().getHeader(headerName)
-                    : null;
+                            ? servletAttributes.getRequest().getHeader(headerName)
+                            : null;
         } catch (Exception ignored) {
             return null;
         }

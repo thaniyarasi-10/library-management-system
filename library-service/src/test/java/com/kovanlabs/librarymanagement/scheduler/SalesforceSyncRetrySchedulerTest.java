@@ -1,4 +1,4 @@
-package com.kovanlabs.librarymanagement.salesforce.service;
+package com.kovanlabs.librarymanagement.scheduler;
 
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
@@ -11,6 +11,7 @@ import com.kovanlabs.librarymanagement.salesforce.config.SalesforceConfig;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,7 +41,7 @@ class SalesforceSyncRetrySchedulerTest {
     private BorrowRepository borrowRepository;
 
     @Mock
-    private SalesforceSyncImpl salesforceSyncService;
+    private SalesforceSync salesforceSyncService;
 
     @Mock
     private SalesforceConfig salesforceConfig;

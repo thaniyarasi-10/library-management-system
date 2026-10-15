@@ -25,4 +25,8 @@ public interface RewardRepository extends JpaRepository<Reward, String> {
     @Modifying
     @Query("UPDATE Reward r SET r.points = r.points + :points, r.updatedAt = CURRENT_TIMESTAMP WHERE r.userUuid = :userUuid")
     int incrementPoints(@Param("userUuid") String userUuid, @Param("points") int points);
+
+    @Modifying
+    @Query("UPDATE Reward r SET r.points = 0, r.updatedAt = CURRENT_TIMESTAMP WHERE r.userUuid = :userUuid")
+    int resetPoints(@Param("userUuid") String userUuid);
 }

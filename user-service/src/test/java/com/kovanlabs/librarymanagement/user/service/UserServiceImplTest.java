@@ -3,9 +3,15 @@ package com.kovanlabs.librarymanagement.user.service;
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.entity.UserProvider;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.AuthProvider;
+import com.kovanlabs.librarymanagement.database.enums.ReactivationRequestStatus;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
+import com.kovanlabs.librarymanagement.database.entity.Fine;
+import com.kovanlabs.librarymanagement.database.entity.Reward;
+import com.kovanlabs.librarymanagement.database.enums.FineStatus;
+import com.kovanlabs.librarymanagement.database.repository.FineRepository;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
@@ -17,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -27,6 +34,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -50,6 +58,9 @@ class UserServiceImplTest {
 
     @Mock
     private RewardRepository rewardRepository;
+
+    @Mock
+    private FineRepository fineRepository;
 
     @InjectMocks
     private UserServiceImpl userService;
@@ -84,7 +95,7 @@ class UserServiceImplTest {
 
     @Test
     void createUser_shouldSaveAndReturnUserResponse() {
-        UserRequest request = new UserRequest("alice@example.com", "Alice Smith");
+        UserRequest request = new UserRequest("alice@example.com", "Alice Smith", null);
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
         UserResponse response = userService.createUser(request);
@@ -96,7 +107,7 @@ class UserServiceImplTest {
 
     @Test
     void createUser_whenSalesforceSyncSucceeds_shouldMarkStatusSuccess() {
-        UserRequest request = new UserRequest("alice@example.com", "Alice Smith");
+        UserRequest request = new UserRequest("alice@example.com", "Alice Smith", null);
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
         UserResponse response = userService.createUser(request);
@@ -108,9 +119,10 @@ class UserServiceImplTest {
 
     @Test
     void createUser_whenSalesforceSyncFails_shouldIncrementRetryAndKeepPending() {
-        UserRequest request = new UserRequest("alice@example.com", "Alice Smith");
+        UserRequest request = new UserRequest("alice@example.com", "Alice Smith", null);
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
-        doThrow(new RuntimeException("Salesforce down")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+        doThrow(new RuntimeException("Salesforce down")).when(salesforceSyncDelegate)
+                .syncContact(any(ContactSObject.class));
 
         UserResponse response = userService.createUser(request);
 
@@ -172,7 +184,7 @@ class UserServiceImplTest {
 
     @Test
     void updateUser_whenUserExists_shouldUpdateEmailAndSave() {
-        UserRequest request = new UserRequest("updated@example.com", "Alice Smith");
+        UserRequest request = new UserRequest("updated@example.com", "Alice Smith", null);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -199,7 +211,7 @@ class UserServiceImplTest {
 
     @Test
     void updateUser_whenSalesforceSyncFails_shouldIncrementRetryAndKeepPending() {
-        UserRequest request = new UserRequest("updated@example.com", "Alice Smith");
+        UserRequest request = new UserRequest("updated@example.com", "Alice Smith", null);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
         doThrow(new RuntimeException("Salesforce update error")).when(salesforceSyncDelegate)
@@ -340,15 +352,14 @@ class UserServiceImplTest {
         when(userProviderRepository.findByProviderId("google-oauth2|123456789")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(testUser));
 
-        User result = userService.syncAuth0User("google-oauth2|123456789", "alice@example.com", "Alice Smith", RoleEnum.USER);
+        User result = userService.syncAuth0User("google-oauth2|123456789", "alice@example.com", "Alice Smith",
+                RoleEnum.USER);
 
         assertNotNull(result);
         assertEquals(testUser.getUuid(), result.getUuid());
-        verify(userProviderRepository, times(1)).save(argThat(up -> 
-                up.getUserUuid().equals(testUser.getUuid())
+        verify(userProviderRepository, times(1)).save(argThat(up -> up.getUserUuid().equals(testUser.getUuid())
                 && up.getProvider() == AuthProvider.AUTH0
-                && "google-oauth2|123456789".equals(up.getProviderId())
-        ));
+                && "google-oauth2|123456789".equals(up.getProviderId())));
         verify(userRepository, never()).save(any(User.class));
         verify(salesforceSyncDelegate, never()).syncContact(any());
     }
@@ -536,7 +547,8 @@ class UserServiceImplTest {
                 .build();
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
-        doThrow(new RuntimeException("SF dual-write fail")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+        doThrow(new RuntimeException("SF dual-write fail")).when(salesforceSyncDelegate)
+                .syncContact(any(ContactSObject.class));
 
         UserResponse response = userService.updateUserRole(1L, RoleEnum.ADMIN);
 
@@ -551,9 +563,11 @@ class UserServiceImplTest {
         when(userRepository.findByEmail("new-sf-error@example.com")).thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
         when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
-        doThrow(new RuntimeException("SF sync error")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+        doThrow(new RuntimeException("SF sync error")).when(salesforceSyncDelegate)
+                .syncContact(any(ContactSObject.class));
 
-        User created = userService.syncAuth0User("auth0|new-error-sf", "new-sf-error@example.com", "New User", RoleEnum.USER);
+        User created = userService.syncAuth0User("auth0|new-error-sf", "new-sf-error@example.com", "New User",
+                RoleEnum.USER);
 
         assertNotNull(created);
         assertEquals(SalesforceSyncStatus.PENDING, created.getSalesforceSyncStatus());
@@ -563,7 +577,7 @@ class UserServiceImplTest {
     @Test
     void updateCurrentUser_whenPrincipalNull_shouldThrowUnauthorized() {
         assertThrows(ResponseStatusException.class,
-                () -> userService.updateCurrentUser(null, new UserRequest("new@example.com", "New Name")));
+                () -> userService.updateCurrentUser(null, new UserRequest("new@example.com", "New Name", null)));
     }
 
     @Test
@@ -575,7 +589,8 @@ class UserServiceImplTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
 
-        UserResponse response = userService.updateCurrentUser(principal, new UserRequest("alice_new@example.com", "Alice Updated"));
+        UserResponse response = userService.updateCurrentUser(principal,
+                new UserRequest("alice_new@example.com", "Alice Updated", null));
 
         assertNotNull(response);
         assertEquals("Alice Updated", response.name());
@@ -671,7 +686,8 @@ class UserServiceImplTest {
         JwtAuthenticationToken jwtAuth = new JwtAuthenticationToken(
                 jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
 
-        when(userProviderRepository.findByProviderId("google-oauth2|115993863360458947065")).thenReturn(Optional.empty());
+        when(userProviderRepository.findByProviderId("google-oauth2|115993863360458947065"))
+                .thenReturn(Optional.empty());
         when(userProviderRepository.findByProviderId("115993863360458947065")).thenReturn(Optional.empty());
 
         when(userRepository.findByEmail("thaniyarasi10@gmail.com")).thenReturn(Optional.empty());
@@ -688,7 +704,8 @@ class UserServiceImplTest {
         assertEquals("thaniyarasi10@gmail.com", response.email());
         assertEquals("Thani Yarasi", response.name());
         verify(salesforceSyncDelegate, times(1)).syncContact(any(ContactSObject.class));
-        verify(userProviderRepository).save(argThat(up -> "google-oauth2|115993863360458947065".equals(up.getProviderId())));
+        verify(userProviderRepository)
+                .save(argThat(up -> "google-oauth2|115993863360458947065".equals(up.getProviderId())));
     }
 
     @Test
@@ -740,7 +757,8 @@ class UserServiceImplTest {
 
         assertNotNull(response);
         assertEquals("alice@example.com", response.email());
-        verify(userProviderRepository).save(argThat(p -> "google-oauth2|new-google-sub".equals(p.getProviderId()) && user1.getUuid().equals(p.getUserUuid())));
+        verify(userProviderRepository).save(argThat(p -> "google-oauth2|new-google-sub".equals(p.getProviderId())
+                && user1.getUuid().equals(p.getUserUuid())));
         verify(userRepository, never()).save(any(User.class));
         verify(salesforceSyncDelegate, never()).syncContact(any());
     }
@@ -794,8 +812,6 @@ class UserServiceImplTest {
         assertThrows(ResponseStatusException.class, () -> userService.getUserByIdentifier(null));
         assertThrows(ResponseStatusException.class, () -> userService.getUserByIdentifier("   "));
     }
-
-
 
     @Test
     void getAllUsers_whenSalesforceReturnsUsers_shouldReturnSalesforceUsers() {
@@ -868,15 +884,15 @@ class UserServiceImplTest {
         org.springframework.mock.web.MockHttpServletRequest mockRequest = new org.springframework.mock.web.MockHttpServletRequest();
         mockRequest.addHeader("X-User-Username", "CustomHeaderUser");
         org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
-                new org.springframework.web.context.request.ServletRequestAttributes(mockRequest)
-        );
+                new org.springframework.web.context.request.ServletRequestAttributes(mockRequest));
 
         try {
             Jwt jwt = mock(Jwt.class);
             when(jwt.getSubject()).thenReturn("auth0|header-test");
             when(jwt.getClaimAsString("email")).thenReturn("header-user@example.com");
 
-            org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+            org.springframework.security.core.Authentication auth = mock(
+                    org.springframework.security.core.Authentication.class);
             when(auth.getPrincipal()).thenReturn(jwt);
 
             when(userProviderRepository.findByProviderId("auth0|header-test")).thenReturn(Optional.empty());
@@ -899,15 +915,15 @@ class UserServiceImplTest {
         org.springframework.mock.web.MockHttpServletRequest mockRequest = new org.springframework.mock.web.MockHttpServletRequest();
         mockRequest.addHeader("X-User-Name", "FallbackHeaderName");
         org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
-                new org.springframework.web.context.request.ServletRequestAttributes(mockRequest)
-        );
+                new org.springframework.web.context.request.ServletRequestAttributes(mockRequest));
 
         try {
             Jwt jwt = mock(Jwt.class);
             when(jwt.getSubject()).thenReturn("auth0|header-fallback");
             when(jwt.getClaimAsString("email")).thenReturn("header-fallback@example.com");
 
-            org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+            org.springframework.security.core.Authentication auth = mock(
+                    org.springframework.security.core.Authentication.class);
             when(auth.getPrincipal()).thenReturn(jwt);
 
             when(userProviderRepository.findByProviderId("auth0|header-fallback")).thenReturn(Optional.empty());
@@ -934,7 +950,8 @@ class UserServiceImplTest {
         when(jwt.getClaimAsString("email")).thenReturn("no-ctx@example.com");
         when(jwt.getClaimAsString("name")).thenReturn("JwtName");
 
-        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        org.springframework.security.core.Authentication auth = mock(
+                org.springframework.security.core.Authentication.class);
         when(auth.getPrincipal()).thenReturn(jwt);
 
         when(userProviderRepository.findByProviderId("auth0|no-ctx")).thenReturn(Optional.empty());
@@ -958,7 +975,8 @@ class UserServiceImplTest {
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
         when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
 
-        User created = userService.syncAuth0User("auth0|sf-success", "sf-success@example.com", "SF Success User", RoleEnum.USER);
+        User created = userService.syncAuth0User("auth0|sf-success", "sf-success@example.com", "SF Success User",
+                RoleEnum.USER);
 
         assertNotNull(created);
         assertEquals(SalesforceSyncStatus.SUCCESS, created.getSalesforceSyncStatus());
@@ -973,7 +991,8 @@ class UserServiceImplTest {
         when(userRepository.findByEmail("sf-fail@example.com")).thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
         when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
-        doThrow(new RuntimeException("Salesforce service connection error")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+        doThrow(new RuntimeException("Salesforce service connection error")).when(salesforceSyncDelegate)
+                .syncContact(any(ContactSObject.class));
 
         User created = userService.syncAuth0User("auth0|sf-fail", "sf-fail@example.com", "SF Fail User", RoleEnum.USER);
 
@@ -990,8 +1009,8 @@ class UserServiceImplTest {
                 userRepository,
                 userProviderRepository,
                 rewardRepository,
-                null
-        );
+                fineRepository,
+                null);
 
         when(userProviderRepository.findByProviderId("auth0|no-sf")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("no-sf@example.com")).thenReturn(Optional.empty());
@@ -1018,8 +1037,8 @@ class UserServiceImplTest {
         when(userProviderRepository.findByProviderId("999888777")).thenReturn(Optional.of(rawProvider));
         when(userRepository.findByUuid("missing-uuid-123")).thenReturn(Optional.empty());
 
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
-                userService.syncAuth0User(sub, "missing@example.com", "Missing", RoleEnum.USER));
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.syncAuth0User(sub, "missing@example.com", "Missing", RoleEnum.USER));
 
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
         assertTrue(ex.getReason().contains("User not found for raw providerId: 999888777"));
@@ -1082,11 +1101,13 @@ class UserServiceImplTest {
     void getAllUsers_withDuplicateRewardRecords_shouldMergePoints() {
         when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenThrow(new RuntimeException("SF down"));
 
-        com.kovanlabs.librarymanagement.database.entity.Reward r1 = com.kovanlabs.librarymanagement.database.entity.Reward.builder()
+        com.kovanlabs.librarymanagement.database.entity.Reward r1 = com.kovanlabs.librarymanagement.database.entity.Reward
+                .builder()
                 .userUuid(user1.getUuid())
                 .points(10)
                 .build();
-        com.kovanlabs.librarymanagement.database.entity.Reward r2 = com.kovanlabs.librarymanagement.database.entity.Reward.builder()
+        com.kovanlabs.librarymanagement.database.entity.Reward r2 = com.kovanlabs.librarymanagement.database.entity.Reward
+                .builder()
                 .userUuid(user1.getUuid())
                 .points(20)
                 .build();
@@ -1115,8 +1136,8 @@ class UserServiceImplTest {
         when(userProviderRepository.findByProviderId("auth0|mapped-but-missing-user")).thenReturn(Optional.of(up));
         when(userRepository.findByUuid("missing-uuid-404")).thenReturn(Optional.empty());
 
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
-                userService.syncAuth0User("auth0|mapped-but-missing-user", "test@example.com", "Test", RoleEnum.USER));
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> userService
+                .syncAuth0User("auth0|mapped-but-missing-user", "test@example.com", "Test", RoleEnum.USER));
 
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
         assertTrue(ex.getReason().contains("User not found for providerId: auth0|mapped-but-missing-user"));
@@ -1127,10 +1148,564 @@ class UserServiceImplTest {
     void updateUser_whenUserNotFound_shouldThrowNotFound() {
         when(userRepository.findById(9999L)).thenReturn(Optional.empty());
 
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
-                userService.updateUser(9999L, new UserRequest("test@example.com", "Test")));
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.updateUser(9999L, new UserRequest("test@example.com", "Test", null)));
 
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
         assertTrue(ex.getReason().contains("User not found with ID: 9999"));
+    }
+
+    @Test
+    @DisplayName("reactivateUser when user exists should set ACTIVE and APPROVED status")
+    void reactivateUser_whenUserExists_shouldSetActive() {
+        User user = User.builder()
+                .id(100L)
+                .uuid("u-100")
+                .name("Deactivated Alice")
+                .email("alice.deactivated@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .reactivationRequestStatus(ReactivationRequestStatus.PENDING)
+                .inactivityWarningSentAt(LocalDateTime.now().minusDays(17))
+                .build();
+
+        when(userRepository.findById(100L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.reactivateUser(100L);
+
+        assertNotNull(response);
+        assertEquals(AccountStatus.ACTIVE.name(), response.status());
+        assertEquals(AccountStatus.ACTIVE, user.getStatus());
+        assertEquals(ReactivationRequestStatus.APPROVED, user.getReactivationRequestStatus());
+        assertNull(user.getInactivityWarningSentAt());
+        assertNotNull(user.getLastLoginAt());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("reactivateUser when user ID not found should throw 404")
+    void reactivateUser_whenNotFound_shouldThrow404() {
+        when(userRepository.findById(9999L)).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.reactivateUser(9999L));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("deactivateUser when user exists should set DEACTIVATED, reset reward points to 0, and sync to Salesforce")
+    void deactivateUser_whenUserExists_shouldSetDeactivated() {
+        User user = User.builder()
+                .id(200L)
+                .uuid("u-200")
+                .name("Active Bob")
+                .email("bob@example.com")
+                .status(AccountStatus.ACTIVE)
+                .reactivationRequestStatus(ReactivationRequestStatus.PENDING)
+                .build();
+
+        when(userRepository.findById(200L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(rewardRepository.resetPoints("u-200")).thenReturn(1);
+
+        UserResponse response = userService.deactivateUser(200L);
+
+        assertNotNull(response);
+        assertEquals(AccountStatus.DEACTIVATED.name(), response.status());
+        assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
+        assertNull(user.getReactivationRequestStatus());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(rewardRepository).resetPoints("u-200");
+
+        ArgumentCaptor<ContactSObject> captor = ArgumentCaptor.forClass(ContactSObject.class);
+        verify(salesforceSyncDelegate).syncContact(captor.capture());
+        assertEquals(Integer.valueOf(0), captor.getValue().getReward());
+        assertEquals("DEACTIVATED", captor.getValue().getStatus());
+    }
+
+    @Test
+    @DisplayName("deactivateUser when reward record does not exist should create new reward record with 0 points")
+    void deactivateUser_whenRewardRecordDoesNotExist_shouldCreateRewardRecordWithZeroPoints() {
+        User user = User.builder()
+                .id(201L)
+                .uuid("u-201")
+                .name("No Reward Bob")
+                .email("noreward@example.com")
+                .status(AccountStatus.ACTIVE)
+                .build();
+
+        when(userRepository.findById(201L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        when(rewardRepository.resetPoints("u-201")).thenReturn(0);
+
+        UserResponse response = userService.deactivateUser(201L);
+
+        assertNotNull(response);
+        assertEquals(AccountStatus.DEACTIVATED.name(), response.status());
+        verify(rewardRepository).resetPoints("u-201");
+        verify(rewardRepository).save(argThat(r -> "u-201".equals(r.getUserUuid()) && Integer.valueOf(0).equals(r.getPoints())));
+    }
+
+    @Test
+    @DisplayName("deactivateUser when user ID not found should throw 404")
+    void deactivateUser_whenNotFound_shouldThrow404() {
+        when(userRepository.findById(9999L)).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.deactivateUser(9999L));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("syncAuth0User should not modify lastLoginAt or save repository for existing user")
+    void syncAuth0User_existingUser_shouldNotUpdateTimestampOrSave() {
+        LocalDateTime initialLoginAt = LocalDateTime.now().minusDays(10);
+        LocalDateTime warningSentAt = LocalDateTime.now().minusDays(3);
+        User existing = User.builder()
+                .id(300L)
+                .uuid("u-300")
+                .name("Returning User")
+                .email("return@example.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(initialLoginAt)
+                .inactivityWarningSentAt(warningSentAt)
+                .build();
+
+        UserProvider provider = UserProvider.builder()
+                .userUuid("u-300")
+                .providerId("auth0|returning")
+                .build();
+
+        when(userProviderRepository.findByProviderId("auth0|returning")).thenReturn(Optional.of(provider));
+        when(userRepository.findByUuid("u-300")).thenReturn(Optional.of(existing));
+
+        User result = userService.syncAuth0User("auth0|returning", "return@example.com", "Returning User",
+                RoleEnum.USER);
+
+        assertNotNull(result);
+        assertEquals(initialLoginAt, result.getLastLoginAt());
+        assertEquals(warningSentAt, result.getInactivityWarningSentAt());
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("requestReactivation should succeed when deactivated and no pending fines")
+    void requestReactivation_whenDeactivatedAndNoPendingFines_shouldSucceed() {
+        User deactivated = User.builder()
+                .id(400L)
+                .uuid("u-400")
+                .name("Deactivated User")
+                .email("deact@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+
+        Principal principal = () -> "deact@example.com";
+        when(userRepository.findByEmail("deact@example.com")).thenReturn(Optional.of(deactivated));
+        when(fineRepository.findByUserUuidAndStatus("u-400", FineStatus.PENDING)).thenReturn(List.of());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.requestReactivation(principal);
+
+        assertNotNull(res);
+        assertTrue(res.reactivationRequested());
+        assertEquals("PENDING", res.reactivationRequestStatus());
+        assertEquals(ReactivationRequestStatus.PENDING, deactivated.getReactivationRequestStatus());
+        assertFalse(res.hasPendingFines());
+        assertEquals("DEACTIVATED", res.status());
+        verify(userRepository, atLeastOnce()).save(deactivated);
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("requestReactivation should throw BAD_REQUEST when already pending")
+    void requestReactivation_whenAlreadyPending_shouldThrowBadRequest() {
+        User deactivated = User.builder()
+                .id(400L)
+                .uuid("u-400")
+                .name("Pending User")
+                .email("pending@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .reactivationRequestStatus(ReactivationRequestStatus.PENDING)
+                .build();
+
+        Principal principal = () -> "pending@example.com";
+        when(userRepository.findByEmail("pending@example.com")).thenReturn(Optional.of(deactivated));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.requestReactivation(principal));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("already pending"));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("requestReactivation should throw BAD_REQUEST when user has pending fines")
+    void requestReactivation_whenHasPendingFines_shouldThrowBadRequest() {
+        User deactivated = User.builder()
+                .id(401L)
+                .uuid("u-401")
+                .name("Fines User")
+                .email("fines@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+
+        Fine pendingFine = Fine.builder()
+                .id(10L)
+                .userUuid("u-401")
+                .pendingFineAmount(new BigDecimal("15.50"))
+                .status(FineStatus.PENDING)
+                .build();
+
+        Principal principal = () -> "fines@example.com";
+        when(userRepository.findByEmail("fines@example.com")).thenReturn(Optional.of(deactivated));
+        when(fineRepository.findByUserUuidAndStatus("u-401", FineStatus.PENDING)).thenReturn(List.of(pendingFine));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.requestReactivation(principal));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("pending fines"));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("requestReactivation should throw BAD_REQUEST when user is not deactivated")
+    void requestReactivation_whenUserIsActive_shouldThrowBadRequest() {
+        User active = User.builder()
+                .id(402L)
+                .uuid("u-402")
+                .email("active@example.com")
+                .status(AccountStatus.ACTIVE)
+                .build();
+
+        Principal principal = () -> "active@example.com";
+        when(userRepository.findByEmail("active@example.com")).thenReturn(Optional.of(active));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.requestReactivation(principal));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("Account is not deactivated"));
+    }
+
+    @Test
+    @DisplayName("getReactivationRequests from Salesforce primary source")
+    void getReactivationRequests_fromSalesforcePrimarySource() {
+        ContactSObject contact = ContactSObject.builder()
+                .externalUserUuid("u-500")
+                .legacyUserId(500L)
+                .lastName("SF User")
+                .email("sf@example.com")
+                .status("DEACTIVATED")
+                .reactivationRequestStatus("PENDING")
+                .build();
+
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenReturn(List.of(contact));
+
+        List<UserResponse> list = userService.getReactivationRequests();
+
+        assertEquals(1, list.size());
+        assertEquals("sf@example.com", list.get(0).email());
+        assertEquals("PENDING", list.get(0).reactivationRequestStatus());
+        assertTrue(list.get(0).reactivationRequested());
+    }
+
+    @Test
+    @DisplayName("getReactivationRequests fallback to MySQL when Salesforce returns empty or throws")
+    void getReactivationRequests_fallbackToMySql() {
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenReturn(List.of());
+
+        User reqUser = User.builder()
+                .id(500L)
+                .uuid("u-500")
+                .email("req@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .reactivationRequestStatus(ReactivationRequestStatus.PENDING)
+                .build();
+
+        when(userRepository.findByReactivationRequestStatusIsNotNull())
+                .thenReturn(List.of(reqUser));
+
+        List<UserResponse> list = userService.getReactivationRequests();
+
+        assertEquals(1, list.size());
+        assertEquals("req@example.com", list.get(0).email());
+        assertTrue(list.get(0).reactivationRequested());
+    }
+
+    @Test
+    @DisplayName("reactivateUser should reset status to ACTIVE and approve request")
+    void reactivateUser_shouldResetStatusAndFlags() {
+        User deact = User.builder()
+                .id(600L)
+                .uuid("u-600")
+                .email("reactivate@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .reactivationRequestStatus(ReactivationRequestStatus.PENDING)
+                .build();
+
+        when(userRepository.findById(600L)).thenReturn(Optional.of(deact));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.reactivateUser(600L);
+
+        assertEquals("ACTIVE", res.status());
+        assertEquals(ReactivationRequestStatus.APPROVED, deact.getReactivationRequestStatus());
+        assertNotNull(deact.getLastLoginAt());
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("rejectReactivation when user exists should set REJECTED and keep DEACTIVATED status")
+    void rejectReactivation_whenUserExists_shouldClearFlagAndKeepDeactivated() {
+        User deact = User.builder()
+                .id(601L)
+                .uuid("u-601")
+                .email("reject@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .reactivationRequestStatus(ReactivationRequestStatus.PENDING)
+                .build();
+
+        when(userRepository.findById(601L)).thenReturn(Optional.of(deact));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.rejectReactivation(601L);
+
+        assertEquals("DEACTIVATED", res.status());
+        assertEquals(ReactivationRequestStatus.REJECTED, deact.getReactivationRequestStatus());
+        verify(userRepository, atLeastOnce()).save(deact);
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("rejectReactivation when user ID not found should throw 404")
+    void rejectReactivation_whenNotFound_shouldThrow404() {
+        when(userRepository.findById(9999L)).thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> userService.rejectReactivation(9999L));
+    }
+
+    @Test
+    @DisplayName("recordLogin for existing user with warning should update lastLoginAt and clear warning timestamp")
+    void recordLogin_existingUserWithWarning_shouldUpdateLastLoginAndClearWarning() {
+        LocalDateTime oldLogin = LocalDateTime.now().minusDays(25);
+        User user = User.builder()
+                .id(700L)
+                .uuid("u-700")
+                .name("Returning User")
+                .email("returning@example.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(oldLogin)
+                .inactivityWarningSentAt(LocalDateTime.now().minusDays(2))
+                .build();
+
+        UserProvider up = UserProvider.builder()
+                .userUuid("u-700")
+                .providerId("auth0|returning-700")
+                .build();
+
+        when(userProviderRepository.findByProviderId("auth0|returning-700")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid("u-700")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|returning-700")
+                .claim("email", "returning@example.com")
+                .claim("name", "Returning User")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse res = userService.recordLogin(auth);
+
+        assertNotNull(res);
+        assertNull(user.getInactivityWarningSentAt());
+        assertNotNull(user.getLastLoginAt());
+        assertTrue(user.getLastLoginAt().isAfter(oldLogin));
+        verify(userRepository, atLeastOnce()).save(user);
+    }
+
+    @Test
+    @DisplayName("recordLogin with Google OAuth sub should update lastLoginAt")
+    void recordLogin_googleOAuthUser_shouldUpdateLastLogin() {
+        LocalDateTime oldLogin = LocalDateTime.now().minusDays(15);
+        User user = User.builder()
+                .id(701L)
+                .uuid("u-701")
+                .name("Google User")
+                .email("google@example.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(oldLogin)
+                .build();
+
+        UserProvider up = UserProvider.builder()
+                .userUuid("u-701")
+                .providerId("google-oauth2|11223344")
+                .build();
+
+        when(userProviderRepository.findByProviderId("google-oauth2|11223344")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid("u-701")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "google-oauth2|11223344")
+                .claim("email", "google@example.com")
+                .claim("name", "Google User")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse res = userService.recordLogin(auth);
+
+        assertNotNull(res);
+        assertNotNull(user.getLastLoginAt());
+        assertTrue(user.getLastLoginAt().isAfter(oldLogin));
+        verify(userRepository, atLeastOnce()).save(user);
+    }
+
+    @Test
+    @DisplayName("recordLogin with username/password Auth0 sub should update lastLoginAt")
+    void recordLogin_usernamePasswordUser_shouldUpdateLastLogin() {
+        LocalDateTime oldLogin = LocalDateTime.now().minusDays(5);
+        User user = User.builder()
+                .id(702L)
+                .uuid("u-702")
+                .name("Db User")
+                .email("dbuser@example.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(oldLogin)
+                .build();
+
+        UserProvider up = UserProvider.builder()
+                .userUuid("u-702")
+                .providerId("auth0|db-pass-123")
+                .build();
+
+        when(userProviderRepository.findByProviderId("auth0|db-pass-123")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid("u-702")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|db-pass-123")
+                .claim("email", "dbuser@example.com")
+                .claim("name", "Db User")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse res = userService.recordLogin(auth);
+
+        assertNotNull(res);
+        assertNotNull(user.getLastLoginAt());
+        assertTrue(user.getLastLoginAt().isAfter(oldLogin));
+        verify(userRepository, atLeastOnce()).save(user);
+    }
+
+    @Test
+    @DisplayName("recordLogin for brand new user should initialize lastLoginAt timestamp")
+    void recordLogin_newUser_shouldReceiveInitialLoginTimestamp() {
+        when(userProviderRepository.findByProviderId("auth0|brand-new")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("new@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(703L);
+            u.setUuid("u-703");
+            return u;
+        });
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|brand-new")
+                .claim("email", "new@example.com")
+                .claim("name", "New User")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse res = userService.recordLogin(auth);
+
+        assertNotNull(res);
+        verify(userRepository, atLeastOnce()).save(argThat(u -> Objects.nonNull(u.getLastLoginAt())));
+    }
+
+    @Test
+    @DisplayName("Calling getCurrentUser repeatedly should not modify lastLoginAt or trigger repository save")
+    void getCurrentUser_repeatedCalls_shouldNotModifyLastLoginAt() {
+        LocalDateTime originalLoginAt = LocalDateTime.now().minusDays(12);
+        User user = User.builder()
+                .id(704L)
+                .uuid("u-704")
+                .name("Repeat User")
+                .email("repeat@example.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(originalLoginAt)
+                .build();
+
+        UserProvider up = UserProvider.builder()
+                .userUuid("u-704")
+                .providerId("auth0|repeat-704")
+                .build();
+
+        when(userProviderRepository.findByProviderId("auth0|repeat-704")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid("u-704")).thenReturn(Optional.of(user));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|repeat-704")
+                .claim("email", "repeat@example.com")
+                .claim("name", "Repeat User")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        // First call
+        UserResponse res1 = userService.getCurrentUser(auth);
+        assertNotNull(res1);
+
+        // Second call
+        UserResponse res2 = userService.getCurrentUser(auth);
+        assertNotNull(res2);
+
+        // Third call
+        UserResponse res3 = userService.getCurrentUser(auth);
+        assertNotNull(res3);
+
+        assertEquals(originalLoginAt, user.getLastLoginAt());
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("recordLogin with null principal should throw UNAUTHORIZED")
+    void recordLogin_nullPrincipal_shouldThrowUnauthorized() {
+        assertThrows(ResponseStatusException.class, () -> userService.recordLogin(null));
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    @DisplayName("recordLogin with standard Principal should resolve user and update lastLoginAt")
+    void recordLogin_standardPrincipal_shouldUpdateLastLogin() {
+        LocalDateTime oldLogin = LocalDateTime.now().minusDays(8);
+        User user = User.builder()
+                .id(705L)
+                .uuid("u-705")
+                .name("Std User")
+                .email("std@example.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(oldLogin)
+                .build();
+
+        Principal stdPrincipal = () -> "std@example.com";
+        when(userProviderRepository.findByProviderId("std@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("std@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.recordLogin(stdPrincipal);
+
+        assertNotNull(res);
+        assertNotNull(user.getLastLoginAt());
+        assertTrue(user.getLastLoginAt().isAfter(oldLogin));
+        verify(userRepository, atLeastOnce()).save(user);
     }
 }

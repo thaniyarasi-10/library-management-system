@@ -1,4 +1,4 @@
-package com.kovanlabs.librarymanagement.salesforce.service;
+package com.kovanlabs.librarymanagement.scheduler;
 
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
@@ -7,12 +7,11 @@ import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
+import com.kovanlabs.librarymanagement.mapping.BookMapper;
+import com.kovanlabs.librarymanagement.mapping.BorrowMapper;
 import com.kovanlabs.librarymanagement.salesforce.config.SalesforceConfig;
-import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
-import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
-import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BorrowSObject;
-import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
-import com.kovanlabs.librarymanagement.salesforce.model.sobjects.SObjectAttributes;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
+import com.kovanlabs.librarymanagement.user.mapping.UserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -58,7 +57,7 @@ public class SalesforceSyncRetryScheduler {
 
             try {
                 if (Objects.nonNull(salesforceSyncService)) {
-                    salesforceSyncService.syncContact(toContactSObject(user));
+                    salesforceSyncService.syncContact(UserMapper.INSTANCE.toContactSObject(user));
                 }
                 user.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
                 userRepository.save(user);
@@ -92,7 +91,7 @@ public class SalesforceSyncRetryScheduler {
 
             try {
                 if (Objects.nonNull(salesforceSyncService)) {
-                    salesforceSyncService.syncBook(toBookSObject(book));
+                    salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(book));
                 }
                 book.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
                 bookRepository.save(book);
@@ -128,7 +127,7 @@ public class SalesforceSyncRetryScheduler {
 
             try {
                 if (Objects.nonNull(salesforceSyncService)) {
-                    salesforceSyncService.syncBorrow(toBorrowSObject(borrow));
+                    salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(borrow));
                 }
                 borrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
                 borrowRepository.save(borrow);
@@ -149,65 +148,5 @@ public class SalesforceSyncRetryScheduler {
                 }
             }
         }
-    }
-
-    private ContactSObject toContactSObject(User user) {
-        if (Objects.isNull(user)) {
-            return null;
-        }
-        return ContactSObject.builder()
-                .attributes(SObjectAttributes.builder().type(SObject.CONTACT.getObjectName()).build())
-                .externalUserUuid(Objects.nonNull(user.getUuid()) ? user.getUuid() : null)
-                .legacyUserId(user.getId())
-                .lastName(Objects.nonNull(user.getName()) && !user.getName().isBlank() ? user.getName() : "User")
-                .email(user.getEmail())
-                .role(Objects.nonNull(user.getRole()) ? user.getRole().name() : null)
-                .phone(user.getPhone())
-                .build();
-    }
-
-    private BookSObject toBookSObject(Book book) {
-        if (Objects.isNull(book)) {
-            return null;
-        }
-        return BookSObject.builder()
-                .attributes(SObjectAttributes.builder().type(SObject.BOOK.getObjectName()).build())
-                .externalBookUuid(Objects.nonNull(book.getUuid()) ? book.getUuid(): null)
-                .name(Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank() ? book.getTitle() : "Untitled")
-                .title(Objects.nonNull(book.getTitle()) && !book.getTitle().isBlank() ? book.getTitle() : "Untitled")
-                .author(book.getAuthor())
-                .isbn(book.getIsbn())
-                .coverImageUrl(book.getCoverImageUrl())
-                .totalBookCount(book.getTotalBookCount())
-                .borrowedBookCount(book.getBorrowedBookCount())
-                .build();
-    }
-
-    private BorrowSObject toBorrowSObject(Borrow borrow) {
-        if (Objects.isNull(borrow)) {
-            return null;
-        }
-        ContactSObject contact = null;
-        if (Objects.nonNull(borrow.getUser())) {
-            contact = ContactSObject.builder()
-                    .externalUserUuid(Objects.nonNull(borrow.getUser().getUuid()) ? borrow.getUser().getUuid() : null)
-                    .build();
-        }
-        BookSObject book = null;
-        if (Objects.nonNull(borrow.getBook())) {
-            book = BookSObject.builder()
-                    .externalBookUuid(Objects.nonNull(borrow.getBook().getUuid()) ? borrow.getBook().getUuid() : null)
-                    .build();
-        }
-        return BorrowSObject.builder()
-                .attributes(SObjectAttributes.builder().type(SObject.BORROW.getObjectName()).build())
-                .externalBorrowUuid(Objects.nonNull(borrow.getUuid()) ? borrow.getUuid(): null)
-                .borrowDate(Objects.nonNull(borrow.getBorrowDate()) ? borrow.getBorrowDate().toString() : null)
-                .dueDate(Objects.nonNull(borrow.getDueDate()) ? borrow.getDueDate().toString() : null)
-                .returnDate(Objects.nonNull(borrow.getReturnedDate()) ? borrow.getReturnedDate().toString() : null)
-                .borrowStatus(Objects.nonNull(borrow.getStatus()) ? borrow.getStatus().name() : null)
-                .contact(contact)
-                .book(book)
-                .build();
     }
 }

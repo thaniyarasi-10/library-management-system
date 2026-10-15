@@ -229,6 +229,7 @@ class SalesforceSyncServiceTest {
         record1.put(ContactFields.EMAIL, "smith@example.com");
         record1.put(ContactFields.EXTERNAL_USER_UUID, validUuid.toString());
         record1.put(ContactFields.LEGACY_USER_ID, "100");
+        record1.put(ContactFields.REWARD, 50);
 
         when(clientService.query(anyString())).thenReturn(root);
 
@@ -239,6 +240,7 @@ class SalesforceSyncServiceTest {
         assertEquals(validUuid.toString(), contacts.get(0).getExternalUserUuid());
         assertEquals(100L, contacts.get(0).getLegacyUserId());
         assertEquals("Smith", contacts.get(0).getLastName());
+        assertEquals(50, contacts.get(0).getReward());
     }
 
     // --- getTotalBooksFromSalesforce() tests ---

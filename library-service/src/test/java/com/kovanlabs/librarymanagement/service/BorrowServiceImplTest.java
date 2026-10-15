@@ -99,10 +99,14 @@ class BorrowServiceImplTest {
         lenient().when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
+    private BorrowRequestDto req(Long bookId, Long userId) {
+        return new BorrowRequestDto(bookId, userId, null, null);
+    }
+
     @Test
     @DisplayName("borrowBook should throw BAD_REQUEST when user already has 5 active borrowed books")
     void borrowBook_WhenUserExceeds5BookLimit_ShouldThrowBadRequest() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = req(10L, 1L);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(borrowRepository.countByUser_UuidAndStatus(user.getUuid(), BorrowStatus.BORROWED)).thenReturn(5L);
@@ -116,7 +120,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook should succeed when user has no pending fines")
     void borrowBook_WhenNoPendingFines_ShouldSucceed() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = req(10L, 1L);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
@@ -139,7 +143,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook should set status SUCCESS when salesforce sync succeeds")
     void borrowBook_whenSalesforceSyncSucceeds_shouldMarkStatusSuccess() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = req(10L, 1L);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
@@ -156,7 +160,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook should increment retry count when salesforce sync fails")
     void borrowBook_whenSalesforceSyncFails_shouldIncrementRetryAndKeepPending() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = req(10L, 1L);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
@@ -255,7 +259,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook should throw ResponseStatusException when user has pending fines")
     void borrowBook_WhenUserHasPendingFines_ShouldThrowException() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = req(10L, 1L);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(userFineChecker.hasPendingFines(1L)).thenReturn(true);
@@ -285,21 +289,21 @@ class BorrowServiceImplTest {
         assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(null, 1L, "   ", null)));
         // Null userId and null userIdentifier with blank userUuid
         assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, null, null, "   ")));
-        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, null), "   "));
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(req(10L, null), "   "));
 
         // User not found by ID
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
-        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, 99L)));
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(req(10L, 99L)));
 
         // User not found by userIdentifier
         when(userProviderRepository.findByProviderId("unknown@example.com")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("unknown@example.com")).thenReturn(Optional.empty());
-        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(10L, null), "unknown@example.com"));
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(req(10L, null), "unknown@example.com"));
 
         // Book not found
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(bookRepository.findById(99L)).thenReturn(Optional.empty());
-        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(new BorrowRequestDto(99L, 1L)));
+        assertThrows(ResponseStatusException.class, () -> borrowService.borrowBook(req(99L, 1L)));
     }
 
     @Test
@@ -319,7 +323,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook should resolve user from userIdentifier via provider")
     void borrowBook_WhenUserIdNull_ShouldResolveFromUserIdentifierProvider() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, null);
+        BorrowRequestDto request = req(10L, null);
         String providerId = "auth0|provider123";
 
         com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
@@ -345,7 +349,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook should resolve user from userIdentifier when userId is null")
     void borrowBook_WhenUserIdNull_ShouldResolveFromUserIdentifier() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, null);
+        BorrowRequestDto request = req(10L, null);
         String email = "john@example.com";
 
         when(userProviderRepository.findByProviderId(email)).thenReturn(Optional.empty());
@@ -370,7 +374,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook should throw BAD_REQUEST when borrowed count equals total book count or total is null/zero")
     void borrowBook_WhenBorrowCountEqualsTotalBook_ShouldThrowBadRequest() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = req(10L, 1L);
         Book outOfStockBook = Book.builder()
                 .uuid(UUID.randomUUID().toString())
                 .id(10L)
@@ -401,7 +405,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook should increment borrowed_book_count by 1 and sync to Salesforce")
     void borrowBook_ShouldIncrementBorrowedBookCountAndSyncSalesforce() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = req(10L, 1L);
         book.setTotalBookCount(5);
         book.setBorrowedBookCount(1);
 
@@ -446,7 +450,7 @@ class BorrowServiceImplTest {
                         rewardService
                 );
 
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = req(10L, 1L);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
@@ -460,7 +464,7 @@ class BorrowServiceImplTest {
         // Also test borrowBook(request, userIdentifier) with null fine checker
         when(userProviderRepository.findByProviderId("john@example.com")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("john@example.com")).thenReturn(Optional.of(user));
-        BorrowResponseDto respIdent = serviceWithoutFineChecker.borrowBook(new BorrowRequestDto(10L, null), "john@example.com");
+        BorrowResponseDto respIdent = serviceWithoutFineChecker.borrowBook(req(10L, null), "john@example.com");
         assertNotNull(respIdent);
 
         when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
@@ -474,7 +478,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook should throw FORBIDDEN when user has no active membership")
     void borrowBook_withoutActiveMembership_shouldThrowForbidden() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = req(10L, 1L);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(membershipService.hasActiveMembership(user.getUuid())).thenReturn(false);
 
@@ -486,7 +490,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook and returnBook when Salesforce throws exception should set status PENDING")
     void borrowAndReturnBook_whenSalesforceThrows_shouldSetPending() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = req(10L, 1L);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
         when(bookRepository.findById(10L)).thenReturn(Optional.of(book));
@@ -590,7 +594,7 @@ class BorrowServiceImplTest {
     @Test
     @DisplayName("borrowBook when book sync to salesforce throws exception should continue and mark pending")
     void borrowBook_whenBookSalesforceSyncThrows_shouldContinueAndMarkPending() {
-        BorrowRequestDto request = new BorrowRequestDto(10L, 1L);
+        BorrowRequestDto request = req(10L, 1L);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(userFineChecker.hasPendingFines(1L)).thenReturn(false);

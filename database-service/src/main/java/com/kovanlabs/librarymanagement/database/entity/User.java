@@ -1,5 +1,7 @@
 package com.kovanlabs.librarymanagement.database.entity;
 
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
+import com.kovanlabs.librarymanagement.database.enums.ReactivationRequestStatus;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import jakarta.persistence.Column;
@@ -13,6 +15,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
+
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "user")
@@ -35,6 +39,11 @@ public class User extends BaseEntity {
     private RoleEnum role = RoleEnum.USER;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    @Builder.Default
+    private AccountStatus status = AccountStatus.ACTIVE;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "salesforce_sync_status", nullable = false)
     @Builder.Default
     private SalesforceSyncStatus salesforceSyncStatus = SalesforceSyncStatus.PENDING;
@@ -45,4 +54,18 @@ public class User extends BaseEntity {
 
     @Column(name = "phone", nullable = true)
     private String phone;
+
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
+
+    @Column(name = "inactivity_warning_sent_at")
+    private LocalDateTime inactivityWarningSentAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reactivation_request_status")
+    private ReactivationRequestStatus reactivationRequestStatus;
+
+    public boolean isReactivationRequested() {
+        return reactivationRequestStatus == ReactivationRequestStatus.PENDING;
+    }
 }

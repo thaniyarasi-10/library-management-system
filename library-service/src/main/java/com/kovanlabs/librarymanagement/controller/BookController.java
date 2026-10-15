@@ -17,7 +17,7 @@ import java.util.UUID;
 import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping("/books")
+@RequestMapping({"/api/books", "/books"})
 @RequiredArgsConstructor
 public class BookController {
 

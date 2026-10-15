@@ -68,7 +68,7 @@ class BookMapperTest {
 
     @Test
     void testMapToEntity_BookRequest() {
-        BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "978-0132350884");
+        BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "978-0132350884", 1);
 
         Book book = bookMapper.mapToEntity(request);
 
@@ -86,7 +86,7 @@ class BookMapperTest {
     @Test
     void testToBookSObject_and_toBookResponse() {
         String uuid = UUID.randomUUID().toString();
-        BookResponse dto = new BookResponse(uuid, 1L, "Clean Architecture", "Uncle Bob", "1234567890", "http://img.png", 15, 5);
+        BookResponse dto = new BookResponse(uuid, 1L, "Clean Architecture", "Uncle Bob", "1234567890", "http://img.png", 15, 5, 10);
 
         var sObject = bookMapper.toBookSObject(dto);
         assertNotNull(sObject);

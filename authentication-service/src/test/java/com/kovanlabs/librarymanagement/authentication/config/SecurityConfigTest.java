@@ -46,27 +46,32 @@ class SecurityConfigTest {
 
     @RestController
     static class TestSecurityController {
-        @GetMapping("/books")
+        @GetMapping({"/api/books", "/books"})
         public ResponseEntity<String> getBooks() {
             return ResponseEntity.ok("books");
         }
 
-        @PostMapping("/books")
+        @PostMapping({"/api/books", "/books"})
         public ResponseEntity<String> createBook() {
             return ResponseEntity.ok("created");
         }
 
-        @DeleteMapping("/books/{id}")
+        @DeleteMapping({"/api/books/{id}", "/books/{id}"})
         public ResponseEntity<String> deleteBook(@PathVariable String id) {
             return ResponseEntity.ok("deleted");
         }
 
-        @GetMapping("/user/me")
+        @GetMapping({"/api/user/me", "/api/auth/me", "/user/me"})
         public ResponseEntity<String> getMe() {
             return ResponseEntity.ok("me");
         }
 
-        @GetMapping("/user")
+        @PostMapping({"/api/user/callback", "/user/callback"})
+        public ResponseEntity<String> userCallback() {
+            return ResponseEntity.ok("callback");
+        }
+
+        @GetMapping({"/api/user", "/user"})
         public ResponseEntity<String> getUsers() {
             return ResponseEntity.ok("users");
         }
@@ -207,6 +212,36 @@ class SecurityConfigTest {
         mockMvc.perform(get("/user/me")
                         .header("Authorization", "Bearer me-token"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void apiAuthMeEndpoint_whenValidToken_shouldBeAllowed() throws Exception {
+        Jwt jwt = createJwtWithClaims(Map.of(
+                "sub", "auth0|12345"
+        ));
+        when(mockJwtDecoder.decode("me-token")).thenReturn(jwt);
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header("Authorization", "Bearer me-token"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void userCallbackEndpoint_whenValidToken_shouldBeAllowed() throws Exception {
+        Jwt jwt = createJwtWithClaims(Map.of(
+                "sub", "auth0|12345"
+        ));
+        when(mockJwtDecoder.decode("callback-token")).thenReturn(jwt);
+
+        mockMvc.perform(post("/user/callback")
+                        .header("Authorization", "Bearer callback-token"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void userCallbackEndpoint_whenNoToken_shouldReturn401() throws Exception {
+        mockMvc.perform(post("/user/callback"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

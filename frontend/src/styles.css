@@ -1510,3 +1510,19 @@ a {
   .quick-actions-row { grid-template-columns: 1fr; }
   .grid-2col { grid-template-columns: 1fr; }
 }
+
+.reactivation-banner-interactive {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.reactivation-banner-interactive:hover {
+  background: rgba(245, 158, 11, 0.18) !important;
+  border-color: rgba(245, 158, 11, 0.6) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.12);
+}
+
+.reactivation-banner-interactive:active {
+  transform: translateY(0);
+}
+

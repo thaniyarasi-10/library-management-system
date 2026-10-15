@@ -1,14 +1,15 @@
 package com.kovanlabs.librarymanagement.scheduler;
 
+import com.kovanlabs.librarymanagement.aws.sqs.producer.SqsNotificationProducer;
+import com.kovanlabs.librarymanagement.communication.dto.NotificationRequest;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
+import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.dto.FineResult;
+import com.kovanlabs.librarymanagement.service.AccountInactivityService;
 import com.kovanlabs.librarymanagement.service.FineService;
-import com.kovanlabs.librarymanagement.communication.dto.NotificationRequest;
-import com.kovanlabs.librarymanagement.aws.sqs.producer.SqsNotificationProducer;
-import com.kovanlabs.librarymanagement.database.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,89 +27,108 @@ import static org.mockito.Mockito.*;
 
 class NotificationSchedulerTest {
 
-        private BorrowRepository borrowRepository;
-        private SqsNotificationProducer sqsNotificationProducer;
-        private FineService fineService;
-        private NotificationScheduler scheduler;
-        private String userUuid;
-        private String bookUuid;
-        private String borrowUuid;
+    private BorrowRepository borrowRepository;
+    private SqsNotificationProducer sqsNotificationProducer;
+    private FineService fineService;
+    private AccountInactivityService inactivityService;
+    private NotificationScheduler scheduler;
+    private String userUuid;
+    private String bookUuid;
+    private String borrowUuid;
 
-        @BeforeEach
-        void setUp() {
-                borrowRepository = mock(BorrowRepository.class);
-                sqsNotificationProducer = mock(SqsNotificationProducer.class);
-                fineService = mock(FineService.class);
+    @BeforeEach
+    void setUp() {
+        borrowRepository = mock(BorrowRepository.class);
+        sqsNotificationProducer = mock(SqsNotificationProducer.class);
+        fineService = mock(FineService.class);
+        inactivityService = mock(AccountInactivityService.class);
 
-                scheduler = new NotificationScheduler(borrowRepository, sqsNotificationProducer, fineService);
+        scheduler = new NotificationScheduler(borrowRepository, sqsNotificationProducer, fineService, inactivityService);
 
-                userUuid = UUID.randomUUID().toString();
-                bookUuid = UUID.randomUUID().toString();
-                borrowUuid = UUID.randomUUID().toString();
-        }
+        userUuid = UUID.randomUUID().toString();
+        bookUuid = UUID.randomUUID().toString();
+        borrowUuid = UUID.randomUUID().toString();
+    }
 
-        @Test
-        @DisplayName("Should do nothing when no overdue borrows exist")
-        void testSendOverdueNotifications_NoOverdue() {
-                when(borrowRepository.findByReturnedDateIsNullAndDueDateBefore(any(LocalDate.class)))
-                                .thenReturn(Collections.emptyList());
+    @Test
+    @DisplayName("Should do nothing when no overdue borrows exist")
+    void testSendOverdueNotifications_NoOverdue() {
+        when(borrowRepository.findByReturnedDateIsNullAndDueDateBefore(any(LocalDate.class)))
+                .thenReturn(Collections.emptyList());
 
-                scheduler.sendOverdueNotifications();
+        scheduler.sendOverdueNotifications();
 
-                verify(sqsNotificationProducer, never()).send(any());
-                verify(borrowRepository, never()).save(any());
-        }
+        verify(sqsNotificationProducer, never()).send(any());
+        verify(borrowRepository, never()).save(any());
+    }
 
-        @Test
-        @DisplayName("Should send SQS notification, process fine, and update status to OVERDUE for overdue borrows")
-        void testSendOverdueNotifications_WithOverdueBorrows() {
-                User user = User.builder()
-                                .uuid(userUuid)
-                                .id(1L)
-                                .name("John Doe")
-                                .email("john.doe@example.com")
-                                .build();
+    @Test
+    @DisplayName("Should send SQS notification, process fine, and update status to OVERDUE for overdue borrows")
+    void testSendOverdueNotifications_WithOverdueBorrows() {
+        User user = User.builder()
+                .uuid(userUuid)
+                .id(1L)
+                .name("John Doe")
+                .email("john.doe@example.com")
+                .build();
 
-                Book book = Book.builder()
-                                .uuid(bookUuid)
-                                .id(101L)
-                                .title("Clean Code")
-                                .author("Robert C. Martin")
-                                .build();
+        Book book = Book.builder()
+                .uuid(bookUuid)
+                .id(101L)
+                .title("Clean Code")
+                .author("Robert C. Martin")
+                .build();
 
-                Borrow borrow = Borrow.builder()
-                                .uuid(borrowUuid)
-                                .id(1L)
-                                .user(user)
-                                .book(book)
-                                .borrowDate(LocalDate.now().minusDays(20))
-                                .dueDate(LocalDate.now().minusDays(6))
-                                .status(BorrowStatus.BORROWED)
-                                .build();
+        Borrow borrow = Borrow.builder()
+                .uuid(borrowUuid)
+                .id(1L)
+                .user(user)
+                .book(book)
+                .borrowDate(LocalDate.now().minusDays(20))
+                .dueDate(LocalDate.now().minusDays(6))
+                .status(BorrowStatus.BORROWED)
+                .build();
 
-                when(borrowRepository.findByReturnedDateIsNullAndDueDateBefore(any(LocalDate.class)))
-                                .thenReturn(List.of(borrow));
+        when(borrowRepository.findByReturnedDateIsNullAndDueDateBefore(any(LocalDate.class)))
+                .thenReturn(List.of(borrow));
 
-                when(fineService.calculateFine(borrow)).thenReturn(new FineResult(borrow, 6, 30.0));
-                when(fineService.calculateTotalPendingFineForUser(userUuid)).thenReturn(BigDecimal.valueOf(30.0));
+        when(fineService.calculateFine(borrow)).thenReturn(new FineResult(borrow, 6, 30.0));
+        when(fineService.calculateTotalPendingFineForUser(userUuid)).thenReturn(BigDecimal.valueOf(30.0));
 
-                scheduler.sendOverdueNotifications();
+        scheduler.sendOverdueNotifications();
 
-                assertEquals(BorrowStatus.OVERDUE, borrow.getStatus());
-                verify(borrowRepository, times(1)).saveAll(any());
-                verify(fineService, times(1)).processFineForBorrow(borrow);
-                verify(fineService, times(1)).calculateTotalPendingFineForUser(userUuid);
+        assertEquals(BorrowStatus.OVERDUE, borrow.getStatus());
+        verify(borrowRepository, times(1)).saveAll(any());
+        verify(fineService, times(1)).processFineForBorrow(borrow);
+        verify(fineService, times(1)).calculateTotalPendingFineForUser(userUuid);
 
-                ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
-                verify(sqsNotificationProducer, times(1)).send(captor.capture());
+        ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
+        verify(sqsNotificationProducer, times(1)).send(captor.capture());
 
-                NotificationRequest request = captor.getValue();
-                assertEquals("john.doe@example.com", request.recipient());
-                assertEquals("Overdue Books Notice", request.subject());
-                assertEquals("John Doe", request.userName());
-                assertNotNull(request.overdueBooks());
-                assertEquals(1, request.overdueBooks().size());
-                assertEquals("Clean Code", request.overdueBooks().get(0).title());
-                assertEquals(30.0, request.totalFine());
-        }
+        NotificationRequest request = captor.getValue();
+        assertEquals("john.doe@example.com", request.recipient());
+        assertEquals("Overdue Books Notice", request.subject());
+        assertEquals("John Doe", request.userName());
+        assertNotNull(request.overdueBooks());
+        assertEquals(1, request.overdueBooks().size());
+        assertEquals("Clean Code", request.overdueBooks().get(0).title());
+        assertEquals(30.0, request.totalFine());
+    }
+
+    @Test
+    @DisplayName("processAccountInactivityNotifications should invoke AccountInactivityService")
+    void testProcessAccountInactivityNotifications_Success() {
+        scheduler.processAccountInactivityNotifications();
+
+        verify(inactivityService, times(1)).processInactiveAccounts();
+    }
+
+    @Test
+    @DisplayName("processAccountInactivityNotifications should handle exception gracefully")
+    void testProcessAccountInactivityNotifications_ExceptionHandled() {
+        doThrow(new RuntimeException("Inactivity processing failure")).when(inactivityService).processInactiveAccounts();
+
+        assertDoesNotThrow(() -> scheduler.processAccountInactivityNotifications());
+        verify(inactivityService, times(1)).processInactiveAccounts();
+    }
 }

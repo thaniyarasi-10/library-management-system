@@ -4,6 +4,8 @@ import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
+import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,7 @@ public class RewardService {
 
     private final BorrowRepository borrowRepository;
     private final RewardRepository rewardRepository;
+    private final SalesforceSync salesforceSyncService;
 
     /**
      * Finds unprocessed on-time returned borrows, aggregates points per user,
@@ -47,7 +50,7 @@ public class RewardService {
                 .filter(b -> Objects.nonNull(b.getUser()) && Objects.nonNull(b.getUser().getUuid()))
                 .collect(Collectors.groupingBy(b -> b.getUser().getUuid(), Collectors.counting()));
 
-        // Increment user reward points using rewardRepository
+        // Increment user reward points using rewardRepository and sync to Salesforce
         pointsPerUser.forEach((userUuid, pointsCount) -> {
             int updated = rewardRepository.incrementPoints(userUuid, pointsCount.intValue());
             if (updated == 0) {
@@ -58,6 +61,7 @@ public class RewardService {
                         .build();
                 rewardRepository.save(newReward);
             }
+            syncRewardToSalesforce(userUuid);
         });
 
         // Mark all processed borrows as rewardProcessed = true in a single bulk update
@@ -71,5 +75,22 @@ public class RewardService {
                 pointsPerUser.size(), updatedBorrows);
 
         return updatedBorrows;
+    }
+
+    private void syncRewardToSalesforce(String userUuid) {
+        if (Objects.nonNull(salesforceSyncService) && Objects.nonNull(userUuid)) {
+            try {
+                int totalPoints = rewardRepository.findByUserUuid(userUuid)
+                        .map(Reward::getPoints)
+                        .orElse(0);
+                salesforceSyncService.syncContact(ContactSObject.builder()
+                        .externalUserUuid(userUuid)
+                        .reward(totalPoints)
+                        .build());
+                log.info("Synchronized reward points ({}) to Salesforce for user [{}]", totalPoints, userUuid);
+            } catch (Exception e) {
+                log.error("Failed to sync reward points to Salesforce for user [UUID: {}]: {}", userUuid, e.getMessage());
+            }
+        }
     }
 }
