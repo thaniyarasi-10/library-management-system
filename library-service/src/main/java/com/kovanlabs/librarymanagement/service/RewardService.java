@@ -2,6 +2,7 @@ package com.kovanlabs.librarymanagement.service;
 
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.Reward;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
@@ -47,7 +48,9 @@ public class RewardService {
 
         // Group eligible borrows by User UUID to aggregate total points earned per user
         Map<String, Long> pointsPerUser = eligibleBorrows.stream()
-                .filter(b -> Objects.nonNull(b.getUser()) && Objects.nonNull(b.getUser().getUuid()))
+                .filter(b -> Objects.nonNull(b.getUser())
+                        && Objects.nonNull(b.getUser().getUuid())
+                        && b.getUser().getStatus() != AccountStatus.DEACTIVATED)
                 .collect(Collectors.groupingBy(b -> b.getUser().getUuid(), Collectors.counting()));
 
         // Increment user reward points using rewardRepository and sync to Salesforce

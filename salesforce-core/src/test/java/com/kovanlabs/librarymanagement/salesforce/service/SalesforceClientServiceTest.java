@@ -445,4 +445,74 @@ class SalesforceClientServiceTest {
         assertTrue(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException(new RuntimeException("session expired"))));
         assertFalse(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException("random error")));
     }
+
+    @Test
+    void isUnauthorizedOrExpired_extendedBranches() {
+        org.springframework.web.client.HttpStatusCodeException ex401 =
+                new org.springframework.web.client.HttpClientErrorException(org.springframework.http.HttpStatus.UNAUTHORIZED);
+        assertTrue(SalesforceClientService.isUnauthorizedOrExpired(ex401));
+
+        org.springframework.web.client.HttpStatusCodeException ex500 =
+                new org.springframework.web.client.HttpServerErrorException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR);
+        assertFalse(SalesforceClientService.isUnauthorizedOrExpired(ex500));
+
+        assertTrue(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException("Error 401 occurred")));
+        assertTrue(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException("Unauthorized request")));
+        assertTrue(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException("invalid_session_id detected")));
+        assertTrue(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException("Your session expired now")));
+
+        assertFalse(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException((String) null)));
+    }
+
+    @Test
+    void upsertByExternalId_whenAuthFails_throwsSalesforceSyncExceptionForNullTokenOrHost() {
+        mockValidConfig();
+        mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withServerError());
+
+        SalesforceSyncException ex = assertThrows(SalesforceSyncException.class,
+                () -> clientService.upsertByExternalId("Book__c", "External_Book_UUID__c", "uuid-123", Map.of()));
+        assertTrue(ex.getMessage().contains("Unable to obtain Salesforce access token or instance URL"));
+    }
+
+    @Test
+    void deleteByExternalId_whenAuthFails_throwsSalesforceSyncExceptionForNullTokenOrHost() {
+        mockValidConfig();
+        mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withServerError());
+
+        SalesforceSyncException ex = assertThrows(SalesforceSyncException.class,
+                () -> clientService.deleteByExternalId("Contact", "External_User_UUID__c", "uuid-123"));
+        assertTrue(ex.getMessage().contains("Unable to obtain Salesforce access token or instance URL"));
+    }
+
+    @Test
+    void query_whenAuthFails_returnsNull() {
+        mockValidConfig();
+        mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withServerError());
+
+        JsonNode result = clientService.query("SELECT Id FROM Contact");
+        assertNull(result);
+    }
+
+    @Test
+    void reauthenticate_resetsTokensAndAuthenticatesAgain() {
+        mockValidConfig();
+        mockSuccessfulAuth();
+
+        assertEquals("mock-access-token", clientService.getAccessToken());
+
+        String authResponseBody = "{\"access_token\":\"refreshed-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
+        mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(authResponseBody, MediaType.APPLICATION_JSON));
+
+        clientService.reauthenticate();
+        assertEquals("refreshed-token", clientService.getAccessToken());
+        mockServer.verify();
+    }
 }
