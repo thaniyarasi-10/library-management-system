@@ -59,6 +59,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
+    public static final int REACTIVATION_RESTRICTION_DAYS = 10;
+
     private final UserRepository userRepository;
     private final UserProviderRepository userProviderRepository;
     private final RewardRepository rewardRepository;
@@ -73,16 +75,18 @@ public class UserServiceImpl implements UserService {
         if (Objects.isNull(user)) {
             return null;
         }
-        Integer points = Objects.nonNull(user.getUuid())
+        Integer points = Objects.nonNull(user.getUuid()) && Objects.nonNull(rewardRepository)
                 ? rewardRepository.findByUserUuid(user.getUuid()).map(Reward::getPoints).orElse(0)
                 : 0;
         BigDecimal pendingFineAmount = BigDecimal.ZERO;
-        if (Objects.nonNull(user.getUuid())) {
+        if (Objects.nonNull(user.getUuid()) && Objects.nonNull(fineRepository)) {
             List<Fine> pendingFines = fineRepository.findByUserUuidAndStatus(user.getUuid(), FineStatus.PENDING);
-            pendingFineAmount = pendingFines.stream()
-                    .map(Fine::getPendingFineAmount)
-                    .filter(Objects::nonNull)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (Objects.nonNull(pendingFines)) {
+                pendingFineAmount = pendingFines.stream()
+                        .map(Fine::getPendingFineAmount)
+                        .filter(Objects::nonNull)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+            }
         }
         boolean hasPendingFines = pendingFineAmount.compareTo(BigDecimal.ZERO) > 0;
         return UserMapper.INSTANCE.mapToResponse(user, points, hasPendingFines, pendingFineAmount.doubleValue());
@@ -101,11 +105,13 @@ public class UserServiceImpl implements UserService {
                 .filter(Objects::nonNull)
                 .toList();
 
-        Map<String, Integer> rewardMap = rewardRepository.findByUserUuidIn(uuids).stream()
-                .collect(Collectors.toMap(
-                        Reward::getUserUuid,
-                        Reward::getPoints,
-                        (p1, p2) -> p1));
+        Map<String, Integer> rewardMap = Objects.nonNull(rewardRepository)
+                ? rewardRepository.findByUserUuidIn(uuids).stream()
+                        .collect(Collectors.toMap(
+                                Reward::getUserUuid,
+                                Reward::getPoints,
+                                (p1, p2) -> p1))
+                : Collections.emptyMap();
 
         return UserMapper.INSTANCE.mapToResponse(users, rewardMap);
     }
@@ -128,7 +134,7 @@ public class UserServiceImpl implements UserService {
         User savedUser = userRepository.save(user);
         UserResponse response = toUserResponse(savedUser);
 
-        if (Objects.nonNull(salesforceSyncDelegate)) {
+        if (Objects.nonNull(savedUser) && Objects.nonNull(salesforceSyncDelegate)) {
             try {
                 salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(savedUser));
                 savedUser.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
@@ -749,7 +755,11 @@ public class UserServiceImpl implements UserService {
     public UserResponse reactivateUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
+        if (user.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account is permanently deactivated and cannot be reactivated");
+        }
         user.setStatus(AccountStatus.ACTIVE);
+        user.setDeactivatedAt(null);
         user.setReactivationRequestStatus(ReactivationRequestStatus.APPROVED);
         user.setInactivityWarningSentAt(null);
         user.setLastLoginAt(LocalDateTime.now());
@@ -760,8 +770,8 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * Deactivates a user account, setting its status to DEACTIVATED and clearing request status.
-     * Updates MySQL transactionally and synchronizes the DEACTIVATED status to Salesforce.
+     * Deactivates a user account, setting its status to DEACTIVATED, recording deactivatedAt timestamp,
+     * and clearing request status. Updates MySQL transactionally and synchronizes DEACTIVATED status to Salesforce.
      *
      * @param id The primary key identifier of the user to deactivate
      * @return The updated {@link UserResponse}
@@ -774,6 +784,7 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
         user.setStatus(AccountStatus.DEACTIVATED);
+        user.setDeactivatedAt(LocalDateTime.now());
         user.setReactivationRequestStatus(null);
         resetUserRewardPoints(user.getUuid());
         User savedUser = userRepository.save(user);
@@ -787,7 +798,9 @@ public class UserServiceImpl implements UserService {
      * <p>
      * Verification rules:
      * <ul>
-     *     <li>Account must currently be in DEACTIVATED status.</li>
+     *     <li>Account must currently be in DEACTIVATED status (cannot be PERMANENTLY_DEACTIVATED or ACTIVE).</li>
+     *     <li>Reactivation request must be submitted within 10 days of account deactivation date. If the 10-day
+     *         window has expired, the status is updated to PERMANENTLY_DEACTIVATED and synchronized to Salesforce.</li>
      *     <li>User must not have any outstanding unpaid fines. If pending fines exist, requests are rejected with 400 BAD_REQUEST.</li>
      *     <li>User must not have a request already pending review to prevent duplicate pending requests.</li>
      * </ul>
@@ -797,7 +810,7 @@ public class UserServiceImpl implements UserService {
      * @param principal The security principal representing the requesting user
      * @return The updated {@link UserResponse}
      * @throws ResponseStatusException 401 UNAUTHORIZED if unauthenticated, 404 NOT_FOUND if user not found,
-     *                                 or 400 BAD_REQUEST if account is not deactivated, fines pending, or duplicate request
+     *                                 or 400 BAD_REQUEST if account is permanently deactivated, expired, not deactivated, fines pending, or duplicate request
      */
     @Override
     @Transactional
@@ -831,8 +844,22 @@ public class UserServiceImpl implements UserService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
         }
 
+        if (user.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account is permanently deactivated and cannot be reactivated");
+        }
+
         if (user.getStatus() != AccountStatus.DEACTIVATED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account is not deactivated");
+        }
+
+        LocalDateTime deactivationDate = user.getDeactivatedAt() != null ? user.getDeactivatedAt() : user.getUpdatedAt();
+        if (deactivationDate != null && deactivationDate.plusDays(REACTIVATION_RESTRICTION_DAYS).isBefore(LocalDateTime.now())) {
+            user.setStatus(AccountStatus.PERMANENTLY_DEACTIVATED);
+            user.setReactivationRequestStatus(null);
+            User savedUser = userRepository.save(user);
+            syncUserToSalesforce(savedUser);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Reactivation period of 10 days has expired. Account is permanently deactivated.");
         }
 
         if (user.getReactivationRequestStatus() == ReactivationRequestStatus.PENDING) {
@@ -913,6 +940,31 @@ public class UserServiceImpl implements UserService {
         log.info("Successfully rejected account reactivation request for user ID: {}, Email: {}", id,
                 savedUser.getEmail());
         return toUserResponse(savedUser);
+    }
+
+    /**
+     * Identifies accounts that have been deactivated for more than 10 days without a pending reactivation request,
+     * updates their status to PERMANENTLY_DEACTIVATED in MySQL, and synchronizes the updated status to Salesforce.
+     *
+     * @return The number of accounts permanently deactivated
+     */
+    @Override
+    @Transactional
+    public int processExpiredDeactivations() {
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(REACTIVATION_RESTRICTION_DAYS);
+        List<User> expiredUsers = userRepository.findUsersEligibleForPermanentDeactivation(AccountStatus.DEACTIVATED, cutoff);
+        if (Objects.nonNull(expiredUsers) && !expiredUsers.isEmpty()) {
+            log.info("Processing {} expired deactivated user(s) for permanent deactivation", expiredUsers.size());
+            for (User user : expiredUsers) {
+                user.setStatus(AccountStatus.PERMANENTLY_DEACTIVATED);
+                user.setReactivationRequestStatus(null);
+                User savedUser = userRepository.save(user);
+                syncUserToSalesforce(savedUser);
+                log.info("Permanently deactivated user account ID: {}, Email: {}", savedUser.getId(), savedUser.getEmail());
+            }
+            return expiredUsers.size();
+        }
+        return 0;
     }
 
     private String getHeaderFromRequestContext(String headerName) {

@@ -1484,6 +1484,166 @@ class UserServiceImplTest {
     }
 
     @Test
+    @DisplayName("requestReactivation should throw BAD_REQUEST when user is PERMANENTLY_DEACTIVATED")
+    void requestReactivation_whenPermanentlyDeactivated_shouldThrowBadRequest() {
+        User user = User.builder()
+                .id(403L)
+                .uuid("u-403")
+                .email("perm@example.com")
+                .status(AccountStatus.PERMANENTLY_DEACTIVATED)
+                .build();
+
+        Principal principal = () -> "perm@example.com";
+        when(userRepository.findByEmail("perm@example.com")).thenReturn(Optional.of(user));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.requestReactivation(principal));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("permanently deactivated"));
+        verify(userRepository, never()).save(any());
+        verify(salesforceSyncDelegate, never()).syncContact(any());
+    }
+
+    @Test
+    @DisplayName("requestReactivation when deactivated > 10 days should update to PERMANENTLY_DEACTIVATED, sync Salesforce, and throw BAD_REQUEST")
+    void requestReactivation_whenDeactivatedExceeds10Days_shouldTransitionToPermanentlyDeactivatedAndThrow() {
+        User user = User.builder()
+                .id(404L)
+                .uuid("u-404")
+                .email("expired@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(11))
+                .build();
+
+        Principal principal = () -> "expired@example.com";
+        when(userRepository.findByEmail("expired@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.requestReactivation(principal));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("expired"));
+        assertEquals(AccountStatus.PERMANENTLY_DEACTIVATED, user.getStatus());
+        assertNull(user.getReactivationRequestStatus());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("requestReactivation when deactivated within 10 days should succeed")
+    void requestReactivation_whenDeactivatedWithin10Days_shouldSucceed() {
+        User user = User.builder()
+                .id(405L)
+                .uuid("u-405")
+                .email("within10@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(5))
+                .build();
+
+        Principal principal = () -> "within10@example.com";
+        when(userRepository.findByEmail("within10@example.com")).thenReturn(Optional.of(user));
+        when(fineRepository.findByUserUuidAndStatus("u-405", FineStatus.PENDING)).thenReturn(List.of());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.requestReactivation(principal);
+
+        assertNotNull(res);
+        assertTrue(res.reactivationRequested());
+        assertEquals("PENDING", res.reactivationRequestStatus());
+        assertEquals(ReactivationRequestStatus.PENDING, user.getReactivationRequestStatus());
+        assertEquals("DEACTIVATED", res.status());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("reactivateUser when user is PERMANENTLY_DEACTIVATED should throw BAD_REQUEST")
+    void reactivateUser_whenPermanentlyDeactivated_shouldThrowBadRequest() {
+        User user = User.builder()
+                .id(406L)
+                .uuid("u-406")
+                .email("perm2@example.com")
+                .status(AccountStatus.PERMANENTLY_DEACTIVATED)
+                .build();
+
+        when(userRepository.findById(406L)).thenReturn(Optional.of(user));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.reactivateUser(406L));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("permanently deactivated"));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("deactivateUser should set deactivatedAt timestamp")
+    void deactivateUser_shouldSetDeactivatedAt() {
+        User user = User.builder()
+                .id(407L)
+                .uuid("u-407")
+                .email("deact-date@example.com")
+                .status(AccountStatus.ACTIVE)
+                .build();
+
+        when(userRepository.findById(407L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.deactivateUser(407L);
+
+        assertEquals("DEACTIVATED", res.status());
+        assertNotNull(user.getDeactivatedAt());
+        verify(userRepository, atLeastOnce()).save(user);
+    }
+
+    @Test
+    @DisplayName("processExpiredDeactivations should permanently deactivate users exceeding 10 days and sync to Salesforce")
+    void processExpiredDeactivations_shouldPermanentlyDeactivateUsersAndSyncToSalesforce() {
+        User expiredUser1 = User.builder()
+                .id(701L)
+                .uuid("u-701")
+                .email("exp1@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(15))
+                .build();
+
+        User expiredUser2 = User.builder()
+                .id(702L)
+                .uuid("u-702")
+                .email("exp2@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(12))
+                .build();
+
+        when(userRepository.findUsersEligibleForPermanentDeactivation(eq(AccountStatus.DEACTIVATED), any(LocalDateTime.class)))
+                .thenReturn(List.of(expiredUser1, expiredUser2));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        int count = userService.processExpiredDeactivations();
+
+        assertEquals(2, count);
+        assertEquals(AccountStatus.PERMANENTLY_DEACTIVATED, expiredUser1.getStatus());
+        assertEquals(AccountStatus.PERMANENTLY_DEACTIVATED, expiredUser2.getStatus());
+        verify(userRepository, times(2)).save(expiredUser1);
+        verify(userRepository, times(2)).save(expiredUser2);
+        verify(salesforceSyncDelegate, times(2)).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("processExpiredDeactivations when none found should return 0")
+    void processExpiredDeactivations_whenNoneFound_shouldReturnZero() {
+        when(userRepository.findUsersEligibleForPermanentDeactivation(eq(AccountStatus.DEACTIVATED), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+
+        int count = userService.processExpiredDeactivations();
+
+        assertEquals(0, count);
+        verify(salesforceSyncDelegate, never()).syncContact(any());
+    }
+
+    @Test
     @DisplayName("rejectReactivation when user ID not found should throw 404")
     void rejectReactivation_whenNotFound_shouldThrow404() {
         when(userRepository.findById(9999L)).thenReturn(Optional.empty());

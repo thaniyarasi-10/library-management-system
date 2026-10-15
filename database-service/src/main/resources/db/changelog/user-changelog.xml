@@ -98,4 +98,13 @@
         <dropColumn tableName="user" columnName="deactivated_at"/>
     </changeSet>
 
+    <changeSet id="25-add-deactivated-at-column-to-user" author="thani">
+        <addColumn tableName="user">
+            <column name="deactivated_at" type="timestamp"/>
+        </addColumn>
+        <sql>
+            UPDATE user SET deactivated_at = COALESCE(updated_at) WHERE status = 'DEACTIVATED' AND deactivated_at IS NULL;
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

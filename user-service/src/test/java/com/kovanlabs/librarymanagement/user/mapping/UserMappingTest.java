@@ -122,6 +122,16 @@ class UserMapperTest {
         var activeSObject = userMapper.toContactSObject(activeUser);
         assertNull(activeSObject.getReward());
 
+        User permDeactUser = User.builder()
+                .uuid(uuid)
+                .id(3L)
+                .name("Perm User")
+                .status(com.kovanlabs.librarymanagement.database.enums.AccountStatus.PERMANENTLY_DEACTIVATED)
+                .build();
+        var permSObject = userMapper.toContactSObject(permDeactUser);
+        assertEquals("PERMANENTLY_DEACTIVATED", permSObject.getStatus());
+        assertEquals(0, permSObject.getReward());
+
         assertNull(userMapper.toContactSObject((User) null));
     }
 

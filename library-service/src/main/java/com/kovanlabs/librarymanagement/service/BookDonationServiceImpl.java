@@ -5,6 +5,7 @@ import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.BookDonation;
 import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.DonationStatus;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
@@ -379,9 +380,10 @@ public class BookDonationServiceImpl implements BookDonationService {
 
         syncBookToSalesforce(targetBook);
 
-        // Award reward points (2 points per approved donated copy) to the donor
+        // Award reward points (2 points per approved donated copy) to the donor if active
         if (Objects.nonNull(donation.getUser()) && Objects.nonNull(donation.getUser().getUuid())
-                && Objects.nonNull(rewardRepository)) {
+                && Objects.nonNull(rewardRepository)
+                && (Objects.isNull(donation.getUser().getStatus()) || !donation.getUser().getStatus().isDeactivated())) {
             String donorUuid = donation.getUser().getUuid();
             int pointsEarned = count * 2;
             int updated = rewardRepository.incrementPoints(donorUuid, pointsEarned);

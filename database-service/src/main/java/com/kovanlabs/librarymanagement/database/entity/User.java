@@ -61,6 +61,9 @@ public class User extends BaseEntity {
     @Column(name = "inactivity_warning_sent_at")
     private LocalDateTime inactivityWarningSentAt;
 
+    @Column(name = "deactivated_at")
+    private LocalDateTime deactivatedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "reactivation_request_status")
     private ReactivationRequestStatus reactivationRequestStatus;

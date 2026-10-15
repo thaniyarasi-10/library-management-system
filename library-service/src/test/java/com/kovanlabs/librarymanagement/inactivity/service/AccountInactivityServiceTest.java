@@ -619,4 +619,78 @@ class AccountInactivityServiceTest {
         verify(salesforceSyncDelegate).syncContact(any());
         verifyNoInteractions(emailNotificationService);
     }
+
+    @Test
+    @DisplayName("processInactiveAccounts should permanently deactivate users exceeding 10 days and sync to Salesforce")
+    void processInactiveAccounts_shouldPermanentlyDeactivateExpiredUsers() {
+        User expiredUser = User.builder()
+                .id(88L)
+                .uuid("u-88")
+                .email("expired10days@test.com")
+                .name("Expired User")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(15))
+                .build();
+
+        when(userRepository.findUsersEligibleForDeactivation(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findUsersEligibleForInactivityWarning(eq(AccountStatus.ACTIVE), any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findActiveUsersWithPendingWarningToReset(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findUsersEligibleForPermanentDeactivation(eq(AccountStatus.DEACTIVATED), any(LocalDateTime.class)))
+                .thenReturn(List.of(expiredUser));
+
+        service.processInactiveAccounts();
+
+        assertEquals(AccountStatus.PERMANENTLY_DEACTIVATED, expiredUser.getStatus());
+        assertNull(expiredUser.getReactivationRequestStatus());
+        verify(userRepository, atLeastOnce()).save(expiredUser);
+        verify(salesforceSyncDelegate).syncContact(any());
+    }
+
+    @Test
+    @DisplayName("processPermanentlyDeactivatedAccounts when exception occurs on individual user should continue")
+    void processPermanentlyDeactivatedAccounts_whenExceptionOccurs_shouldNotAbortBatch() {
+        User failingUser = User.builder()
+                .id(89L)
+                .uuid("u-89")
+                .email("fail@test.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+        User succeedingUser = User.builder()
+                .id(90L)
+                .uuid("u-90")
+                .email("succeed@test.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+
+        when(userRepository.findUsersEligibleForPermanentDeactivation(eq(AccountStatus.DEACTIVATED), any(LocalDateTime.class)))
+                .thenReturn(List.of(failingUser, succeedingUser));
+        when(userRepository.save(failingUser)).thenThrow(new RuntimeException("DB error"));
+        when(userRepository.save(succeedingUser)).thenReturn(succeedingUser);
+
+        assertDoesNotThrow(() -> service.processPermanentlyDeactivatedAccounts());
+
+        verify(userRepository).save(failingUser);
+        verify(userRepository, atLeastOnce()).save(succeedingUser);
+        assertEquals(AccountStatus.PERMANENTLY_DEACTIVATED, succeedingUser.getStatus());
+    }
+
+    @Test
+    @DisplayName("deactivateUser should set deactivatedAt timestamp")
+    void deactivateUser_shouldSetDeactivatedAt() {
+        User user = User.builder()
+                .id(91L)
+                .uuid("u-91")
+                .email("deact-time@test.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(35))
+                .build();
+
+        service.processUser(user);
+
+        assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
+        assertNotNull(user.getDeactivatedAt());
+    }
 }

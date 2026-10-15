@@ -66,4 +66,16 @@ public interface UserRepository extends JpaRepository<User, String> {
             @Param("status") AccountStatus status,
             @Param("warningCutoff") LocalDateTime warningCutoff
     );
+
+    @Query("""
+        SELECT u FROM User u
+        WHERE u.status = :status
+          AND (u.reactivationRequestStatus IS NULL OR u.reactivationRequestStatus != ReactivationRequestStatus.PENDING)
+          AND ((u.deactivatedAt IS NOT NULL AND u.deactivatedAt <= :cutoff)
+               OR (u.deactivatedAt IS NULL AND u.updatedAt IS NOT NULL AND u.updatedAt <= :cutoff))
+    """)
+    List<User> findUsersEligibleForPermanentDeactivation(
+            @Param("status") AccountStatus status,
+            @Param("cutoff") LocalDateTime cutoff
+    );
 }

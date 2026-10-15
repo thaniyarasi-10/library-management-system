@@ -47,6 +47,8 @@ public class AccountInactivityService {
 
     public static final int WARNING_THRESHOLD_DAYS = INACTIVITY_DAYS - WARNING_DAYS_BEFORE;
 
+    public static final int REACTIVATION_DEADLINE_DAYS = 10;
+
     private final NotificationFactory notificationFactory;
     private final UserRepository userRepository;
     private final RewardRepository rewardRepository;
@@ -108,6 +110,9 @@ public class AccountInactivityService {
             }
         }
 
+        // 4. Process deactivated accounts exceeding 10-day reactivation window without request
+        processPermanentlyDeactivatedAccounts();
+
         log.info("Completed batch account inactivity processing successfully");
     }
 
@@ -157,6 +162,7 @@ public class AccountInactivityService {
                 user.getEmail(), user.getId(), inactiveDays, INACTIVITY_DAYS);
 
         user.setStatus(AccountStatus.DEACTIVATED);
+        user.setDeactivatedAt(LocalDateTime.now());
         user.setReactivationRequestStatus(null);
         if (Objects.nonNull(rewardRepository) && Objects.nonNull(user.getUuid())) {
             int updated = rewardRepository.resetPoints(user.getUuid());
@@ -278,5 +284,42 @@ public class AccountInactivityService {
             return user.getCreatedAt();
         }
         return LocalDateTime.now();
+    }
+
+    /**
+     * Identifies accounts that have been deactivated for &ge; 10 days without a pending reactivation request,
+     * updates their status to {@link AccountStatus#PERMANENTLY_DEACTIVATED} in MySQL, and synchronizes the updated status to Salesforce.
+     */
+    @Transactional
+    public void processPermanentlyDeactivatedAccounts() {
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(REACTIVATION_DEADLINE_DAYS);
+        List<User> expiredUsers = userRepository.findUsersEligibleForPermanentDeactivation(AccountStatus.DEACTIVATED, cutoff);
+        if (Objects.nonNull(expiredUsers) && !expiredUsers.isEmpty()) {
+            log.info("Found {} deactivated user(s) exceeding {}-day reactivation window without request",
+                    expiredUsers.size(), REACTIVATION_DEADLINE_DAYS);
+            for (User user : expiredUsers) {
+                try {
+                    permanentlyDeactivateUser(user);
+                } catch (Exception e) {
+                    log.error("Failed to permanently deactivate user ID {}: {}", user.getId(), e.getMessage(), e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Updates an individual user to PERMANENTLY_DEACTIVATED, persists to MySQL, and syncs to Salesforce.
+     *
+     * @param user The user entity to permanently deactivate
+     */
+    private void permanentlyDeactivateUser(User user) {
+        log.info("User {} (ID: {}) exceeded {}-day reactivation window. Setting PERMANENTLY_DEACTIVATED.",
+                user.getEmail(), user.getId(), REACTIVATION_DEADLINE_DAYS);
+        user.setStatus(AccountStatus.PERMANENTLY_DEACTIVATED);
+        user.setReactivationRequestStatus(null);
+        userRepository.save(user);
+        syncUserToSalesforce(user);
+        log.info("Successfully updated user {} to PERMANENTLY_DEACTIVATED in MySQL and initiated Salesforce sync",
+                user.getEmail());
     }
 }

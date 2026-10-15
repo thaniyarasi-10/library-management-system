@@ -4,7 +4,7 @@ import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
-  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell
+  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock
 } from 'lucide-react';
 import './styles.css';
 
@@ -1435,8 +1435,10 @@ export default function App() {
     );
   }
 
-  // Render Deactivated Account Screen if account status is DEACTIVATED
-  if (currentUser && currentUser.status === 'DEACTIVATED') {
+  // Render Deactivated or Permanently Deactivated Account Screen
+  if (currentUser && (currentUser.status === 'DEACTIVATED' || currentUser.status === 'PERMANENTLY_DEACTIVATED')) {
+    const isPermanentlyDeactivated = currentUser.status === 'PERMANENTLY_DEACTIVATED';
+
     const handleReactivateRequest = async () => {
       setRequestingReactivation(true);
       const res = await fetchApi('/user/me/request-reactivation', { method: 'POST' });
@@ -1447,6 +1449,9 @@ export default function App() {
       } else {
         const errMsg = res.data?.message || 'Failed to request reactivation';
         showToast(errMsg, 'error');
+        if (errMsg.toLowerCase().includes('permanently deactivated') || errMsg.toLowerCase().includes('expired')) {
+          setCurrentUser(prev => ({ ...prev, status: 'PERMANENTLY_DEACTIVATED' }));
+        }
       }
     };
 
@@ -1454,87 +1459,114 @@ export default function App() {
       <div className="auth-screen">
         <div className="auth-card" style={{ maxWidth: '540px', textAlign: 'center', padding: '36px' }}>
           <div className="auth-brand" style={{ marginBottom: '24px' }}>
-            <div className="brand-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Shield size={32} />
+            <div className="brand-icon" style={{
+              background: isPermanentlyDeactivated ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.15)',
+              color: '#ef4444',
+              margin: '0 auto 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {isPermanentlyDeactivated ? <Lock size={32} /> : <Shield size={32} />}
             </div>
-            <h1 className="brand-title" style={{ fontSize: '24px', fontWeight: 700 }}>Account Deactivated</h1>
+            <h1 className="brand-title" style={{ fontSize: '24px', fontWeight: 700, color: isPermanentlyDeactivated ? '#ef4444' : undefined }}>
+              {isPermanentlyDeactivated ? 'Account Permanently Deactivated' : 'Account Deactivated'}
+            </h1>
             <p className="brand-subtitle" style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
               Logged in as <strong>{currentUser.name || currentUser.email}</strong>
             </p>
           </div>
 
-          <div style={{ textAlign: 'left', marginBottom: '20px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-              <span style={{ fontSize: '22px', lineHeight: 1 }}>⚠️</span>
-              <div>
-                <strong style={{ display: 'block', fontSize: '15px', marginBottom: '4px', color: '#ef4444' }}>
-                  Your account has been deactivated
-                </strong>
-                <span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-main)', opacity: 0.9 }}>
-                  Your account has been deactivated due to inactivity. You cannot access the dashboard until an administrator approves your reactivation request.
-                </span>
+          {isPermanentlyDeactivated ? (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '18px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.35)' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '24px', lineHeight: 1 }}>🚫</span>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '15px', marginBottom: '6px', color: '#ef4444' }}>
+                    Reactivation Window Expired
+                  </strong>
+                  <span style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-main)', opacity: 0.9 }}>
+                    Your account has been permanently deactivated because the 10-day reactivation window has elapsed without an approved reactivation request. Further reactivation requests cannot be submitted. If you believe this is in error, please contact library administration directly.
+                  </span>
+                </div>
               </div>
-            </div>
-          </div>
-
-          {currentUser.hasPendingFines ? (
-            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                <CreditCard size={18} color="#f59e0b" />
-                <strong style={{ fontSize: '14px', color: '#f59e0b' }}>Outstanding Fines Detected</strong>
-              </div>
-              <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '8px' }}>
-                You have unpaid pending fines of <strong style={{ color: '#f59e0b', fontSize: '15px' }}>${Number(currentUser.pendingFineAmount || 0).toFixed(2)}</strong>.
-              </p>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-                You can only submit a reactivation request after all outstanding fines have been cleared. Please contact library support or settle pending dues first.
-              </p>
-            </div>
-          ) : currentUser.reactivationRequestStatus === 'REJECTED' ? (
-            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                <X size={18} color="#ef4444" />
-                <strong style={{ fontSize: '14px', color: '#ef4444' }}>Reactivation Request Rejected</strong>
-              </div>
-              <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '14px' }}>
-                Your previous account reactivation request was rejected by an administrator. If you believe this is in error, you may submit a new reactivation request.
-              </p>
-              <button
-                type="button"
-                className="btn btn-primary btn-block"
-                onClick={handleReactivateRequest}
-                disabled={requestingReactivation}
-              >
-                {requestingReactivation ? 'Submitting Request...' : 'Submit New Request'}
-              </button>
-            </div>
-          ) : (currentUser.reactivationRequested || currentUser.reactivationRequestStatus === 'PENDING') ? (
-            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                <Check size={18} color="#3b82f6" />
-                <strong style={{ fontSize: '14px', color: '#3b82f6' }}>Reactivation Request Submitted</strong>
-              </div>
-              <p style={{ fontSize: '13px', color: 'var(--text-main)', margin: 0 }}>
-                Your reactivation request has been submitted and is currently awaiting administrator review. Once approved, you will be able to access your dashboard.
-              </p>
             </div>
           ) : (
-            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-subtle)' }}>
-              <strong style={{ display: 'block', fontSize: '14px', marginBottom: '6px' }}>
-                Request Account Reactivation
-              </strong>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                You have no pending fines. Would you like to request the library administrator to reactivate your account?
-              </p>
-              <button
-                type="button"
-                className="btn btn-primary btn-block"
-                onClick={handleReactivateRequest}
-                disabled={requestingReactivation}
-              >
-                {requestingReactivation ? 'Submitting Request...' : 'Request Reactivation'}
-              </button>
-            </div>
+            <>
+              <div style={{ textAlign: 'left', marginBottom: '20px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '22px', lineHeight: 1 }}>⚠️</span>
+                  <div>
+                    <strong style={{ display: 'block', fontSize: '15px', marginBottom: '4px', color: '#ef4444' }}>
+                      Your account has been deactivated
+                    </strong>
+                    <span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-main)', opacity: 0.9 }}>
+                      Your account has been deactivated due to inactivity. Reactivation requests must be submitted within <strong>10 days</strong> of your account's deactivation date. If no request is submitted within 10 days, your account will be permanently deactivated and no further reactivation requests will be permitted.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {currentUser.hasPendingFines ? (
+                <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                    <CreditCard size={18} color="#f59e0b" />
+                    <strong style={{ fontSize: '14px', color: '#f59e0b' }}>Outstanding Fines Detected</strong>
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '8px' }}>
+                    You have unpaid pending fines of <strong style={{ color: '#f59e0b', fontSize: '15px' }}>${Number(currentUser.pendingFineAmount || 0).toFixed(2)}</strong>.
+                  </p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                    You can only submit a reactivation request after all outstanding fines have been cleared. Please contact library support or settle pending dues first.
+                  </p>
+                </div>
+              ) : currentUser.reactivationRequestStatus === 'REJECTED' ? (
+                <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                    <X size={18} color="#ef4444" />
+                    <strong style={{ fontSize: '14px', color: '#ef4444' }}>Reactivation Request Rejected</strong>
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '14px' }}>
+                    Your previous account reactivation request was rejected by an administrator. If you believe this is in error, you may submit a new reactivation request within the 10-day window.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-block"
+                    onClick={handleReactivateRequest}
+                    disabled={requestingReactivation}
+                  >
+                    {requestingReactivation ? 'Submitting Request...' : 'Submit New Request'}
+                  </button>
+                </div>
+              ) : (currentUser.reactivationRequested || currentUser.reactivationRequestStatus === 'PENDING') ? (
+                <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                    <Check size={18} color="#3b82f6" />
+                    <strong style={{ fontSize: '14px', color: '#3b82f6' }}>Reactivation Request Submitted</strong>
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'var(--text-main)', margin: 0 }}>
+                    Your reactivation request has been submitted and is currently awaiting administrator review. Once approved, you will be able to access your dashboard.
+                  </p>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-subtle)' }}>
+                  <strong style={{ display: 'block', fontSize: '14px', marginBottom: '6px' }}>
+                    Request Account Reactivation
+                  </strong>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                    You have no pending fines. You may request the library administrator to reactivate your account within the 10-day window.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-block"
+                    onClick={handleReactivateRequest}
+                    disabled={requestingReactivation}
+                  >
+                    {requestingReactivation ? 'Submitting Request...' : 'Request Reactivation'}
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -2134,7 +2166,13 @@ export default function App() {
                                 )}
                               </td>
                               <td>
-                                {String(m.status || '').toUpperCase() === 'DEACTIVATED' ? (
+                                {String(m.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                                    <span style={{ color: '#ef4444', fontWeight: '700', fontSize: '12px', background: 'rgba(239, 68, 68, 0.12)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                                      Permanently Deactivated
+                                    </span>
+                                  </div>
+                                ) : String(m.status || '').toUpperCase() === 'DEACTIVATED' ? (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
                                     <span style={{ color: '#ef4444', fontWeight: '600', fontSize: '13px' }}>
                                       Deactivated
@@ -2481,8 +2519,14 @@ export default function App() {
                                   )}
                                 </td>
                                 <td>
-                                  <span style={{ color: String(req.status || '').toUpperCase() === 'ACTIVE' ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '13px' }}>
-                                    {String(req.status || '').toUpperCase() === 'ACTIVE' ? 'Active' : 'Deactivated'}
+                                  <span style={{
+                                    color: String(req.status || '').toUpperCase() === 'ACTIVE' ? '#10b981' :
+                                           String(req.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? '#dc2626' : '#ef4444',
+                                    fontWeight: '600',
+                                    fontSize: '13px'
+                                  }}>
+                                    {String(req.status || '').toUpperCase() === 'ACTIVE' ? 'Active' :
+                                     String(req.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? 'Permanently Deactivated' : 'Deactivated'}
                                   </span>
                                 </td>
                                 <td>

@@ -30,5 +30,6 @@ public interface UserService {
     UserResponse requestReactivation(Principal principal);
     List<UserResponse> getReactivationRequests();
     UserResponse rejectReactivation(Long id);
+    int processExpiredDeactivations();
 }
 
