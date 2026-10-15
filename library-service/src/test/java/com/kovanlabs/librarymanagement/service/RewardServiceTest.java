@@ -189,4 +189,53 @@ class RewardServiceTest {
         verify(rewardRepository).incrementPoints(reactivatedUuid, 1);
         verify(salesforceSyncService).syncContact(argThat(c -> reactivatedUuid.equals(c.getExternalUserUuid()) && Integer.valueOf(1).equals(c.getReward())));
     }
+
+    @Test
+    void testProcessOnTimeReturnRewards_whenSalesforceSyncServiceIsNull_shouldSkipSalesforceSync() {
+        RewardService serviceWithoutSF = new RewardService(borrowRepository, rewardRepository, null);
+
+        when(borrowRepository.findUnprocessedOnTimeBorrows()).thenReturn(List.of(borrow1));
+        when(rewardRepository.incrementPoints(eq(userUuid1), eq(1))).thenReturn(1);
+        when(borrowRepository.markBorrowsAsRewardProcessed(any())).thenReturn(1);
+
+        int processed = serviceWithoutSF.processOnTimeReturnRewards();
+
+        assertEquals(1, processed);
+        verify(rewardRepository).incrementPoints(userUuid1, 1);
+        verify(borrowRepository).markBorrowsAsRewardProcessed(List.of(borrow1.getUuid()));
+        verifyNoInteractions(salesforceSyncService);
+    }
+
+    @Test
+    void testProcessOnTimeReturnRewards_whenRewardNotFoundInSync_shouldSyncZeroPoints() {
+        when(borrowRepository.findUnprocessedOnTimeBorrows()).thenReturn(List.of(borrow1));
+        when(rewardRepository.incrementPoints(eq(userUuid1), eq(1))).thenReturn(1);
+        when(rewardRepository.findByUserUuid(userUuid1)).thenReturn(Optional.empty());
+        when(borrowRepository.markBorrowsAsRewardProcessed(any())).thenReturn(1);
+
+        int processed = rewardService.processOnTimeReturnRewards();
+
+        assertEquals(1, processed);
+        verify(salesforceSyncService).syncContact(argThat(c -> userUuid1.equals(c.getExternalUserUuid()) && Integer.valueOf(0).equals(c.getReward())));
+    }
+
+    @Test
+    void testProcessOnTimeReturnRewards_mixedBatch_shouldProcessOnlyActiveUsersWithValidUuids() {
+        Borrow borrowNullUser = Borrow.builder().uuid(UUID.randomUUID().toString()).user(null).build();
+        Borrow borrowNullUuid = Borrow.builder().uuid(UUID.randomUUID().toString()).user(User.builder().uuid(null).status(AccountStatus.ACTIVE).build()).build();
+        User deactUser = User.builder().uuid(UUID.randomUUID().toString()).status(AccountStatus.DEACTIVATED).build();
+        Borrow borrowDeact = Borrow.builder().uuid(UUID.randomUUID().toString()).user(deactUser).build();
+
+        when(borrowRepository.findUnprocessedOnTimeBorrows()).thenReturn(List.of(borrow1, borrowNullUser, borrowNullUuid, borrowDeact));
+        when(rewardRepository.incrementPoints(eq(userUuid1), eq(1))).thenReturn(1);
+        when(rewardRepository.findByUserUuid(userUuid1)).thenReturn(Optional.of(Reward.builder().userUuid(userUuid1).points(10).build()));
+        when(borrowRepository.markBorrowsAsRewardProcessed(any())).thenReturn(4);
+
+        int processed = rewardService.processOnTimeReturnRewards();
+
+        assertEquals(4, processed);
+        verify(rewardRepository).incrementPoints(userUuid1, 1);
+        verify(salesforceSyncService).syncContact(argThat(c -> userUuid1.equals(c.getExternalUserUuid()) && Integer.valueOf(10).equals(c.getReward())));
+        verify(borrowRepository).markBorrowsAsRewardProcessed(argThat(list -> list.size() == 4));
+    }
 }

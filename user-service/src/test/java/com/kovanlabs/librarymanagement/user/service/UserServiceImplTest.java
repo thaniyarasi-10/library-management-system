@@ -38,12 +38,14 @@ import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -1707,5 +1709,1309 @@ class UserServiceImplTest {
         assertNotNull(user.getLastLoginAt());
         assertTrue(user.getLastLoginAt().isAfter(oldLogin));
         verify(userRepository, atLeastOnce()).save(user);
+    }
+
+    // =========================================================================
+    // Targeted Branch Coverage Tests
+    // =========================================================================
+
+    // --- toUserResponse & toUserResponseList branch tests ---
+
+    @Test
+    @DisplayName("createUser when mapped entity is null should return null from toUserResponse")
+    void createUser_whenEntityIsNull_shouldReturnNullFromToUserResponse() {
+        when(userRepository.save(null)).thenReturn(null);
+
+        UserResponse response = userService.createUser(null);
+
+        assertNull(response);
+    }
+
+    @Test
+    @DisplayName("getUserById when user has null UUID should return response with zero reward points and zero fine amount")
+    void getUserById_whenUserUuidIsNull_shouldReturnZeroPointsAndFines() {
+        User userWithoutUuid = User.builder()
+                .id(990L)
+                .uuid(null)
+                .name("No UUID User")
+                .email("nouuid@example.com")
+                .build();
+        when(userRepository.findById(990L)).thenReturn(Optional.of(userWithoutUuid));
+
+        UserResponse response = userService.getUserById(990L);
+
+        assertNotNull(response);
+        assertEquals(0, response.rewardPoints());
+        assertFalse(response.hasPendingFines());
+        assertEquals(0.0, response.pendingFineAmount());
+        verifyNoInteractions(rewardRepository);
+        verifyNoInteractions(fineRepository);
+    }
+
+    @Test
+    @DisplayName("getUserById when user has pending fine with null amount should filter null amount and return zero fine amount")
+    void getUserById_whenFineHasNullPendingAmount_shouldFilterAndReturnZero() {
+        Fine fineWithNullAmount = Fine.builder()
+                .id(88L)
+                .userUuid(uuid1)
+                .status(FineStatus.PENDING)
+                .pendingFineAmount(null)
+                .build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+        when(rewardRepository.findByUserUuid(uuid1)).thenReturn(Optional.empty());
+        when(fineRepository.findByUserUuidAndStatus(uuid1, FineStatus.PENDING))
+                .thenReturn(List.of(fineWithNullAmount));
+
+        UserResponse response = userService.getUserById(1L);
+
+        assertNotNull(response);
+        assertFalse(response.hasPendingFines());
+        assertEquals(0.0, response.pendingFineAmount());
+    }
+
+    @Test
+    @DisplayName("getUserById when user has pending fine with positive amount should return hasPendingFines true")
+    void getUserById_whenFineHasPositivePendingAmount_shouldReturnHasPendingFinesTrue() {
+        Fine fineWithAmount = Fine.builder()
+                .id(89L)
+                .userUuid(uuid1)
+                .status(FineStatus.PENDING)
+                .pendingFineAmount(new BigDecimal("12.50"))
+                .build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+        when(rewardRepository.findByUserUuid(uuid1)).thenReturn(Optional.empty());
+        when(fineRepository.findByUserUuidAndStatus(uuid1, FineStatus.PENDING))
+                .thenReturn(List.of(fineWithAmount));
+
+        UserResponse response = userService.getUserById(1L);
+
+        assertNotNull(response);
+        assertTrue(response.hasPendingFines());
+        assertEquals(12.50, response.pendingFineAmount());
+    }
+
+    @Test
+    @DisplayName("getAllUsers paginated when database returns empty page should return empty content")
+    void getAllUsers_paginated_whenDatabaseEmpty_shouldReturnEmptyList() {
+        UserServiceImpl serviceWithoutSF = new UserServiceImpl(
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+        Page<User> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
+        when(userRepository.findAll(any(Pageable.class))).thenReturn(emptyPage);
+
+        PagedResponse<UserResponse> response = serviceWithoutSF.getAllUsers(0, 10, "id", "asc");
+
+        assertNotNull(response);
+        assertTrue(response.content().isEmpty());
+        assertEquals(0, response.totalElements());
+    }
+
+    @Test
+    @DisplayName("getAllUsers when database returns user with null UUID should filter out null UUID in toUserResponseList")
+    void getAllUsers_whenUsersContainNullUuid_shouldFilterNullUuid() {
+        User userWithNullUuid = User.builder().id(3L).uuid(null).name("Null UUID").email("nulluuid@example.com").build();
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenThrow(new RuntimeException("SF error"));
+        when(userRepository.findAll()).thenReturn(List.of(user1, userWithNullUuid));
+        when(rewardRepository.findByUserUuidIn(List.of(uuid1))).thenReturn(List.of());
+
+        List<UserResponse> list = userService.getAllUsers();
+
+        assertNotNull(list);
+        assertEquals(2, list.size());
+        verify(rewardRepository).findByUserUuidIn(List.of(uuid1));
+    }
+
+    // --- getAllUsers & searchUsers branches ---
+
+    @Test
+    @DisplayName("getAllUsers without Salesforce delegate should fetch directly from MySQL database")
+    void getAllUsers_whenSalesforceDelegateNull_shouldFetchFromMySQL() {
+        UserServiceImpl serviceWithoutSF = new UserServiceImpl(
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+        when(userRepository.findAll()).thenReturn(List.of(user1));
+        when(rewardRepository.findByUserUuidIn(List.of(uuid1))).thenReturn(List.of());
+
+        List<UserResponse> result = serviceWithoutSF.getAllUsers();
+
+        assertEquals(1, result.size());
+        verify(userRepository).findAll();
+    }
+
+    @Test
+    @DisplayName("getAllUsers when Salesforce returns null should fallback to MySQL database")
+    void getAllUsers_whenSalesforceReturnsNull_shouldFallbackToMySQL() {
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenReturn(null);
+        when(userRepository.findAll()).thenReturn(List.of(user1));
+        when(rewardRepository.findByUserUuidIn(List.of(uuid1))).thenReturn(List.of());
+
+        List<UserResponse> result = userService.getAllUsers();
+
+        assertEquals(1, result.size());
+        verify(userRepository).findAll();
+    }
+
+    @Test
+    @DisplayName("getAllUsers when Salesforce returns empty list should fallback to MySQL database")
+    void getAllUsers_whenSalesforceReturnsEmptyList_shouldFallbackToMySQL() {
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenReturn(List.of());
+        when(userRepository.findAll()).thenReturn(List.of(user1));
+        when(rewardRepository.findByUserUuidIn(List.of(uuid1))).thenReturn(List.of());
+
+        List<UserResponse> result = userService.getAllUsers();
+
+        assertEquals(1, result.size());
+        verify(userRepository).findAll();
+    }
+
+    @Test
+    @DisplayName("getAllUsers paginated with sortDir desc on MySQL fallback should apply descending sort")
+    void getAllUsers_paginated_withSortDirDesc_shouldApplyDescendingSort() {
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenThrow(new RuntimeException("SF unavailable"));
+        Page<User> page = new PageImpl<>(List.of(user1), PageRequest.of(0, 10, Sort.by("email").descending()), 1);
+        when(userRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(rewardRepository.findByUserUuidIn(List.of(uuid1))).thenReturn(List.of());
+
+        PagedResponse<UserResponse> response = userService.getAllUsers(0, 10, "email", "desc");
+
+        assertNotNull(response);
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(userRepository).findAll(pageableCaptor.capture());
+        assertEquals(Sort.Direction.DESC, pageableCaptor.getValue().getSort().getOrderFor("email").getDirection());
+    }
+
+    @Test
+    @DisplayName("getAllUsers paginated from Salesforce when requested page is beyond total should return empty pageContent")
+    void getAllUsers_paginated_salesforce_whenPageBeyondTotal_shouldReturnEmptyPageContent() {
+        ContactSObject contact = ContactSObject.builder().externalUserUuid(uuid1).lastName("Alice SF").email("alice@sf.com").build();
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenReturn(List.of(contact));
+
+        PagedResponse<UserResponse> response = userService.getAllUsers(5, 10, "id", "asc");
+
+        assertNotNull(response);
+        assertTrue(response.content().isEmpty());
+        assertEquals(1, response.totalElements());
+        assertEquals(1, response.totalPages());
+        assertTrue(response.last());
+    }
+
+    @Test
+    @DisplayName("getAllUsers paginated from Salesforce when last page has partial size should slice properly")
+    void getAllUsers_paginated_salesforce_whenLastPagePartialSize_shouldSliceCorrectly() {
+        ContactSObject c1 = ContactSObject.builder().externalUserUuid("u-1").lastName("User 1").email("u1@sf.com").build();
+        ContactSObject c2 = ContactSObject.builder().externalUserUuid("u-2").lastName("User 2").email("u2@sf.com").build();
+        ContactSObject c3 = ContactSObject.builder().externalUserUuid("u-3").lastName("User 3").email("u3@sf.com").build();
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenReturn(List.of(c1, c2, c3));
+
+        PagedResponse<UserResponse> response = userService.getAllUsers(1, 2, "id", "asc");
+
+        assertNotNull(response);
+        assertEquals(1, response.content().size());
+        assertEquals("User 3", response.content().get(0).name());
+        assertEquals(3, response.totalElements());
+        assertEquals(2, response.totalPages());
+        assertTrue(response.last());
+    }
+
+    @Test
+    @DisplayName("getAllUsers paginated when Salesforce returns null should fallback to MySQL")
+    void getAllUsers_paginated_whenSalesforceReturnsNull_shouldFallbackToMySQL() {
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenReturn(null);
+        Page<User> page = new PageImpl<>(List.of(user1), PageRequest.of(0, 10, Sort.by("id").ascending()), 1);
+        when(userRepository.findAll(any(Pageable.class))).thenReturn(page);
+
+        PagedResponse<UserResponse> response = userService.getAllUsers(0, 10, "id", "asc");
+
+        assertNotNull(response);
+        verify(userRepository).findAll(any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("getAllUsers paginated when Salesforce returns empty list should fallback to MySQL")
+    void getAllUsers_paginated_whenSalesforceReturnsEmpty_shouldFallbackToMySQL() {
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenReturn(List.of());
+        Page<User> page = new PageImpl<>(List.of(user1), PageRequest.of(0, 10, Sort.by("id").ascending()), 1);
+        when(userRepository.findAll(any(Pageable.class))).thenReturn(page);
+
+        PagedResponse<UserResponse> response = userService.getAllUsers(0, 10, "id", "asc");
+
+        assertNotNull(response);
+        verify(userRepository).findAll(any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("searchUsers with sortDir desc should apply descending sort order")
+    void searchUsers_withSortDirDesc_shouldApplyDescendingSort() {
+        Pageable pageable = PageRequest.of(0, 10, Sort.by("name").descending());
+        Page<User> usersPage = new PageImpl<>(List.of(user1), pageable, 1);
+        when(userRepository.searchUsers(eq("Alice"), any(Pageable.class))).thenReturn(usersPage);
+
+        PagedResponse<UserResponse> response = userService.searchUsers("Alice", 0, 10, "name", "desc");
+
+        assertNotNull(response);
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(userRepository).searchUsers(eq("Alice"), pageableCaptor.capture());
+        assertEquals(Sort.Direction.DESC, pageableCaptor.getValue().getSort().getOrderFor("name").getDirection());
+    }
+
+    // --- updateUser branches ---
+
+    @Test
+    @DisplayName("updateUser with blank name and blank email should preserve existing user name and email")
+    void updateUser_whenNameAndEmailAreBlank_shouldNotModifyNameOrEmail() {
+        User existing = User.builder().id(1L).uuid(uuid1).name("Original Name").email("orig@example.com").phone("12345").build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserRequest request = new UserRequest("   ", "   ", null);
+        UserResponse response = userService.updateUser(1L, request);
+
+        assertNotNull(response);
+        assertEquals("Original Name", existing.getName());
+        assertEquals("orig@example.com", existing.getEmail());
+        assertEquals("12345", existing.getPhone());
+    }
+
+    @Test
+    @DisplayName("updateUser with blank phone should set phone to null")
+    void updateUser_whenPhoneIsBlank_shouldSetPhoneToNull() {
+        User existing = User.builder().id(1L).uuid(uuid1).name("Original Name").email("orig@example.com").phone("12345").build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserRequest request = new UserRequest("orig@example.com", "Original Name", "   ");
+        UserResponse response = userService.updateUser(1L, request);
+
+        assertNotNull(response);
+        assertNull(existing.getPhone());
+    }
+
+    @Test
+    @DisplayName("updateUser with untrimmed phone should trim and update phone")
+    void updateUser_whenPhoneHasWhitespace_shouldTrimPhone() {
+        User existing = User.builder().id(1L).uuid(uuid1).name("Original Name").email("orig@example.com").build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserRequest request = new UserRequest("orig@example.com", "Original Name", "  +19876543210  ");
+        UserResponse response = userService.updateUser(1L, request);
+
+        assertNotNull(response);
+        assertEquals("+19876543210", existing.getPhone());
+    }
+
+    @Test
+    @DisplayName("updateUser when salesforceSyncDelegate is null should update without attempting Salesforce sync")
+    void updateUser_whenSalesforceDelegateNull_shouldUpdateWithoutSync() {
+        UserServiceImpl serviceWithoutSF = new UserServiceImpl(
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+        User existing = User.builder().id(1L).uuid(uuid1).name("Original Name").email("orig@example.com").build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserRequest request = new UserRequest("new@example.com", "New Name", null);
+        UserResponse response = serviceWithoutSF.updateUser(1L, request);
+
+        assertNotNull(response);
+        assertEquals("New Name", existing.getName());
+        verify(salesforceSyncDelegate, never()).syncContact(any());
+    }
+
+    // --- deleteUser branches ---
+
+    @Test
+    @DisplayName("deleteUser when salesforceSyncDelegate is null should delete from MySQL without throwing")
+    void deleteUser_whenSalesforceDelegateNull_shouldDeleteFromMySQL() {
+        UserServiceImpl serviceWithoutSF = new UserServiceImpl(
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+
+        assertDoesNotThrow(() -> serviceWithoutSF.deleteUser(1L));
+        verify(userRepository).delete(user1);
+        verify(salesforceSyncDelegate, never()).deleteUser(any());
+    }
+
+    @Test
+    @DisplayName("deleteUser when user uuid is null should delete from MySQL and skip Salesforce delete")
+    void deleteUser_whenUserUuidIsNull_shouldSkipSalesforceDelete() {
+        User userWithoutUuid = User.builder().id(2L).uuid(null).email("no-uuid@example.com").build();
+        when(userRepository.findById(2L)).thenReturn(Optional.of(userWithoutUuid));
+
+        assertDoesNotThrow(() -> userService.deleteUser(2L));
+        verify(userRepository).delete(userWithoutUuid);
+        verify(salesforceSyncDelegate, never()).deleteUser(any());
+    }
+
+    // --- findUserEntityByIdentifier & getUserByIdentifier branches ---
+
+    @Test
+    @DisplayName("getUserByIdentifier when identifier has pipe but blank rawId should skip raw lookup and find by email")
+    void getUserByIdentifier_whenPipeHasBlankRawId_shouldSkipRawLookupAndFind() {
+        when(userProviderRepository.findByProviderId("auth0|")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("auth0|")).thenReturn(Optional.of(user1));
+
+        UserResponse response = userService.getUserByIdentifier("auth0|");
+
+        assertNotNull(response);
+        assertEquals("Alice Smith", response.name());
+    }
+
+    @Test
+    @DisplayName("getUserByIdentifier when not found by provider or email should find by UUID")
+    void getUserByIdentifier_whenNotFoundByEmail_shouldFindByUuid() {
+        String uuidStr = UUID.randomUUID().toString();
+        when(userProviderRepository.findByProviderId(uuidStr)).thenReturn(Optional.empty());
+        when(userRepository.findByEmail(uuidStr)).thenReturn(Optional.empty());
+        when(userRepository.findByUuid(uuidStr)).thenReturn(Optional.of(user1));
+
+        UserResponse response = userService.getUserByIdentifier(uuidStr);
+
+        assertNotNull(response);
+        assertEquals(user1.getEmail(), response.email());
+    }
+
+    @Test
+    @DisplayName("getUserByIdentifier when not found anywhere should throw 404")
+    void getUserByIdentifier_whenNotFoundAnywhere_shouldThrow404() {
+        when(userProviderRepository.findByProviderId("unknown-id")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("unknown-id")).thenReturn(Optional.empty());
+        when(userRepository.findByUuid("unknown-id")).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.getUserByIdentifier("unknown-id"));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
+
+    // --- updateUserRole branches ---
+
+    @Test
+    @DisplayName("updateUserRole when salesforceSyncDelegate is null should update role in MySQL without error")
+    void updateUserRole_whenSalesforceDelegateNull_shouldUpdateRoleInMySQL() {
+        UserServiceImpl serviceWithoutSF = new UserServiceImpl(
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+        User user = User.builder().id(1L).uuid(uuid1).email("test@example.com").role(RoleEnum.USER).build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = serviceWithoutSF.updateUserRole(1L, RoleEnum.ADMIN);
+
+        assertNotNull(response);
+        assertEquals(RoleEnum.ADMIN, user.getRole());
+        verify(salesforceSyncDelegate, never()).syncContact(any());
+    }
+
+    // --- syncAuth0User branches ---
+
+    @Test
+    @DisplayName("syncAuth0User when raw provider matches and sub mapping already exists should not re-save provider")
+    void syncAuth0User_whenRawProviderFoundAndSubAlreadyMapped_shouldNotSaveNewProvider() {
+        String sub = "google-oauth2|12345";
+        UserProvider rawProvider = UserProvider.builder().providerId("12345").provider(AuthProvider.AUTH0).userUuid(user1.getUuid()).build();
+        UserProvider subProvider = UserProvider.builder().providerId(sub).provider(AuthProvider.AUTH0).userUuid(user1.getUuid()).build();
+
+        when(userProviderRepository.findByProviderId(sub))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(subProvider));
+        when(userProviderRepository.findByProviderId("12345")).thenReturn(Optional.of(rawProvider));
+        when(userRepository.findByUuid(user1.getUuid())).thenReturn(Optional.of(user1));
+
+        User result = userService.syncAuth0User(sub, "alice@example.com", "Alice Smith", RoleEnum.USER);
+
+        assertNotNull(result);
+        verify(userProviderRepository, never()).save(any(UserProvider.class));
+    }
+
+    @Test
+    @DisplayName("syncAuth0User when matching email found and sub mapping already exists should not re-save provider")
+    void syncAuth0User_whenEmailFoundAndSubAlreadyMapped_shouldNotSaveNewProvider() {
+        String sub = "saml|org|998877";
+        UserProvider subProvider = UserProvider.builder().providerId(sub).provider(AuthProvider.AUTH0).userUuid(user1.getUuid()).build();
+
+        when(userProviderRepository.findByProviderId(sub))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(subProvider));
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user1));
+
+        User result = userService.syncAuth0User(sub, "alice@example.com", "Alice Smith", RoleEnum.USER);
+
+        assertNotNull(result);
+        verify(userProviderRepository, never()).save(any(UserProvider.class));
+    }
+
+    @Test
+    @DisplayName("syncAuth0User when tokenRole is null and name is null should default role to USER and name to User")
+    void syncAuth0User_whenTokenRoleAndNameNull_shouldApplyDefaults() {
+        when(userProviderRepository.findByProviderId("auth0|new-default")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("default@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(995L);
+            u.setUuid("u-995");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        User result = userService.syncAuth0User("auth0|new-default", "default@example.com", null, null);
+
+        assertNotNull(result);
+        assertEquals(RoleEnum.USER, result.getRole());
+        assertEquals("User", result.getName());
+        verify(userRepository, atLeastOnce()).save(argThat(u -> "User".equals(u.getName()) && u.getRole() == RoleEnum.USER));
+    }
+
+    @Test
+    @DisplayName("syncAuth0User when name is blank should default name to User")
+    void syncAuth0User_whenNameIsBlank_shouldDefaultNameToUser() {
+        when(userProviderRepository.findByProviderId("auth0|blank-name")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("blankname@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(996L);
+            u.setUuid("u-996");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        User result = userService.syncAuth0User("auth0|blank-name", "blankname@example.com", "   ", RoleEnum.ADMIN);
+
+        assertNotNull(result);
+        assertEquals("User", result.getName());
+        assertEquals(RoleEnum.ADMIN, result.getRole());
+    }
+
+    @Test
+    @DisplayName("syncAuth0User when sub ends in pipe should handle empty rawId and fallback to creation")
+    void syncAuth0User_whenSubEndsInPipe_shouldHandleEmptyRawIdAndCreateUser() {
+        when(userProviderRepository.findByProviderId("pipe-end|")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("pipeend@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(997L);
+            u.setUuid("u-997");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        User result = userService.syncAuth0User("pipe-end|", "pipeend@example.com", "Pipe End", RoleEnum.USER);
+
+        assertNotNull(result);
+        assertEquals("Pipe End", result.getName());
+    }
+
+    // --- recordLogin & getCurrentUser branches ---
+
+    @Test
+    @DisplayName("recordLogin when user status is DEACTIVATED should not update lastLoginAt or sync to Salesforce")
+    void recordLogin_whenUserIsDeactivated_shouldNotUpdateLastLoginOrSync() {
+        User deactivated = User.builder()
+                .id(801L)
+                .uuid("u-801")
+                .name("Deactivated Member")
+                .email("deact-member@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .lastLoginAt(LocalDateTime.now().minusDays(40))
+                .build();
+
+        Principal principal = () -> "deact-member@example.com";
+        when(userProviderRepository.findByProviderId("deact-member@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("deact-member@example.com")).thenReturn(Optional.of(deactivated));
+
+        UserResponse response = userService.recordLogin(principal);
+
+        assertNotNull(response);
+        assertEquals("DEACTIVATED", response.status());
+        verify(userRepository, never()).save(any(User.class));
+        verify(salesforceSyncDelegate, never()).syncContact(any());
+    }
+
+    @Test
+    @DisplayName("recordLogin with JWT when standard email claims missing should use fallback email claim")
+    void recordLogin_whenFallbackEmailClaimPresent_shouldResolveUser() {
+        User user = User.builder().id(802L).uuid("u-802").name("Fallback Email User").email("fb@example.com").status(AccountStatus.ACTIVE).build();
+        when(userProviderRepository.findByProviderId("auth0|fb-email")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("fb@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|fb-email")
+                .claim("https://library-management.com/email", "fb@example.com")
+                .claim("name", "Fallback Email User")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.recordLogin(auth);
+
+        assertNotNull(response);
+        assertEquals("fb@example.com", response.email());
+    }
+
+    @Test
+    @DisplayName("recordLogin with JWT when name claim is missing should use nickname claim")
+    void recordLogin_whenNameMissing_shouldUseNicknameClaim() {
+        User user = User.builder().id(803L).uuid("u-803").name("NickUser").email("nick@example.com").status(AccountStatus.ACTIVE).build();
+        when(userProviderRepository.findByProviderId("auth0|nick-user")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("nick@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|nick-user")
+                .claim("email", "nick@example.com")
+                .claim("nickname", "NickUser")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.recordLogin(auth);
+
+        assertNotNull(response);
+        assertEquals("nick@example.com", response.email());
+    }
+
+    @Test
+    @DisplayName("getCurrentUser with JWT when name and nickname missing should use namespaced name claim")
+    void getCurrentUser_whenNameAndNicknameMissing_shouldUseNamespacedNameClaim() {
+        when(userProviderRepository.findByProviderId("auth0|custom-namespace-name")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("nsname@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(804L);
+            u.setUuid("u-804");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|custom-namespace-name")
+                .claim("email", "nsname@example.com")
+                .claim("https://library.kovanlabs.com/name", "Namespaced Name")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("Namespaced Name", response.name());
+    }
+
+    @Test
+    @DisplayName("getCurrentUser with JWT when all name claims missing should default name to User")
+    void getCurrentUser_whenAllNameClaimsMissing_shouldDefaultNameToUser() {
+        when(userProviderRepository.findByProviderId("auth0|noname")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("noname@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(805L);
+            u.setUuid("u-805");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|noname")
+                .claim("email", "noname@example.com")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("User", response.name());
+    }
+
+    @Test
+    @DisplayName("getCurrentUser with JWT when standard email is blank should use namespaced email claim")
+    void getCurrentUser_whenStandardEmailBlank_shouldUseNamespacedEmail() {
+        User user = User.builder().id(806L).uuid("u-806").name("NS Email").email("nsemail@example.com").status(AccountStatus.ACTIVE).build();
+        when(userProviderRepository.findByProviderId("auth0|nsemail")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("nsemail@example.com")).thenReturn(Optional.of(user));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|nsemail")
+                .claim("email", "   ")
+                .claim("https://library.kovanlabs.com/email", "nsemail@example.com")
+                .claim("name", "NS Email")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("nsemail@example.com", response.email());
+    }
+
+    @Test
+    @DisplayName("getCurrentUser with JWT when both standard and kovanlabs email blank should use library-management email claim")
+    void getCurrentUser_whenStandardAndKovanlabsEmailBlank_shouldUseManagementEmail() {
+        User user = User.builder().id(807L).uuid("u-807").name("Mgmt Email").email("mgmt@example.com").status(AccountStatus.ACTIVE).build();
+        when(userProviderRepository.findByProviderId("auth0|mgmt-email")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("mgmt@example.com")).thenReturn(Optional.of(user));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|mgmt-email")
+                .claim("email", "")
+                .claim("https://library.kovanlabs.com/email", "")
+                .claim("https://library-management.com/email", "mgmt@example.com")
+                .claim("name", "Mgmt Email")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("mgmt@example.com", response.email());
+    }
+
+    // --- extractRoleFromJwt & extractRolesList branches ---
+
+    @Test
+    @DisplayName("extractRoleFromJwt when role is a single String should extract RoleEnum properly")
+    void extractRoleFromJwt_whenRoleIsSingleString_shouldExtractRole() {
+        when(userProviderRepository.findByProviderId("auth0|single-role")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("singlerole@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(810L);
+            u.setUuid("u-810");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|single-role")
+                .claim("email", "singlerole@example.com")
+                .claim("name", "Single Role")
+                .claim("role", "ROLE_ADMIN")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("ADMIN", response.role());
+    }
+
+    @Test
+    @DisplayName("extractRolesList when list contains non-string elements should filter them safely")
+    void extractRolesList_whenListContainsNonStringElements_shouldFilterSafely() {
+        when(userProviderRepository.findByProviderId("auth0|mixed-roles")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("mixed@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(811L);
+            u.setUuid("u-811");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|mixed-roles")
+                .claim("email", "mixed@example.com")
+                .claim("roles", List.of(12345, true, "ROLE_USER"))
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("USER", response.role());
+    }
+
+    @Test
+    @DisplayName("extractRolesList when claim is blank string or non-string object should return empty list")
+    void extractRolesList_whenClaimIsBlankOrNonString_shouldReturnEmptyList() {
+        when(userProviderRepository.findByProviderId("auth0|blank-role")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("blankrole@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(812L);
+            u.setUuid("u-812");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|blank-role")
+                .claim("email", "blankrole@example.com")
+                .claim("role", "   ")
+                .claim("permissions", 9999)
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("USER", response.role());
+    }
+
+    @Test
+    @DisplayName("extractRoleFromJwt when app_metadata map contains role should extract ADMIN")
+    void extractRoleFromJwt_whenAppMetadataMapContainsRole_shouldExtractRole() {
+        when(userProviderRepository.findByProviderId("auth0|appmeta-admin")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("appmeta@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(813L);
+            u.setUuid("u-813");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|appmeta-admin")
+                .claim("email", "appmeta@example.com")
+                .claim("app_metadata", Map.of("role", "SUPER_ADMIN"))
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("ADMIN", response.role());
+    }
+
+    @Test
+    @DisplayName("extractRoleFromJwt when claim contains BOOKS:WRITE should resolve to RoleEnum.ADMIN")
+    void extractRoleFromJwt_whenBooksWritePermission_shouldResolveToAdmin() {
+        when(userProviderRepository.findByProviderId("auth0|books-write")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("bookswrite@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(814L);
+            u.setUuid("u-814");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|books-write")
+                .claim("email", "bookswrite@example.com")
+                .claim("app_metadata", Map.of("roles", List.of("BOOKS:WRITE")))
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("ADMIN", response.role());
+    }
+
+    @Test
+    @DisplayName("extractRoleFromJwt when role contains USER substring should resolve to RoleEnum.USER")
+    void extractRoleFromJwt_whenPortalUserRole_shouldResolveToUser() {
+        when(userProviderRepository.findByProviderId("auth0|portal-user")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("portal@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(815L);
+            u.setUuid("u-815");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|portal-user")
+                .claim("email", "portal@example.com")
+                .claim("role", "PORTAL_USER")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("USER", response.role());
+    }
+
+    @Test
+    @DisplayName("extractRoleFromJwt when role is unrecognized should return null role which defaults to USER")
+    void extractRoleFromJwt_whenRoleUnrecognized_shouldReturnNullAndDefaultToUser() {
+        when(userProviderRepository.findByProviderId("auth0|guest-user")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("guest@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(816L);
+            u.setUuid("u-816");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|guest-user")
+                .claim("email", "guest@example.com")
+                .claim("role", "GUEST")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("USER", response.role());
+    }
+
+    @Test
+    @DisplayName("extractRoleFromJwt when app_metadata is not a map should not throw and continue extraction")
+    void extractRoleFromJwt_whenAppMetadataNotMap_shouldIgnoreGracefully() {
+        when(userProviderRepository.findByProviderId("auth0|meta-string")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("metastring@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> {
+            User u = i.getArgument(0);
+            u.setId(817L);
+            u.setUuid("u-817");
+            return u;
+        });
+        when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|meta-string")
+                .claim("email", "metastring@example.com")
+                .claim("app_metadata", "simple-string-not-map")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.getCurrentUser(auth);
+
+        assertNotNull(response);
+        assertEquals("USER", response.role());
+    }
+
+    // --- requestReactivation branches ---
+
+    @Test
+    @DisplayName("requestReactivation with null principal should throw UNAUTHORIZED")
+    void requestReactivation_whenPrincipalNull_shouldThrowUnauthorized() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.requestReactivation(null));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("requestReactivation with JWT when provider user missing should fallback to email lookup")
+    void requestReactivation_jwt_providerUserMissing_shouldFallbackToEmail() {
+        User deactivated = User.builder()
+                .id(820L)
+                .uuid("u-820")
+                .name("Deactivated Falling to Email")
+                .email("deact-fallback@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+
+        UserProvider up = UserProvider.builder().providerId("auth0|d-missing-uuid").userUuid("non-existent-uuid").build();
+        when(userProviderRepository.findByProviderId("auth0|d-missing-uuid")).thenReturn(Optional.of(up));
+        when(userRepository.findByUuid("non-existent-uuid")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("deact-fallback@example.com")).thenReturn(Optional.of(deactivated));
+        when(fineRepository.findByUserUuidAndStatus("u-820", FineStatus.PENDING)).thenReturn(List.of());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|d-missing-uuid")
+                .claim("email", "deact-fallback@example.com")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.requestReactivation(auth);
+
+        assertNotNull(response);
+        assertEquals("PENDING", response.reactivationRequestStatus());
+    }
+
+    @Test
+    @DisplayName("requestReactivation with JWT when standard email is blank should use namespaced email claim")
+    void requestReactivation_jwt_whenStandardEmailBlank_shouldUseNamespacedEmail() {
+        User deactivated = User.builder()
+                .id(821L)
+                .uuid("u-821")
+                .name("Deactivated NS")
+                .email("ns-deact@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+
+        when(userProviderRepository.findByProviderId("auth0|d-ns")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("ns-deact@example.com")).thenReturn(Optional.of(deactivated));
+        when(fineRepository.findByUserUuidAndStatus("u-821", FineStatus.PENDING)).thenReturn(List.of());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|d-ns")
+                .claim("email", "")
+                .claim("https://library.kovanlabs.com/email", "ns-deact@example.com")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        UserResponse response = userService.requestReactivation(auth);
+
+        assertNotNull(response);
+        assertEquals("PENDING", response.reactivationRequestStatus());
+    }
+
+    @Test
+    @DisplayName("requestReactivation with JWT when user cannot be found by provider or email should throw 404")
+    void requestReactivation_jwt_whenUserNotFound_shouldThrowNotFound() {
+        when(userProviderRepository.findByProviderId("auth0|unknown-deact")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("unknown-deact@example.com")).thenReturn(Optional.empty());
+
+        Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                .header("alg", "none")
+                .claim("sub", "auth0|unknown-deact")
+                .claim("email", "unknown-deact@example.com")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.requestReactivation(auth));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("requestReactivation with standard Principal when email not found should find by UUID")
+    void requestReactivation_standardPrincipal_whenEmailNotFound_shouldFindByUuid() {
+        User deactivated = User.builder()
+                .id(822L)
+                .uuid("u-822")
+                .name("Deactivated By UUID")
+                .email("deact-uuid@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+
+        Principal principal = () -> "u-822";
+        when(userRepository.findByEmail("u-822")).thenReturn(Optional.empty());
+        when(userRepository.findByUuid("u-822")).thenReturn(Optional.of(deactivated));
+        when(fineRepository.findByUserUuidAndStatus("u-822", FineStatus.PENDING)).thenReturn(List.of());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.requestReactivation(principal);
+
+        assertNotNull(response);
+        assertEquals("PENDING", response.reactivationRequestStatus());
+    }
+
+    @Test
+    @DisplayName("requestReactivation with standard Principal when user not found by email or UUID should throw 404")
+    void requestReactivation_standardPrincipal_whenNotFound_shouldThrowNotFound() {
+        Principal principal = () -> "unknown-user";
+        when(userRepository.findByEmail("unknown-user")).thenReturn(Optional.empty());
+        when(userRepository.findByUuid("unknown-user")).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.requestReactivation(principal));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("requestReactivation when deactivated user has null UUID should skip fine lookup and succeed")
+    void requestReactivation_whenUserUuidIsNull_shouldSkipFineLookupAndSucceed() {
+        User deactivatedWithoutUuid = User.builder()
+                .id(823L)
+                .uuid(null)
+                .name("No UUID Deactivated")
+                .email("nouuid-deact@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+
+        Principal principal = () -> "nouuid-deact@example.com";
+        when(userRepository.findByEmail("nouuid-deact@example.com")).thenReturn(Optional.of(deactivatedWithoutUuid));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.requestReactivation(principal);
+
+        assertNotNull(response);
+        assertEquals("PENDING", response.reactivationRequestStatus());
+        verifyNoInteractions(fineRepository);
+    }
+
+    @Test
+    @DisplayName("requestReactivation when pending fines contain null amounts should filter them and succeed")
+    void requestReactivation_whenFineHasNullAmount_shouldFilterAndSucceed() {
+        User deactivated = User.builder()
+                .id(824L)
+                .uuid("u-824")
+                .email("nullfine-deact@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .build();
+
+        Fine fineWithNullAmount = Fine.builder()
+                .id(50L)
+                .userUuid("u-824")
+                .status(FineStatus.PENDING)
+                .pendingFineAmount(null)
+                .build();
+
+        Principal principal = () -> "nullfine-deact@example.com";
+        when(userRepository.findByEmail("nullfine-deact@example.com")).thenReturn(Optional.of(deactivated));
+        when(fineRepository.findByUserUuidAndStatus("u-824", FineStatus.PENDING)).thenReturn(List.of(fineWithNullAmount));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.requestReactivation(principal);
+
+        assertNotNull(response);
+        assertEquals("PENDING", response.reactivationRequestStatus());
+    }
+
+    // --- getReactivationRequests branches ---
+
+    @Test
+    @DisplayName("getReactivationRequests when salesforceSyncDelegate is null should fetch from MySQL")
+    void getReactivationRequests_whenSalesforceDelegateNull_shouldFetchFromMySQL() {
+        UserServiceImpl serviceWithoutSF = new UserServiceImpl(
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+        User user = User.builder().id(830L).uuid("u-830").email("req-nosf@example.com")
+                .status(AccountStatus.DEACTIVATED).reactivationRequestStatus(ReactivationRequestStatus.PENDING).build();
+        when(userRepository.findByReactivationRequestStatusIsNotNull()).thenReturn(List.of(user));
+
+        List<UserResponse> list = serviceWithoutSF.getReactivationRequests();
+
+        assertEquals(1, list.size());
+        assertEquals("req-nosf@example.com", list.get(0).email());
+        verify(userRepository).findByReactivationRequestStatusIsNotNull();
+    }
+
+    @Test
+    @DisplayName("getReactivationRequests from Salesforce should filter out contacts with null or blank request status")
+    void getReactivationRequests_fromSalesforce_shouldFilterNullAndBlankStatus() {
+        ContactSObject c1 = ContactSObject.builder().externalUserUuid("u-1").email("pending@sf.com").reactivationRequestStatus("PENDING").build();
+        ContactSObject c2 = ContactSObject.builder().externalUserUuid("u-2").email("null@sf.com").reactivationRequestStatus(null).build();
+        ContactSObject c3 = ContactSObject.builder().externalUserUuid("u-3").email("blank@sf.com").reactivationRequestStatus("   ").build();
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenReturn(List.of(c1, c2, c3));
+
+        List<UserResponse> list = userService.getReactivationRequests();
+
+        assertEquals(1, list.size());
+        assertEquals("pending@sf.com", list.get(0).email());
+        verify(userRepository, never()).findByReactivationRequestStatusIsNotNull();
+    }
+
+    @Test
+    @DisplayName("getReactivationRequests when Salesforce throws exception should fallback to MySQL")
+    void getReactivationRequests_whenSalesforceThrows_shouldFallbackToMySQL() {
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenThrow(new RuntimeException("SOQL error"));
+        User user = User.builder().id(831L).uuid("u-831").email("req-error@example.com")
+                .status(AccountStatus.DEACTIVATED).reactivationRequestStatus(ReactivationRequestStatus.PENDING).build();
+        when(userRepository.findByReactivationRequestStatusIsNotNull()).thenReturn(List.of(user));
+
+        List<UserResponse> list = userService.getReactivationRequests();
+
+        assertEquals(1, list.size());
+        assertEquals("req-error@example.com", list.get(0).email());
+        verify(userRepository).findByReactivationRequestStatusIsNotNull();
+    }
+
+    // --- updateCurrentUser branches ---
+
+    @Test
+    @DisplayName("updateCurrentUser when current user profile id is null should throw 404")
+    void updateCurrentUser_whenCurrentUserProfileIdIsNull_shouldThrowNotFound() {
+        Principal principal = () -> "alice@example.com";
+        User userWithoutId = User.builder().id(null).uuid(uuid1).email("alice@example.com").build();
+        when(userProviderRepository.findByProviderId("alice@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(userWithoutId));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.updateCurrentUser(principal, new UserRequest("new@example.com", "New", null)));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
+
+    // --- getHeaderFromRequestContext branches ---
+
+    @Test
+    @DisplayName("getHeaderFromRequestContext when attributes not ServletRequestAttributes should return null")
+    void getHeaderFromRequestContext_whenNotServletRequestAttributes_shouldReturnNull() {
+        org.springframework.web.context.request.RequestAttributes nonServletAttributes =
+                mock(org.springframework.web.context.request.RequestAttributes.class);
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(nonServletAttributes);
+
+        try {
+            when(userProviderRepository.findByProviderId("auth0|non-servlet-ctx")).thenReturn(Optional.empty());
+            when(userRepository.findByEmail("nonservlet@example.com")).thenReturn(Optional.empty());
+            when(userRepository.save(any(User.class))).thenAnswer(i -> {
+                User u = i.getArgument(0);
+                u.setId(840L);
+                u.setUuid("u-840");
+                return u;
+            });
+            when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+            Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                    .header("alg", "none")
+                    .claim("sub", "auth0|non-servlet-ctx")
+                    .claim("email", "nonservlet@example.com")
+                    .claim("name", "Fallback Jwt Name")
+                    .build();
+            JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+            UserResponse response = userService.getCurrentUser(auth);
+
+            assertNotNull(response);
+            assertEquals("Fallback Jwt Name", response.name());
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    @Test
+    @DisplayName("getHeaderFromRequestContext when ServletRequestAttributes has null request should return null")
+    void getHeaderFromRequestContext_whenRequestIsNull_shouldReturnNull() {
+        org.springframework.web.context.request.ServletRequestAttributes nullRequestAttributes =
+                mock(org.springframework.web.context.request.ServletRequestAttributes.class);
+        when(nullRequestAttributes.getRequest()).thenReturn(null);
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(nullRequestAttributes);
+
+        try {
+            when(userProviderRepository.findByProviderId("auth0|null-req-ctx")).thenReturn(Optional.empty());
+            when(userRepository.findByEmail("nullreq@example.com")).thenReturn(Optional.empty());
+            when(userRepository.save(any(User.class))).thenAnswer(i -> {
+                User u = i.getArgument(0);
+                u.setId(841L);
+                u.setUuid("u-841");
+                return u;
+            });
+            when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+            Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                    .header("alg", "none")
+                    .claim("sub", "auth0|null-req-ctx")
+                    .claim("email", "nullreq@example.com")
+                    .claim("name", "Fallback Name Null Req")
+                    .build();
+            JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+            UserResponse response = userService.getCurrentUser(auth);
+
+            assertNotNull(response);
+            assertEquals("Fallback Name Null Req", response.name());
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    @Test
+    @DisplayName("getHeaderFromRequestContext when getHeader throws exception should catch and return null")
+    void getHeaderFromRequestContext_whenHeaderThrows_shouldCatchAndReturnNull() {
+        jakarta.servlet.http.HttpServletRequest throwingRequest = mock(jakarta.servlet.http.HttpServletRequest.class);
+        when(throwingRequest.getHeader(anyString())).thenThrow(new RuntimeException("Header extraction error"));
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(throwingRequest));
+
+        try {
+            when(userProviderRepository.findByProviderId("auth0|header-ex-ctx")).thenReturn(Optional.empty());
+            when(userRepository.findByEmail("headerex@example.com")).thenReturn(Optional.empty());
+            when(userRepository.save(any(User.class))).thenAnswer(i -> {
+                User u = i.getArgument(0);
+                u.setId(842L);
+                u.setUuid("u-842");
+                return u;
+            });
+            when(userProviderRepository.save(any(UserProvider.class))).thenAnswer(i -> i.getArgument(0));
+
+            Jwt jwt = Jwt.withTokenValue("mock-jwt")
+                    .header("alg", "none")
+                    .claim("sub", "auth0|header-ex-ctx")
+                    .claim("email", "headerex@example.com")
+                    .claim("name", "Fallback After Exception")
+                    .build();
+            JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+            UserResponse response = userService.getCurrentUser(auth);
+
+            assertNotNull(response);
+            assertEquals("Fallback After Exception", response.name());
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    // --- resetUserRewardPoints & syncUserToSalesforce branches ---
+
+    @Test
+    @DisplayName("deactivateUser when user UUID is null should skip reward point reset and Salesforce sync")
+    void deactivateUser_whenUserUuidIsNull_shouldSkipRewardResetAndSalesforceSync() {
+        User userWithoutUuid = User.builder().id(850L).uuid(null).email("deact-nouuid@example.com").status(AccountStatus.ACTIVE).build();
+        when(userRepository.findById(850L)).thenReturn(Optional.of(userWithoutUuid));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.deactivateUser(850L);
+
+        assertNotNull(response);
+        assertEquals("DEACTIVATED", response.status());
+        verifyNoInteractions(rewardRepository);
+        verify(salesforceSyncDelegate, never()).syncContact(any());
+    }
+
+    @Test
+    @DisplayName("deactivateUser when rewardRepository is null should not fail")
+    void deactivateUser_whenRewardRepositoryIsNull_shouldNotFail() {
+        UserServiceImpl serviceWithoutRewardRepo = new UserServiceImpl(
+                userRepository, userProviderRepository, null, fineRepository, salesforceSyncDelegate);
+        User user = User.builder().id(851L).uuid("u-851").email("no-reward-repo@example.com").status(AccountStatus.ACTIVE).build();
+        when(userRepository.findById(851L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = serviceWithoutRewardRepo.deactivateUser(851L);
+
+        assertNotNull(response);
+        assertEquals("DEACTIVATED", response.status());
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("reactivateUser when salesforceSyncDelegate is null should update in MySQL without error")
+    void reactivateUser_whenSalesforceDelegateNull_shouldUpdateInMySQL() {
+        UserServiceImpl serviceWithoutSF = new UserServiceImpl(
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+        User user = User.builder().id(852L).uuid("u-852").email("react-nosf@example.com")
+                .status(AccountStatus.DEACTIVATED).reactivationRequestStatus(ReactivationRequestStatus.PENDING).build();
+        when(userRepository.findById(852L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = serviceWithoutSF.reactivateUser(852L);
+
+        assertNotNull(response);
+        assertEquals("ACTIVE", response.status());
+        assertEquals(ReactivationRequestStatus.APPROVED, user.getReactivationRequestStatus());
+        verify(salesforceSyncDelegate, never()).syncContact(any());
+    }
+
+    @Test
+    @DisplayName("reactivateUser when Salesforce sync throws exception should increment retry count and mark PENDING")
+    void reactivateUser_whenSalesforceThrows_shouldIncrementRetryAndMarkPending() {
+        User user = User.builder().id(853L).uuid("u-853").email("react-sf-fail@example.com")
+                .status(AccountStatus.DEACTIVATED).reactivationRequestStatus(ReactivationRequestStatus.PENDING).build();
+        when(userRepository.findById(853L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("Salesforce down")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+
+        UserResponse response = userService.reactivateUser(853L);
+
+        assertNotNull(response);
+        assertEquals("ACTIVE", response.status());
+        assertEquals(SalesforceSyncStatus.PENDING, user.getSalesforceSyncStatus());
+        assertEquals(1, user.getSalesforceRetryCount());
+    }
+
+    @Test
+    @DisplayName("rejectReactivation when Salesforce sync throws exception should increment retry count and mark PENDING")
+    void rejectReactivation_whenSalesforceThrows_shouldIncrementRetryAndMarkPending() {
+        User user = User.builder().id(854L).uuid("u-854").email("reject-sf-fail@example.com")
+                .status(AccountStatus.DEACTIVATED).reactivationRequestStatus(ReactivationRequestStatus.PENDING).build();
+        when(userRepository.findById(854L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("Salesforce down")).when(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+
+        UserResponse response = userService.rejectReactivation(854L);
+
+        assertNotNull(response);
+        assertEquals("DEACTIVATED", response.status());
+        assertEquals(SalesforceSyncStatus.PENDING, user.getSalesforceSyncStatus());
+        assertEquals(1, user.getSalesforceRetryCount());
     }
 }

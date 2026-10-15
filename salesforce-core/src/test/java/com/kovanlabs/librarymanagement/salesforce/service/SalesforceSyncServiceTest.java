@@ -333,4 +333,163 @@ class SalesforceSyncServiceTest {
         assertEquals(1, res.get(0).getErrors().size());
         assertEquals("Salesforce partial failure", res.get(0).getErrors().get(0));
     }
+
+    @Test
+    void syncBorrow_whenBookAndContactAreNull_shouldUpsertWithoutRelations() {
+        UUID borrowUuid = UUID.randomUUID();
+        BorrowSObject borrow = BorrowSObject.builder()
+                .externalBorrowUuid(borrowUuid.toString())
+                .borrowDate("2026-10-01")
+                .book(null)
+                .contact(null)
+                .build();
+
+        salesforceSyncService.syncBorrow(borrow);
+
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(clientService).upsertByExternalId(eq(SObject.BORROW.getObjectName()), eq(BorrowFields.EXTERNAL_BORROW_UUID), eq(borrowUuid.toString()), captor.capture());
+
+        Map<String, Object> fields = captor.getValue();
+        assertNull(fields.get(BorrowFields.BOOK_RELATION));
+        assertNull(fields.get(BorrowFields.CONTACT_RELATION));
+    }
+
+    @Test
+    void fetchContactsFromSalesforce_withErrorsInResponse_logsAndReturnsContacts() {
+        UUID uuid = UUID.randomUUID();
+        ObjectNode root = objectMapper.createObjectNode();
+        ArrayNode records = root.putArray("records");
+
+        ObjectNode record1 = records.addObject();
+        record1.put(ContactFields.EXTERNAL_USER_UUID, uuid.toString());
+        record1.put(ContactFields.LAST_NAME, "Error User");
+        ArrayNode errs = record1.putArray("errors");
+        errs.add("Contact SOQL partial error");
+
+        when(clientService.query(anyString())).thenReturn(root);
+
+        List<ContactSObject> contacts = salesforceSyncService.fetchContactsFromSalesforce();
+
+        assertNotNull(contacts);
+        assertEquals(1, contacts.size());
+        assertEquals(1, contacts.get(0).getErrors().size());
+        assertEquals("Contact SOQL partial error", contacts.get(0).getErrors().get(0));
+    }
+
+    @Test
+    void fetchBooksFromSalesforce_whenQueryNullOrNoRecords_returnsEmptyList() {
+        when(clientService.query(anyString())).thenReturn(null);
+        List<BookSObject> res1 = salesforceSyncService.fetchBooksFromSalesforce(10, 0);
+        assertNotNull(res1);
+        assertTrue(res1.isEmpty());
+
+        ObjectNode emptyNode = objectMapper.createObjectNode();
+        when(clientService.query(anyString())).thenReturn(emptyNode);
+        List<BookSObject> res2 = salesforceSyncService.fetchBooksFromSalesforce(10, 0);
+        assertNotNull(res2);
+        assertTrue(res2.isEmpty());
+    }
+
+    @Test
+    void fetchBorrowsFromSalesforce_whenQueryNullOrNoRecords_returnsEmptyList() {
+        when(clientService.query(anyString())).thenReturn(null);
+        List<BorrowSObject> res1 = salesforceSyncService.fetchBorrowsFromSalesforce();
+        assertNotNull(res1);
+        assertTrue(res1.isEmpty());
+
+        ObjectNode emptyNode = objectMapper.createObjectNode();
+        when(clientService.query(anyString())).thenReturn(emptyNode);
+        List<BorrowSObject> res2 = salesforceSyncService.fetchBorrowsFromSalesforce();
+        assertNotNull(res2);
+        assertTrue(res2.isEmpty());
+    }
+
+    @Test
+    void fetchBorrowsFromSalesforce_withErrorsInResponse_logsAndReturnsBorrows() {
+        UUID uuid = UUID.randomUUID();
+        ObjectNode root = objectMapper.createObjectNode();
+        ArrayNode records = root.putArray("records");
+
+        ObjectNode record1 = records.addObject();
+        record1.put(BorrowFields.EXTERNAL_BORROW_UUID, uuid.toString());
+        ArrayNode errs = record1.putArray("errors");
+        errs.add("Borrow SOQL warning");
+
+        when(clientService.query(anyString())).thenReturn(root);
+
+        List<BorrowSObject> res = salesforceSyncService.fetchBorrowsFromSalesforce();
+
+        assertNotNull(res);
+        assertEquals(1, res.size());
+        assertEquals(1, res.get(0).getErrors().size());
+        assertEquals("Borrow SOQL warning", res.get(0).getErrors().get(0));
+    }
+
+    // --- SalesforceSync default methods tests ---
+
+    @Test
+    void toPayloadMap_whenNull_returnsEmptyMap() {
+        Map<String, Object> map = salesforceSyncService.toPayloadMap(null);
+        assertNotNull(map);
+        assertTrue(map.isEmpty());
+    }
+
+    @Test
+    void toPayloadMap_whenValid_returnsPopulatedMap() {
+        ContactSObject contact = ContactSObject.builder()
+                .externalUserUuid("uuid-123")
+                .lastName("Doe")
+                .reward(10)
+                .build();
+        Map<String, Object> map = salesforceSyncService.toPayloadMap(contact);
+        assertNotNull(map);
+        assertEquals("Doe", map.get(ContactFields.LAST_NAME));
+        assertEquals(10, map.get(ContactFields.REWARD));
+    }
+
+    @Test
+    void toSObject_whenNodeNullOrNullNode_returnsNull() {
+        assertNull(salesforceSyncService.toSObject(null, ContactSObject.class));
+        assertNull(salesforceSyncService.toSObject(com.fasterxml.jackson.databind.node.NullNode.getInstance(), ContactSObject.class));
+    }
+
+    @Test
+    void toSObject_whenValid_returnsDeserializedObject() {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put(ContactFields.LAST_NAME, "Valid");
+        node.put(ContactFields.EXTERNAL_USER_UUID, "uuid-valid");
+
+        ContactSObject obj = salesforceSyncService.toSObject(node, ContactSObject.class);
+        assertNotNull(obj);
+        assertEquals("Valid", obj.getLastName());
+        assertEquals("uuid-valid", obj.getExternalUserUuid());
+    }
+
+    @Test
+    void toSObject_whenDeserializationThrowsException_returnsNull() {
+        // String node cannot be deserialized as a ContactSObject (which expects an object)
+        com.fasterxml.jackson.databind.node.TextNode invalidNode = com.fasterxml.jackson.databind.node.TextNode.valueOf("invalid-json");
+        ContactSObject obj = salesforceSyncService.toSObject(invalidNode, ContactSObject.class);
+        assertNull(obj);
+    }
+
+    @Test
+    void toSObjectList_whenRootNullOrNoRecords_returnsEmptyList() {
+        assertTrue(salesforceSyncService.toSObjectList(null, ContactSObject.class).isEmpty());
+        ObjectNode nodeWithoutRecords = objectMapper.createObjectNode().put("totalSize", 0);
+        assertTrue(salesforceSyncService.toSObjectList(nodeWithoutRecords, ContactSObject.class).isEmpty());
+    }
+
+    @Test
+    void toSObjectList_whenValidRecords_returnsDeserializedList() {
+        ObjectNode root = objectMapper.createObjectNode();
+        ArrayNode records = root.putArray("records");
+        ObjectNode record = records.addObject();
+        record.put(ContactFields.LAST_NAME, "InList");
+
+        List<ContactSObject> list = salesforceSyncService.toSObjectList(root, ContactSObject.class);
+        assertNotNull(list);
+        assertEquals(1, list.size());
+        assertEquals("InList", list.get(0).getLastName());
+    }
 }

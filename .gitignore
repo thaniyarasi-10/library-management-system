@@ -1,7 +1,0 @@
-target/
-**/target/
-*.class
-.env
-.idea/
-.vscode/
-application/src/main/resources/application.yml

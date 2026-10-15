@@ -259,4 +259,58 @@ class SalesforceSyncRetrySchedulerTest {
         assertEquals(SalesforceSyncStatus.FAILED, borrowAtMax.getSalesforceSyncStatus());
         assertEquals(3, borrowAtMax.getSalesforceRetryCount());
     }
+
+    @Test
+    @DisplayName("retryPendingUsers when salesforceSyncService is null should mark SUCCESS without calling syncContact")
+    void retryPendingUsers_whenSalesforceSyncServiceIsNull_marksSuccess() {
+        SalesforceSyncRetryScheduler schedulerWithoutSF = new SalesforceSyncRetryScheduler(
+                userRepository, bookRepository, borrowRepository, null, salesforceConfig);
+
+        when(userRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(List.of(pendingUser));
+        when(bookRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
+        when(borrowRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
+
+        schedulerWithoutSF.retryPendingSyncs();
+
+        verify(userRepository).save(pendingUser);
+        assertEquals(SalesforceSyncStatus.SUCCESS, pendingUser.getSalesforceSyncStatus());
+        assertEquals(1, pendingUser.getSalesforceRetryCount());
+        verifyNoInteractions(salesforceSyncService);
+    }
+
+    @Test
+    @DisplayName("retryPendingBooks when salesforceSyncService is null should mark SUCCESS without calling syncBook")
+    void retryPendingBooks_whenSalesforceSyncServiceIsNull_marksSuccess() {
+        SalesforceSyncRetryScheduler schedulerWithoutSF = new SalesforceSyncRetryScheduler(
+                userRepository, bookRepository, borrowRepository, null, salesforceConfig);
+
+        when(userRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
+        when(bookRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(List.of(pendingBook));
+        when(borrowRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
+
+        schedulerWithoutSF.retryPendingSyncs();
+
+        verify(bookRepository).save(pendingBook);
+        assertEquals(SalesforceSyncStatus.SUCCESS, pendingBook.getSalesforceSyncStatus());
+        assertEquals(1, pendingBook.getSalesforceRetryCount());
+        verifyNoInteractions(salesforceSyncService);
+    }
+
+    @Test
+    @DisplayName("retryPendingBorrows when salesforceSyncService is null should mark SUCCESS without calling syncBorrow")
+    void retryPendingBorrows_whenSalesforceSyncServiceIsNull_marksSuccess() {
+        SalesforceSyncRetryScheduler schedulerWithoutSF = new SalesforceSyncRetryScheduler(
+                userRepository, bookRepository, borrowRepository, null, salesforceConfig);
+
+        when(userRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
+        when(bookRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(Collections.emptyList());
+        when(borrowRepository.findBySalesforceSyncStatus(SalesforceSyncStatus.PENDING)).thenReturn(List.of(pendingBorrow));
+
+        schedulerWithoutSF.retryPendingSyncs();
+
+        verify(borrowRepository).save(pendingBorrow);
+        assertEquals(SalesforceSyncStatus.SUCCESS, pendingBorrow.getSalesforceSyncStatus());
+        assertEquals(1, pendingBorrow.getSalesforceRetryCount());
+        verifyNoInteractions(salesforceSyncService);
+    }
 }

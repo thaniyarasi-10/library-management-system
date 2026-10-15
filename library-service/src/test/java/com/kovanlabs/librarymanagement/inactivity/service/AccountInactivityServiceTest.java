@@ -473,4 +473,150 @@ class AccountInactivityServiceTest {
         verify(salesforceSyncDelegate, times(1)).syncContact(any());
         verify(emailNotificationService, times(1)).send(any());
     }
+
+    @Test
+    @DisplayName("processUser when rewardRepository is null should deactivate user without error")
+    void processUser_whenRewardRepositoryNull_shouldDeactivateWithoutError() {
+        AccountInactivityService serviceWithoutRewardRepo = new AccountInactivityService(
+                notificationFactory, userRepository, null, salesforceSyncDelegate);
+
+        User user = User.builder()
+                .id(71L)
+                .uuid("u-71")
+                .email("norewardrepo@test.com")
+                .name("No Reward Repo User")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(32))
+                .build();
+
+        serviceWithoutRewardRepo.processUser(user);
+
+        assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any());
+        verify(emailNotificationService).send(any(NotificationRequest.class));
+    }
+
+    @Test
+    @DisplayName("processUser when user UUID is null should skip reward point reset and Salesforce sync")
+    void processUser_whenUserUuidIsNull_shouldSkipRewardResetAndSalesforceSync() {
+        User userWithoutUuid = User.builder()
+                .id(72L)
+                .uuid(null)
+                .email("nouuid@test.com")
+                .name("No UUID User")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(32))
+                .build();
+
+        service.processUser(userWithoutUuid);
+
+        assertEquals(AccountStatus.DEACTIVATED, userWithoutUuid.getStatus());
+        verify(userRepository, atLeastOnce()).save(userWithoutUuid);
+        verifyNoInteractions(rewardRepository);
+        verify(salesforceSyncDelegate, never()).syncContact(any());
+        verify(emailNotificationService).send(any(NotificationRequest.class));
+    }
+
+    @Test
+    @DisplayName("processUser when salesforceSyncDelegate is null should deactivate without attempting Salesforce sync")
+    void processUser_whenSalesforceDelegateNull_shouldDeactivateWithoutSync() {
+        AccountInactivityService serviceWithoutSF = new AccountInactivityService(
+                notificationFactory, userRepository, rewardRepository, null);
+
+        User user = User.builder()
+                .id(73L)
+                .uuid("u-73")
+                .email("nosf@test.com")
+                .name("No SF User")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(32))
+                .build();
+
+        when(rewardRepository.resetPoints("u-73")).thenReturn(1);
+
+        serviceWithoutSF.processUser(user);
+
+        assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(emailNotificationService).send(any(NotificationRequest.class));
+    }
+
+    @Test
+    @DisplayName("processUser when salesforceSyncDelegate is null should send warning without attempting Salesforce sync")
+    void processUser_warning_whenSalesforceDelegateNull_shouldWarnWithoutSync() {
+        AccountInactivityService serviceWithoutSF = new AccountInactivityService(
+                notificationFactory, userRepository, rewardRepository, null);
+
+        User user = User.builder()
+                .id(74L)
+                .uuid("u-74")
+                .email("warnnosf@test.com")
+                .name("Warn No SF User")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(25))
+                .build();
+
+        serviceWithoutSF.processUser(user);
+
+        assertEquals(AccountStatus.ACTIVE, user.getStatus());
+        assertNotNull(user.getInactivityWarningSentAt());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(emailNotificationService).send(any(NotificationRequest.class));
+    }
+
+    @Test
+    @DisplayName("processInactiveAccounts when warning user has 30 or more inactive days should clamp daysRemaining to 0")
+    void processInactiveAccounts_warningBatch_daysRemainingClampedToZero() {
+        User userAt31Days = User.builder()
+                .id(75L)
+                .uuid("u-75")
+                .email("at31days@test.com")
+                .name("31 Days User")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(31))
+                .build();
+
+        when(userRepository.findUsersEligibleForDeactivation(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findUsersEligibleForInactivityWarning(eq(AccountStatus.ACTIVE), any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of(userAt31Days));
+        when(userRepository.findActiveUsersWithPendingWarningToReset(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+
+        service.processInactiveAccounts();
+
+        ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
+        verify(emailNotificationService).send(captor.capture());
+        NotificationRequest request = captor.getValue();
+        assertEquals(0L, request.daysRemaining());
+    }
+
+    @Test
+    @DisplayName("processInactiveAccounts when only usersToReset has items should reset and sync without notifications")
+    void processInactiveAccounts_onlyUsersToReset() {
+        User userToReset = User.builder()
+                .id(76L)
+                .uuid("u-76")
+                .email("onlyreset@test.com")
+                .name("Only Reset User")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(1))
+                .inactivityWarningSentAt(LocalDateTime.now().minusDays(10))
+                .build();
+
+        when(userRepository.findUsersEligibleForDeactivation(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findUsersEligibleForInactivityWarning(eq(AccountStatus.ACTIVE), any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findActiveUsersWithPendingWarningToReset(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of(userToReset));
+
+        service.processInactiveAccounts();
+
+        assertNull(userToReset.getInactivityWarningSentAt());
+        verify(userRepository, atLeastOnce()).save(userToReset);
+        verify(salesforceSyncDelegate).syncContact(any());
+        verifyNoInteractions(emailNotificationService);
+    }
 }
