@@ -98,4 +98,29 @@
         <dropColumn tableName="user" columnName="deactivated_at"/>
     </changeSet>
 
+    <changeSet id="25-add-deactivated-at-column-to-user" author="thani">
+        <addColumn tableName="user">
+            <column name="deactivated_at" type="timestamp"/>
+        </addColumn>
+        <sql>
+            UPDATE user SET deactivated_at = COALESCE(updated_at) WHERE status = 'DEACTIVATED' AND deactivated_at IS NULL;
+        </sql>
+    </changeSet>
+
+    <changeSet id="26-enlarge-status-column-and-expire-accounts" author="thani">
+        <modifyDataType tableName="user" columnName="status" newDataType="varchar(30)"/>
+        <sql>
+            UPDATE user 
+            SET deactivated_at = DATE_ADD(COALESCE(last_login_at, created_at), INTERVAL 30 DAY)
+            WHERE status = 'DEACTIVATED'
+              AND last_login_at IS NOT NULL
+              AND DATE_ADD(last_login_at, INTERVAL 30 DAY) &lt; deactivated_at;
+
+            UPDATE user
+            SET status = 'PERMANENTLY_DEACTIVATED', reactivation_request_status = NULL
+            WHERE status = 'DEACTIVATED'
+              AND deactivated_at &lt;= DATE_SUB(NOW(), INTERVAL 10 DAY);
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

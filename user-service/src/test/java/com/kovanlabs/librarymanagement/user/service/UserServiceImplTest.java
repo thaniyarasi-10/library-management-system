@@ -64,7 +64,8 @@ class UserServiceImplTest {
     @Mock
     private FineRepository fineRepository;
 
-    @InjectMocks
+    private AccountDeactivationService accountDeactivationService;
+
     private UserServiceImpl userService;
 
     private User user1;
@@ -74,6 +75,9 @@ class UserServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        accountDeactivationService = spy(new AccountDeactivationService(userRepository, salesforceSyncDelegate));
+        userService = new UserServiceImpl(userRepository, userProviderRepository, rewardRepository, fineRepository, salesforceSyncDelegate, accountDeactivationService);
+
         uuid1 = UUID.randomUUID().toString();
         uuid2 = UUID.randomUUID().toString();
 
@@ -653,7 +657,7 @@ class UserServiceImplTest {
                 .claim("sub", "auth0|admin-1")
                 .claim("email", "admin@example.com")
                 .claim("name", "Admin User")
-                .claim("https://library.kovanlabs.com/roles", List.of("ADMIN"))
+                .claim("https://library-management.com/roles", List.of("ADMIN"))
                 .build();
 
         JwtAuthenticationToken jwtAuth = new JwtAuthenticationToken(
@@ -1012,7 +1016,8 @@ class UserServiceImplTest {
                 userProviderRepository,
                 rewardRepository,
                 fineRepository,
-                null);
+                null,
+                accountDeactivationService);
 
         when(userProviderRepository.findByProviderId("auth0|no-sf")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("no-sf@example.com")).thenReturn(Optional.empty());
@@ -1484,6 +1489,248 @@ class UserServiceImplTest {
     }
 
     @Test
+    @DisplayName("reactivateUser when user was PERMANENTLY_DEACTIVATED but had PENDING request should succeed and reactivate to ACTIVE")
+    void reactivateUser_whenUserWasPermanentlyDeactivatedButPendingRequest_shouldReactivateSuccessfully() {
+        User user = User.builder()
+                .id(602L)
+                .uuid("u-602")
+                .email("thaniyarasik@gmail.com")
+                .status(AccountStatus.PERMANENTLY_DEACTIVATED)
+                .reactivationRequestStatus(ReactivationRequestStatus.PENDING)
+                .build();
+
+        when(userRepository.findById(602L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.reactivateUser(602L);
+
+        assertNotNull(response);
+        assertEquals(AccountStatus.ACTIVE.name(), response.status());
+        assertEquals(AccountStatus.ACTIVE, user.getStatus());
+        assertEquals(ReactivationRequestStatus.APPROVED, user.getReactivationRequestStatus());
+        assertNull(user.getDeactivatedAt());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("rejectReactivation when 10-day window expired should transition to PERMANENTLY_DEACTIVATED and REJECTED")
+    void rejectReactivation_whenWindowExpired_shouldTransitionToPermanentlyDeactivated() {
+        User deact = User.builder()
+                .id(603L)
+                .uuid("u-603")
+                .email("expired-reject@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(15))
+                .reactivationRequestStatus(ReactivationRequestStatus.PENDING)
+                .build();
+
+        when(userRepository.findById(603L)).thenReturn(Optional.of(deact));
+        when(accountDeactivationService.isReactivationWindowExpired(deact)).thenReturn(true);
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.rejectReactivation(603L);
+
+        assertEquals(AccountStatus.PERMANENTLY_DEACTIVATED.name(), res.status());
+        assertEquals(AccountStatus.PERMANENTLY_DEACTIVATED, deact.getStatus());
+        assertEquals(ReactivationRequestStatus.REJECTED, deact.getReactivationRequestStatus());
+        verify(userRepository, atLeastOnce()).save(deact);
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("getReactivationRequests should reconcile MySQL users when Salesforce has PENDING request")
+    void getReactivationRequests_shouldReconcileMySqlUsersWhenSalesforceHasPendingRequest() {
+        ContactSObject contact = ContactSObject.builder()
+                .legacyUserId(4L)
+                .externalUserUuid("u-4")
+                .email("thaniyarasik@gmail.com")
+                .status("DEACTIVATED")
+                .reactivationRequestStatus("PENDING")
+                .build();
+
+        User mySqlUser = User.builder()
+                .id(4L)
+                .uuid("u-4")
+                .email("thaniyarasik@gmail.com")
+                .status(AccountStatus.PERMANENTLY_DEACTIVATED)
+                .reactivationRequestStatus(null)
+                .build();
+
+        when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenReturn(List.of(contact));
+        when(userRepository.findById(4L)).thenReturn(Optional.of(mySqlUser));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        List<UserResponse> result = userService.getReactivationRequests();
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(AccountStatus.DEACTIVATED, mySqlUser.getStatus());
+        assertEquals(ReactivationRequestStatus.PENDING, mySqlUser.getReactivationRequestStatus());
+        verify(userRepository).save(mySqlUser);
+    }
+
+    @Test
+    @DisplayName("requestReactivation should throw BAD_REQUEST when user is PERMANENTLY_DEACTIVATED")
+    void requestReactivation_whenPermanentlyDeactivated_shouldThrowBadRequest() {
+        User user = User.builder()
+                .id(403L)
+                .uuid("u-403")
+                .email("perm@example.com")
+                .status(AccountStatus.PERMANENTLY_DEACTIVATED)
+                .build();
+
+        Principal principal = () -> "perm@example.com";
+        when(userRepository.findByEmail("perm@example.com")).thenReturn(Optional.of(user));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.requestReactivation(principal));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("permanently deactivated"));
+        verify(userRepository, never()).save(any());
+        verify(salesforceSyncDelegate, never()).syncContact(any());
+    }
+
+    @Test
+    @DisplayName("requestReactivation when deactivated > 10 days should update to PERMANENTLY_DEACTIVATED, sync Salesforce, and throw BAD_REQUEST")
+    void requestReactivation_whenDeactivatedExceeds10Days_shouldTransitionToPermanentlyDeactivatedAndThrow() {
+        User user = User.builder()
+                .id(404L)
+                .uuid("u-404")
+                .email("expired@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(11))
+                .build();
+
+        Principal principal = () -> "expired@example.com";
+        when(userRepository.findByEmail("expired@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.requestReactivation(principal));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("expired"));
+        assertEquals(AccountStatus.PERMANENTLY_DEACTIVATED, user.getStatus());
+        assertNull(user.getReactivationRequestStatus());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("requestReactivation when deactivated within 10 days should succeed")
+    void requestReactivation_whenDeactivatedWithin10Days_shouldSucceed() {
+        User user = User.builder()
+                .id(405L)
+                .uuid("u-405")
+                .email("within10@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(5))
+                .build();
+
+        Principal principal = () -> "within10@example.com";
+        when(userRepository.findByEmail("within10@example.com")).thenReturn(Optional.of(user));
+        when(fineRepository.findByUserUuidAndStatus("u-405", FineStatus.PENDING)).thenReturn(List.of());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.requestReactivation(principal);
+
+        assertNotNull(res);
+        assertTrue(res.reactivationRequested());
+        assertEquals("PENDING", res.reactivationRequestStatus());
+        assertEquals(ReactivationRequestStatus.PENDING, user.getReactivationRequestStatus());
+        assertEquals("DEACTIVATED", res.status());
+        verify(userRepository, atLeastOnce()).save(user);
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("reactivateUser when user is PERMANENTLY_DEACTIVATED should throw BAD_REQUEST")
+    void reactivateUser_whenPermanentlyDeactivated_shouldThrowBadRequest() {
+        User user = User.builder()
+                .id(406L)
+                .uuid("u-406")
+                .email("perm2@example.com")
+                .status(AccountStatus.PERMANENTLY_DEACTIVATED)
+                .build();
+
+        when(userRepository.findById(406L)).thenReturn(Optional.of(user));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.reactivateUser(406L));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("permanently deactivated"));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("deactivateUser should set deactivatedAt timestamp")
+    void deactivateUser_shouldSetDeactivatedAt() {
+        User user = User.builder()
+                .id(407L)
+                .uuid("u-407")
+                .email("deact-date@example.com")
+                .status(AccountStatus.ACTIVE)
+                .build();
+
+        when(userRepository.findById(407L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse res = userService.deactivateUser(407L);
+
+        assertEquals("DEACTIVATED", res.status());
+        assertNotNull(user.getDeactivatedAt());
+        verify(userRepository, atLeastOnce()).save(user);
+    }
+
+    @Test
+    @DisplayName("processExpiredDeactivations should permanently deactivate users exceeding 10 days and sync to Salesforce")
+    void processExpiredDeactivations_shouldPermanentlyDeactivateUsersAndSyncToSalesforce() {
+        User expiredUser1 = User.builder()
+                .id(701L)
+                .uuid("u-701")
+                .email("exp1@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(15))
+                .build();
+
+        User expiredUser2 = User.builder()
+                .id(702L)
+                .uuid("u-702")
+                .email("exp2@example.com")
+                .status(AccountStatus.DEACTIVATED)
+                .deactivatedAt(LocalDateTime.now().minusDays(12))
+                .build();
+
+        when(userRepository.findUsersEligibleForPermanentDeactivation(eq(AccountStatus.DEACTIVATED), any(LocalDateTime.class)))
+                .thenReturn(List.of(expiredUser1, expiredUser2));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        int count = userService.processExpiredDeactivations();
+
+        assertEquals(2, count);
+        assertEquals(AccountStatus.PERMANENTLY_DEACTIVATED, expiredUser1.getStatus());
+        assertEquals(AccountStatus.PERMANENTLY_DEACTIVATED, expiredUser2.getStatus());
+        verify(userRepository, times(2)).save(expiredUser1);
+        verify(userRepository, times(2)).save(expiredUser2);
+        verify(salesforceSyncDelegate, times(2)).syncContact(any(ContactSObject.class));
+    }
+
+    @Test
+    @DisplayName("processExpiredDeactivations when none found should return 0")
+    void processExpiredDeactivations_whenNoneFound_shouldReturnZero() {
+        when(userRepository.findUsersEligibleForPermanentDeactivation(eq(AccountStatus.DEACTIVATED), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+
+        int count = userService.processExpiredDeactivations();
+
+        assertEquals(0, count);
+        verify(salesforceSyncDelegate, never()).syncContact(any());
+    }
+
+    @Test
     @DisplayName("rejectReactivation when user ID not found should throw 404")
     void rejectReactivation_whenNotFound_shouldThrow404() {
         when(userRepository.findById(9999L)).thenReturn(Optional.empty());
@@ -1794,7 +2041,7 @@ class UserServiceImplTest {
     @DisplayName("getAllUsers paginated when database returns empty page should return empty content")
     void getAllUsers_paginated_whenDatabaseEmpty_shouldReturnEmptyList() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
         Page<User> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
         when(userRepository.findAll(any(Pageable.class))).thenReturn(emptyPage);
 
@@ -1826,7 +2073,7 @@ class UserServiceImplTest {
     @DisplayName("getAllUsers without Salesforce delegate should fetch directly from MySQL database")
     void getAllUsers_whenSalesforceDelegateNull_shouldFetchFromMySQL() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
         when(userRepository.findAll()).thenReturn(List.of(user1));
         when(rewardRepository.findByUserUuidIn(List.of(uuid1))).thenReturn(List.of());
 
@@ -2002,7 +2249,7 @@ class UserServiceImplTest {
     @DisplayName("updateUser when salesforceSyncDelegate is null should update without attempting Salesforce sync")
     void updateUser_whenSalesforceDelegateNull_shouldUpdateWithoutSync() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
         User existing = User.builder().id(1L).uuid(uuid1).name("Original Name").email("orig@example.com").build();
         when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
@@ -2021,7 +2268,7 @@ class UserServiceImplTest {
     @DisplayName("deleteUser when salesforceSyncDelegate is null should delete from MySQL without throwing")
     void deleteUser_whenSalesforceDelegateNull_shouldDeleteFromMySQL() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
 
         assertDoesNotThrow(() -> serviceWithoutSF.deleteUser(1L));
@@ -2086,7 +2333,7 @@ class UserServiceImplTest {
     @DisplayName("updateUserRole when salesforceSyncDelegate is null should update role in MySQL without error")
     void updateUserRole_whenSalesforceDelegateNull_shouldUpdateRoleInMySQL() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
         User user = User.builder().id(1L).uuid(uuid1).email("test@example.com").role(RoleEnum.USER).build();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
@@ -2283,7 +2530,7 @@ class UserServiceImplTest {
                 .header("alg", "none")
                 .claim("sub", "auth0|custom-namespace-name")
                 .claim("email", "nsname@example.com")
-                .claim("https://library.kovanlabs.com/name", "Namespaced Name")
+                .claim("https://library-management.com/name", "Namespaced Name")
                 .build();
         JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
 
@@ -2330,7 +2577,7 @@ class UserServiceImplTest {
                 .header("alg", "none")
                 .claim("sub", "auth0|nsemail")
                 .claim("email", "   ")
-                .claim("https://library.kovanlabs.com/email", "nsemail@example.com")
+                .claim("https://library-management.com/email", "nsemail@example.com")
                 .claim("name", "NS Email")
                 .build();
         JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
@@ -2342,8 +2589,8 @@ class UserServiceImplTest {
     }
 
     @Test
-    @DisplayName("getCurrentUser with JWT when both standard and kovanlabs email blank should use library-management email claim")
-    void getCurrentUser_whenStandardAndKovanlabsEmailBlank_shouldUseManagementEmail() {
+    @DisplayName("getCurrentUser with JWT when standard email is empty string should use namespaced email claim")
+    void getCurrentUser_whenStandardEmailEmptyString_shouldUseManagementEmail() {
         User user = User.builder().id(807L).uuid("u-807").name("Mgmt Email").email("mgmt@example.com").status(AccountStatus.ACTIVE).build();
         when(userProviderRepository.findByProviderId("auth0|mgmt-email")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("mgmt@example.com")).thenReturn(Optional.of(user));
@@ -2352,7 +2599,6 @@ class UserServiceImplTest {
                 .header("alg", "none")
                 .claim("sub", "auth0|mgmt-email")
                 .claim("email", "")
-                .claim("https://library.kovanlabs.com/email", "")
                 .claim("https://library-management.com/email", "mgmt@example.com")
                 .claim("name", "Mgmt Email")
                 .build();
@@ -2645,7 +2891,7 @@ class UserServiceImplTest {
                 .header("alg", "none")
                 .claim("sub", "auth0|d-ns")
                 .claim("email", "")
-                .claim("https://library.kovanlabs.com/email", "ns-deact@example.com")
+                .claim("https://library-management.com/email", "ns-deact@example.com")
                 .build();
         JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority("ROLE_USER")));
 
@@ -2764,7 +3010,7 @@ class UserServiceImplTest {
     @DisplayName("getReactivationRequests when salesforceSyncDelegate is null should fetch from MySQL")
     void getReactivationRequests_whenSalesforceDelegateNull_shouldFetchFromMySQL() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
         User user = User.builder().id(830L).uuid("u-830").email("req-nosf@example.com")
                 .status(AccountStatus.DEACTIVATED).reactivationRequestStatus(ReactivationRequestStatus.PENDING).build();
         when(userRepository.findByReactivationRequestStatusIsNotNull()).thenReturn(List.of(user));
@@ -2951,7 +3197,7 @@ class UserServiceImplTest {
     @DisplayName("deactivateUser when rewardRepository is null should not fail")
     void deactivateUser_whenRewardRepositoryIsNull_shouldNotFail() {
         UserServiceImpl serviceWithoutRewardRepo = new UserServiceImpl(
-                userRepository, userProviderRepository, null, fineRepository, salesforceSyncDelegate);
+                userRepository, userProviderRepository, null, fineRepository, salesforceSyncDelegate, accountDeactivationService);
         User user = User.builder().id(851L).uuid("u-851").email("no-reward-repo@example.com").status(AccountStatus.ACTIVE).build();
         when(userRepository.findById(851L)).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
@@ -2967,7 +3213,7 @@ class UserServiceImplTest {
     @DisplayName("reactivateUser when salesforceSyncDelegate is null should update in MySQL without error")
     void reactivateUser_whenSalesforceDelegateNull_shouldUpdateInMySQL() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
         User user = User.builder().id(852L).uuid("u-852").email("react-nosf@example.com")
                 .status(AccountStatus.DEACTIVATED).reactivationRequestStatus(ReactivationRequestStatus.PENDING).build();
         when(userRepository.findById(852L)).thenReturn(Optional.of(user));

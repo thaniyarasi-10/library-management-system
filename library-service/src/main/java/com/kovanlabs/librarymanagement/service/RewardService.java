@@ -50,7 +50,7 @@ public class RewardService {
         Map<String, Long> pointsPerUser = eligibleBorrows.stream()
                 .filter(b -> Objects.nonNull(b.getUser())
                         && Objects.nonNull(b.getUser().getUuid())
-                        && b.getUser().getStatus() != AccountStatus.DEACTIVATED)
+                        && b.getUser().getStatus() == AccountStatus.ACTIVE)
                 .collect(Collectors.groupingBy(b -> b.getUser().getUuid(), Collectors.counting()));
 
         // Increment user reward points using rewardRepository and sync to Salesforce

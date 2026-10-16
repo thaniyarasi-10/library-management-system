@@ -15,7 +15,8 @@ import java.util.Set;
 
 public class Auth0AuthoritiesConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
 
-    public static final String DEFAULT_ROLES_CLAIM = "https://library.kovanlabs.com/roles";
+    public static final String DEFAULT_CLAIM_NAMESPACE = "https://library-management.com";
+    public static final String DEFAULT_ROLES_CLAIM = DEFAULT_CLAIM_NAMESPACE + "/roles";
     public static final String PERMISSIONS_CLAIM = "permissions";
     public static final String STANDARD_ROLES_CLAIM = "roles";
 

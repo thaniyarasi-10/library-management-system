@@ -175,7 +175,7 @@ public interface UserMapper {
     @Mapping(target = "lastLoginAt", expression = "java(Objects.nonNull(user.getLastLoginAt()) ? user.getLastLoginAt().toString() : null)")
     @Mapping(target = "reactivationRequestStatus", expression = "java(Objects.nonNull(user.getReactivationRequestStatus()) ? user.getReactivationRequestStatus().name() : null)")
     @Mapping(target = "inactivityWarningSentAt", expression = "java(Objects.nonNull(user.getInactivityWarningSentAt()) ? user.getInactivityWarningSentAt().toString() : null)")
-    @Mapping(target = "reward", expression = "java(AccountStatus.DEACTIVATED.equals(user.getStatus()) ? Integer.valueOf(0) : null)")
+    @Mapping(target = "reward", expression = "java((AccountStatus.DEACTIVATED.equals(user.getStatus()) || AccountStatus.PERMANENTLY_DEACTIVATED.equals(user.getStatus())) ? Integer.valueOf(0) : null)")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     ContactSObject toContactSObject(User user);

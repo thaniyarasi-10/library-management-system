@@ -12,6 +12,7 @@ import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import com.kovanlabs.librarymanagement.user.mapping.UserMapper;
+import com.kovanlabs.librarymanagement.user.service.AccountDeactivationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -47,10 +48,13 @@ public class AccountInactivityService {
 
     public static final int WARNING_THRESHOLD_DAYS = INACTIVITY_DAYS - WARNING_DAYS_BEFORE;
 
+    public static final int REACTIVATION_DEADLINE_DAYS = 10;
+
     private final NotificationFactory notificationFactory;
     private final UserRepository userRepository;
     private final RewardRepository rewardRepository;
     private final SalesforceSync salesforceSyncDelegate;
+    private final AccountDeactivationService deactivationService;
 
     /**
      * Executes the daily batch processing of account inactivity using optimized, targeted database queries.
@@ -108,6 +112,9 @@ public class AccountInactivityService {
             }
         }
 
+        // 4. Process deactivated accounts exceeding 10-day reactivation window without request
+        processPermanentlyDeactivatedAccounts();
+
         log.info("Completed batch account inactivity processing successfully");
     }
 
@@ -153,44 +160,59 @@ public class AccountInactivityService {
      * @param inactiveDays Total elapsed inactive days
      */
     private void deactivateUser(User user, long inactiveDays) {
-        log.info("User {} (ID: {}) inactive for {} days (threshold: {}). Deactivating account in MySQL.",
-                user.getEmail(), user.getId(), inactiveDays, INACTIVITY_DAYS);
+        User freshUser = userRepository.findById(user.getId()).orElse(user);
+        if (freshUser.getStatus() != AccountStatus.ACTIVE) {
+            log.info("User ID {} status is no longer ACTIVE ({}); skipping deactivation.", freshUser.getId(), freshUser.getStatus());
+            return;
+        }
+        LocalDateTime freshBaseline = determineInactivityBaseline(freshUser);
+        long freshInactiveDays = Duration.between(freshBaseline, LocalDateTime.now()).toDays();
+        if (freshInactiveDays < INACTIVITY_DAYS) {
+            log.info("User ID {} logged in or became active recently (inactive days: {}); skipping deactivation.",
+                    freshUser.getId(), freshInactiveDays);
+            return;
+        }
 
-        user.setStatus(AccountStatus.DEACTIVATED);
-        user.setReactivationRequestStatus(null);
-        if (Objects.nonNull(rewardRepository) && Objects.nonNull(user.getUuid())) {
-            int updated = rewardRepository.resetPoints(user.getUuid());
+        log.info("User {} (ID: {}) inactive for {} days (threshold: {}). Deactivating account in MySQL.",
+                freshUser.getEmail(), freshUser.getId(), freshInactiveDays, INACTIVITY_DAYS);
+
+        freshUser.setStatus(AccountStatus.DEACTIVATED);
+        LocalDateTime effectiveDeactivationDate = freshBaseline.plusDays(INACTIVITY_DAYS);
+        freshUser.setDeactivatedAt(effectiveDeactivationDate.isBefore(LocalDateTime.now()) ? effectiveDeactivationDate : LocalDateTime.now());
+        freshUser.setReactivationRequestStatus(null);
+        if (Objects.nonNull(rewardRepository) && Objects.nonNull(freshUser.getUuid())) {
+            int updated = rewardRepository.resetPoints(freshUser.getUuid());
             if (updated == 0) {
                 rewardRepository.save(Reward.builder()
-                        .userUuid(user.getUuid())
+                        .userUuid(freshUser.getUuid())
                         .points(0)
                         .build());
             }
-            log.info("Reset reward points to 0 in MySQL for inactive user [ID: {}, UUID: {}]", user.getId(), user.getUuid());
+            log.info("Reset reward points to 0 in MySQL for inactive user [ID: {}, UUID: {}]", freshUser.getId(), freshUser.getUuid());
         }
-        userRepository.save(user);
-        syncUserToSalesforce(user);
+        userRepository.save(freshUser);
+        syncUserToSalesforce(freshUser);
 
         log.info("Successfully deactivated user account in MySQL and initiated Salesforce sync [ID: {}, Email: {}]",
-                user.getId(), user.getEmail());
+                freshUser.getId(), freshUser.getEmail());
 
         try {
             NotificationRequest deactivationNotice = new NotificationRequest(
-                    user.getEmail(),
+                    freshUser.getEmail(),
                     "Notice: Account Deactivated - Library Management System",
                     null,
-                    user.getName(),
+                    freshUser.getName(),
                     null,
                     null,
                     EmailTemplateType.ACCOUNT_DEACTIVATED,
-                    inactiveDays,
+                    freshInactiveDays,
                     null,
                     null
             );
             notificationFactory.get(NotificationTypeEnum.EMAIL).send(deactivationNotice);
-            log.info("Dispatched account deactivation email notification to {}", user.getEmail());
+            log.info("Dispatched account deactivation email notification to {}", freshUser.getEmail());
         } catch (Exception e) {
-            log.error("Failed to send account deactivation email to {}: {}", user.getEmail(), e.getMessage(), e);
+            log.error("Failed to send account deactivation email to {}: {}", freshUser.getEmail(), e.getMessage(), e);
         }
     }
 
@@ -268,15 +290,36 @@ public class AccountInactivityService {
      * @param user The user entity
      * @return The determined baseline {@link LocalDateTime}
      */
-    private LocalDateTime determineInactivityBaseline(User user) {
+    public LocalDateTime determineInactivityBaseline(User user) {
+        if (Objects.isNull(user)) {
+            return LocalDateTime.now();
+        }
         if (Objects.nonNull(user.getLastLoginAt())) {
             return user.getLastLoginAt();
         }
         if (Objects.nonNull(user.getCreatedAt())) {
-            log.debug("User {} has null lastLoginAt, using createdAt as baseline: {}",
-                    user.getEmail(), user.getCreatedAt());
             return user.getCreatedAt();
         }
         return LocalDateTime.now();
+    }
+
+    /**
+     * Identifies accounts that have been deactivated for &ge; 10 days without a pending reactivation request,
+     * updates their status to {@link AccountStatus#PERMANENTLY_DEACTIVATED} in MySQL, and synchronizes the updated status to Salesforce.
+     * Delegates to {@link AccountDeactivationService#processExpiredDeactivations()}.
+     */
+    @Transactional
+    public void processPermanentlyDeactivatedAccounts() {
+        deactivationService.processExpiredDeactivations();
+    }
+
+    /**
+     * Updates an individual user to PERMANENTLY_DEACTIVATED, persists to MySQL, and syncs to Salesforce.
+     * Delegates to {@link AccountDeactivationService#permanentlyDeactivateUser(User)}.
+     *
+     * @param user The user entity to permanently deactivate
+     */
+    public void permanentlyDeactivateUser(User user) {
+        deactivationService.permanentlyDeactivateUser(user);
     }
 }
