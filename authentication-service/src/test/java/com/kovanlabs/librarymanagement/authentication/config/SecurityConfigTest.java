@@ -180,7 +180,7 @@ class SecurityConfigTest {
     @Test
     void protectedEndpoint_whenValidTokenWithRoleAdmin_shouldBeAllowed() throws Exception {
         Jwt jwt = createJwtWithClaims(Map.of(
-                "https://library.kovanlabs.com/roles", List.of("admin")
+                "https://library-management.com/roles", List.of("admin")
         ));
         when(mockJwtDecoder.decode("admin-token")).thenReturn(jwt);
 
@@ -193,7 +193,7 @@ class SecurityConfigTest {
     void protectedEndpoint_whenValidTokenLacksRequiredPermission_shouldReturn403() throws Exception {
         Jwt jwt = createJwtWithClaims(Map.of(
                 "permissions", List.of("books:read"),
-                "https://library.kovanlabs.com/roles", List.of("user")
+                "https://library-management.com/roles", List.of("user")
         ));
         when(mockJwtDecoder.decode("user-token")).thenReturn(jwt);
 

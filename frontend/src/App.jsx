@@ -4,7 +4,7 @@ import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
-  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock
+  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock, Clock
 } from 'lucide-react';
 import './styles.css';
 
@@ -93,6 +93,7 @@ export default function App() {
   } = useAuth0();
 
   const [currentUser, setCurrentUser] = useState(null);
+  const [isUserSyncing, setIsUserSyncing] = useState(false);
   const [userRole, setUserRole] = useState('');
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [authMode, setAuthMode] = useState('signin');
@@ -126,6 +127,7 @@ export default function App() {
   const [reactivationRequests, setReactivationRequests] = useState([]);
   const [reactivationTab, setReactivationTab] = useState('PENDING');
   const [requestingReactivation, setRequestingReactivation] = useState(false);
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
 
   // Borrows
   const [adminBorrows, setAdminBorrows] = useState([]);
@@ -251,6 +253,9 @@ export default function App() {
     if (!isAuthenticated) return;
     try {
       let reqHeaders = {};
+      if (auth0User && auth0User.email) {
+        reqHeaders['X-User-Email'] = auth0User.email.trim();
+      }
       const pendingUsername = sessionStorage.getItem('auth0_pending_username');
       if (pendingUsername && pendingUsername.trim()) {
         reqHeaders['X-User-Username'] = pendingUsername.trim();
@@ -264,17 +269,19 @@ export default function App() {
     } catch (err) {
       console.warn('Error refreshing user profile:', err);
     }
-  }, [isAuthenticated, fetchApi]);
+  }, [isAuthenticated, auth0User, fetchApi]);
 
   // Auth Initialization and User Sync
   useEffect(() => {
     if (!isAuthenticated) {
       userFetchedRef.current = false;
+      setIsUserSyncing(false);
       return;
     }
 
     if (userFetchedRef.current) return;
     userFetchedRef.current = true;
+    setIsUserSyncing(true);
 
     // Helper to test if a value indicates ADMIN
     const checkIsAdmin = (claim) => {
@@ -298,8 +305,8 @@ export default function App() {
     const findRoleFromUser = (userObj) => {
       if (!userObj) return false;
       const candidates = [
-        userObj['https://library.kovanlabs.com/roles'],
-        userObj['https://library.kovanlabs.com/role'],
+        userObj['https://library-management.com/roles'],
+        userObj['https://library-management.com/role'],
         userObj['roles'],
         userObj['role'],
         userObj['permissions'],
@@ -316,46 +323,55 @@ export default function App() {
 
     // Also inspect Access Token JWT & sync user profile with backend MySQL via GET /user/me
     const syncUser = async () => {
-      // Check Access Token JWT for roles if ID token didn't have it
-      if (!isAdmin && getAccessTokenSilently) {
-        try {
-          const token = await getAccessTokenSilently();
-          if (token && token.includes('.')) {
-            const decoded = jwtDecode(token);
-            if (findRoleFromUser(decoded)) {
-              isAdmin = true;
-              setUserRole('ADMIN');
+      try {
+        // Check Access Token JWT for roles if ID token didn't have it
+        if (!isAdmin && getAccessTokenSilently) {
+          try {
+            const token = await getAccessTokenSilently();
+            if (token && token.includes('.')) {
+              const decoded = jwtDecode(token);
+              if (findRoleFromUser(decoded)) {
+                isAdmin = true;
+                setUserRole('ADMIN');
+              }
             }
+          } catch (tokErr) {
+            console.warn('Access token decoding error:', tokErr);
           }
-        } catch (tokErr) {
-          console.warn('Access token decoding error:', tokErr);
         }
-      }
 
-      let reqHeaders = {};
-      const pendingUsername = sessionStorage.getItem('auth0_pending_username');
-      if (pendingUsername && pendingUsername.trim()) {
-        reqHeaders['X-User-Username'] = pendingUsername.trim();
-        reqHeaders['X-User-Name'] = pendingUsername.trim();
-      }
-
-      let res = await fetchApi('/user/callback', { method: 'POST', headers: reqHeaders });
-      if (!res.ok) {
-        res = await fetchApi('/user/me', { headers: reqHeaders });
-      }
-      if (res.ok && res.data) {
-        setCurrentUser(res.data);
-        sessionStorage.removeItem('auth0_pending_username');
-        if (!res.data.phone && !sessionStorage.getItem('phone_prompt_dismissed')) {
-          setPromptPhoneForm({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
-          setActiveModal('missingPhonePrompt');
+        let reqHeaders = {};
+        const auth0Email = auth0User?.email || auth0User?.['https://library-management.com/email'];
+        if (auth0Email) {
+          reqHeaders['X-User-Email'] = auth0Email.trim();
         }
-      } else if (auth0User) {
-        setCurrentUser({
-          email: auth0User.email || '',
-          name: auth0User.name || auth0User.nickname || pendingUsername || 'User'
-        });
-        sessionStorage.removeItem('auth0_pending_username');
+        const pendingUsername = sessionStorage.getItem('auth0_pending_username');
+        if (pendingUsername && pendingUsername.trim()) {
+          reqHeaders['X-User-Username'] = pendingUsername.trim();
+          reqHeaders['X-User-Name'] = pendingUsername.trim();
+        }
+
+        let res = await fetchApi('/user/callback', { method: 'POST', headers: reqHeaders });
+        if (!res.ok) {
+          res = await fetchApi('/user/me', { headers: reqHeaders });
+        }
+        if (res.ok && res.data) {
+          setCurrentUser(res.data);
+          sessionStorage.removeItem('auth0_pending_username');
+          if (!res.data.phone && !sessionStorage.getItem('phone_prompt_dismissed')) {
+            setPromptPhoneForm({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
+            setActiveModal('missingPhonePrompt');
+          }
+        } else {
+          showToast(res.data?.message || 'Failed to synchronize account profile with backend server.', 'error');
+          setCurrentUser(null);
+        }
+      } catch (syncErr) {
+        console.error('Error during user synchronization:', syncErr);
+        showToast('Error synchronizing account profile.', 'error');
+        setCurrentUser(null);
+      } finally {
+        setIsUserSyncing(false);
       }
     };
 
@@ -364,7 +380,7 @@ export default function App() {
 
   // Load Page Data on Change - Only fetch what is required for current page
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !currentUser || currentUser.status === 'DEACTIVATED' || currentUser.status === 'PERMANENTLY_DEACTIVATED') return;
     if (currentPage === 'dashboard') {
       loadDashboard();
     } else if (currentPage === 'books') {
@@ -380,10 +396,11 @@ export default function App() {
     } else if (currentPage === 'donations') {
       loadDonations();
     }
-  }, [currentPage, isAuthenticated, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
+  }, [currentPage, isAuthenticated, currentUser, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
 
   const handleSignOut = () => {
     userFetchedRef.current = false;
+    setIsUserSyncing(false);
     setCurrentUser(null);
     setUserRole('');
     setCurrentPage('dashboard');
@@ -812,26 +829,43 @@ export default function App() {
     if (res.ok) {
       showToast(`Member "${name}" reactivated successfully`, 'success');
       await loadMembers(membersPage, memberSearchQuery);
+      const reqRes = await fetchApi('/user/reactivation-requests');
+      if (reqRes.ok && Array.isArray(reqRes.data)) {
+        setReactivationRequests(reqRes.data);
+      }
     } else {
       showToast(res.data?.message || 'Failed to reactivate member', 'error');
       await loadMembers(membersPage, memberSearchQuery);
+      const reqRes = await fetchApi('/user/reactivation-requests');
+      if (reqRes.ok && Array.isArray(reqRes.data)) {
+        setReactivationRequests(reqRes.data);
+      }
     }
   };
 
   const handleRejectReactivation = async (userId, name) => {
-    setReactivationRequests(prev => prev.map(r => {
-      if (r.id === userId || r.uuid === userId) {
-        return { ...r, status: 'DEACTIVATED', reactivationRequestStatus: 'REJECTED', reactivationRequested: false };
-      }
-      return r;
-    }));
     const res = await fetchApi(`/user/${userId}/reject-reactivation`, { method: 'POST' });
     if (res.ok) {
+      const updatedStatus = res.data?.status || 'DEACTIVATED';
+      setReactivationRequests(prev => prev.map(r => {
+        if (r.id === userId || r.uuid === userId) {
+          return { ...r, status: updatedStatus, reactivationRequestStatus: 'REJECTED', reactivationRequested: false };
+        }
+        return r;
+      }));
       showToast(`Reactivation request for "${name}" rejected`, 'info');
       await loadMembers(membersPage, memberSearchQuery);
+      const reqRes = await fetchApi('/user/reactivation-requests');
+      if (reqRes.ok && Array.isArray(reqRes.data)) {
+        setReactivationRequests(reqRes.data);
+      }
     } else {
       showToast(res.data?.message || 'Failed to reject reactivation request', 'error');
       await loadMembers(membersPage, memberSearchQuery);
+      const reqRes = await fetchApi('/user/reactivation-requests');
+      if (reqRes.ok && Array.isArray(reqRes.data)) {
+        setReactivationRequests(reqRes.data);
+      }
     }
   };
 
@@ -1253,8 +1287,8 @@ export default function App() {
     }
   };
 
-  // Render loading screen while Auth0 verifies session
-  if (isLoading) {
+  // Render loading screen while Auth0 verifies session or profile is synchronizing
+  if (isLoading || (isAuthenticated && (isUserSyncing || !currentUser))) {
     return (
       <div className="auth-screen">
         <div className="auth-card" style={{ textAlign: 'center', padding: '48px 32px' }}>
@@ -1265,8 +1299,12 @@ export default function App() {
             <h1 className="brand-title">Padips</h1>
           </div>
           <RefreshCw className="animate-spin mb-4" size={32} style={{ margin: '0 auto', color: '#6366f1' }} />
-          <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Authenticating session...</h3>
-          <p style={{ color: '#888', fontSize: '14px' }}>Connecting to Auth0 Identity Provider</p>
+          <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>
+            {isLoading ? 'Authenticating session...' : 'Loading profile...'}
+          </h3>
+          <p style={{ color: '#888', fontSize: '14px' }}>
+            {isLoading ? 'Connecting to Auth0 Identity Provider' : 'Verifying account status and permissions'}
+          </p>
         </div>
       </div>
     );
@@ -1435,9 +1473,33 @@ export default function App() {
     );
   }
 
+  // Render error screen if authenticated but profile synchronization failed
+  if (isAuthenticated && !currentUser) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card" style={{ textAlign: 'center', padding: '48px 32px' }}>
+          <div className="auth-brand" style={{ justifyContent: 'center', marginBottom: '24px' }}>
+            <div className="brand-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Lock size={28} />
+            </div>
+            <h1 className="brand-title">Padips</h1>
+          </div>
+          <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px', color: '#ef4444' }}>Profile Synchronization Failed</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '24px' }}>
+            Unable to load your account profile from the server. Please sign in again.
+          </p>
+          <button type="button" className="btn btn-primary" onClick={handleSignOut}>
+            Sign Out & Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Render Deactivated or Permanently Deactivated Account Screen
   if (currentUser && (currentUser.status === 'DEACTIVATED' || currentUser.status === 'PERMANENTLY_DEACTIVATED')) {
-    const isPermanentlyDeactivated = currentUser.status === 'PERMANENTLY_DEACTIVATED';
+    const isPending = currentUser.reactivationRequestStatus === 'PENDING' || currentUser.reactivationRequested;
+    const isPermanentlyDeactivated = currentUser.status === 'PERMANENTLY_DEACTIVATED' && !isPending;
 
     const handleReactivateRequest = async () => {
       setRequestingReactivation(true);
@@ -1455,22 +1517,50 @@ export default function App() {
       }
     };
 
+    const handleRefreshStatus = async () => {
+      setRefreshingStatus(true);
+      const res = await fetchApi('/user/me');
+      setRefreshingStatus(false);
+      if (res.ok && res.data) {
+        setCurrentUser(res.data);
+        if (res.data.status === 'ACTIVE') {
+          showToast('Your account has been reactivated! Welcome back.', 'success');
+        } else {
+          showToast('Account status updated.', 'info');
+        }
+      } else {
+        showToast('Failed to refresh status.', 'error');
+      }
+    };
+
     return (
       <div className="auth-screen">
         <div className="auth-card" style={{ maxWidth: '540px', textAlign: 'center', padding: '36px' }}>
           <div className="auth-brand" style={{ marginBottom: '24px' }}>
             <div className="brand-icon" style={{
-              background: isPermanentlyDeactivated ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.15)',
-              color: '#ef4444',
+              background: isPermanentlyDeactivated
+                ? 'rgba(239, 68, 68, 0.2)'
+                : isPending
+                ? 'rgba(245, 158, 11, 0.2)'
+                : 'rgba(239, 68, 68, 0.15)',
+              color: isPermanentlyDeactivated ? '#ef4444' : isPending ? '#f59e0b' : '#ef4444',
               margin: '0 auto 16px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              {isPermanentlyDeactivated ? <Lock size={32} /> : <Shield size={32} />}
+              {isPermanentlyDeactivated ? <Lock size={32} /> : isPending ? <Clock size={32} /> : <Shield size={32} />}
             </div>
-            <h1 className="brand-title" style={{ fontSize: '24px', fontWeight: 700, color: isPermanentlyDeactivated ? '#ef4444' : undefined }}>
-              {isPermanentlyDeactivated ? 'Account Permanently Deactivated' : 'Account Deactivated'}
+            <h1 className="brand-title" style={{
+              fontSize: '24px',
+              fontWeight: 700,
+              color: isPermanentlyDeactivated ? '#ef4444' : isPending ? '#f59e0b' : undefined
+            }}>
+              {isPermanentlyDeactivated
+                ? 'Account Permanently Deactivated'
+                : isPending
+                ? 'Reactivation Request Pending Review'
+                : 'Account Deactivated'}
             </h1>
             <p className="brand-subtitle" style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
               Logged in as <strong>{currentUser.name || currentUser.email}</strong>
@@ -1487,6 +1577,20 @@ export default function App() {
                   </strong>
                   <span style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-main)', opacity: 0.9 }}>
                     Your account has been permanently deactivated because the 10-day reactivation window has elapsed without an approved reactivation request. Further reactivation requests cannot be submitted. If you believe this is in error, please contact library administration directly.
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : isPending ? (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '18px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.35)' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <Clock size={22} color="#f59e0b" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div>
+                  <strong style={{ display: 'block', fontSize: '15px', marginBottom: '6px', color: '#f59e0b' }}>
+                    Reactivation Request Under Review
+                  </strong>
+                  <span style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-main)', opacity: 0.9 }}>
+                    Your account reactivation request was submitted within the allowable window and is currently awaiting administrator review. Your account will not be permanently deactivated while this request is pending. Once approved by library administration, you will regain full access to your account.
                   </span>
                 </div>
               </div>
@@ -1538,16 +1642,6 @@ export default function App() {
                     {requestingReactivation ? 'Submitting Request...' : 'Submit New Request'}
                   </button>
                 </div>
-              ) : (currentUser.reactivationRequested || currentUser.reactivationRequestStatus === 'PENDING') ? (
-                <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                    <Check size={18} color="#3b82f6" />
-                    <strong style={{ fontSize: '14px', color: '#3b82f6' }}>Reactivation Request Submitted</strong>
-                  </div>
-                  <p style={{ fontSize: '13px', color: 'var(--text-main)', margin: 0 }}>
-                    Your reactivation request has been submitted and is currently awaiting administrator review. Once approved, you will be able to access your dashboard.
-                  </p>
-                </div>
               ) : (
                 <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-subtle)' }}>
                   <strong style={{ display: 'block', fontSize: '14px', marginBottom: '6px' }}>
@@ -1569,7 +1663,17 @@ export default function App() {
             </>
           )}
 
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleRefreshStatus}
+              disabled={refreshingStatus}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <RefreshCw size={16} className={refreshingStatus ? 'spin' : ''} />
+              <span>{refreshingStatus ? 'Checking...' : 'Refresh Status'}</span>
+            </button>
             <button
               type="button"
               className="btn btn-secondary"
@@ -2166,22 +2270,32 @@ export default function App() {
                                 )}
                               </td>
                               <td>
-                                {String(m.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? (
+                                {(m.reactivationRequestStatus === 'PENDING' || m.reactivationRequested) ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                                    <span style={{ color: '#ef4444', fontWeight: '600', fontSize: '13px' }}>
+                                      Deactivated
+                                    </span>
+                                    <span style={{ color: '#f59e0b', fontWeight: '500', fontSize: '11px' }}>
+                                      Pending Review
+                                    </span>
+                                  </div>
+                                ) : String(m.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
                                     <span style={{ color: '#ef4444', fontWeight: '700', fontSize: '12px', background: 'rgba(239, 68, 68, 0.12)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
                                       Permanently Deactivated
                                     </span>
+                                    {m.reactivationRequestStatus === 'REJECTED' && (
+                                      <span style={{ color: '#f87171', fontWeight: '500', fontSize: '11px' }}>
+                                        Request Rejected
+                                      </span>
+                                    )}
                                   </div>
                                 ) : String(m.status || '').toUpperCase() === 'DEACTIVATED' ? (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
                                     <span style={{ color: '#ef4444', fontWeight: '600', fontSize: '13px' }}>
                                       Deactivated
                                     </span>
-                                    {(m.reactivationRequestStatus === 'PENDING' || m.reactivationRequested) ? (
-                                      <span style={{ color: '#f59e0b', fontWeight: '500', fontSize: '11px' }}>
-                                        Pending Review
-                                      </span>
-                                    ) : m.reactivationRequestStatus === 'REJECTED' ? (
+                                    {m.reactivationRequestStatus === 'REJECTED' ? (
                                       <span style={{ color: '#f87171', fontWeight: '500', fontSize: '11px' }}>
                                         Request Rejected
                                       </span>

@@ -29,7 +29,7 @@ class Auth0RoleSyncServiceImplTest {
         auth0Properties = new Auth0Properties();
         auth0Properties.setDomain("dev-test.auth0.com");
         auth0Properties.setAudience("https://library-api.kovanlabs.com");
-        auth0Properties.setRolesClaim("https://library.kovanlabs.com/roles");
+        auth0Properties.setRolesClaim("https://library-management.com/roles");
 
         managementProperties = new Auth0ManagementProperties();
         managementProperties.setClientId("test-client-id");

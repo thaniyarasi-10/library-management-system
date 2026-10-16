@@ -60,12 +60,18 @@ import java.util.stream.Collectors;
 public class UserServiceImpl implements UserService {
 
     public static final int REACTIVATION_RESTRICTION_DAYS = 10;
+    public static final String AUTH0_CLAIM_NAMESPACE = "https://library-management.com";
+    public static final String CLAIM_ROLES = AUTH0_CLAIM_NAMESPACE + "/roles";
+    public static final String CLAIM_ROLE = AUTH0_CLAIM_NAMESPACE + "/role";
+    public static final String CLAIM_EMAIL = AUTH0_CLAIM_NAMESPACE + "/email";
+    public static final String CLAIM_NAME = AUTH0_CLAIM_NAMESPACE + "/name";
 
     private final UserRepository userRepository;
     private final UserProviderRepository userProviderRepository;
     private final RewardRepository rewardRepository;
     private final FineRepository fineRepository;
     private final SalesforceSync salesforceSyncDelegate;
+    private final AccountDeactivationService accountDeactivationService;
 
     /**
      * Maps a single User entity to {@link UserResponse} with reward points and
@@ -568,10 +574,10 @@ public class UserServiceImpl implements UserService {
             String sub = jwt.getSubject();
             String email = jwt.getClaimAsString("email");
             if (Objects.isNull(email) || email.isBlank()) {
-                email = jwt.getClaimAsString("https://library.kovanlabs.com/email");
+                email = jwt.getClaimAsString(CLAIM_EMAIL);
             }
             if (Objects.isNull(email) || email.isBlank()) {
-                email = jwt.getClaimAsString("https://library-management.com/email");
+                email = getHeaderFromRequestContext("X-User-Email");
             }
 
             String customUsername = getHeaderFromRequestContext("X-User-Username");
@@ -587,16 +593,21 @@ public class UserServiceImpl implements UserService {
                 name = jwt.getClaimAsString("nickname");
             }
             if (Objects.isNull(name) || name.isBlank()) {
-                name = jwt.getClaimAsString("https://library.kovanlabs.com/name");
+                name = jwt.getClaimAsString(CLAIM_NAME);
             }
 
             RoleEnum role = extractRoleFromJwt(jwt);
 
             User syncedUser = syncAuth0User(sub, email, name, role);
+            syncedUser = reconcileSalesforcePendingReactivation(syncedUser);
+            syncedUser = checkAndTransitionExpiredDeactivation(syncedUser);
             return toUserResponse(syncedUser);
         }
 
-        return getUserByIdentifier(principal.getName());
+        User user = findUserEntityByIdentifier(principal.getName());
+        user = reconcileSalesforcePendingReactivation(user);
+        user = checkAndTransitionExpiredDeactivation(user);
+        return toUserResponse(user);
     }
 
     /**
@@ -625,10 +636,10 @@ public class UserServiceImpl implements UserService {
             String sub = jwt.getSubject();
             String email = jwt.getClaimAsString("email");
             if (Objects.isNull(email) || email.isBlank()) {
-                email = jwt.getClaimAsString("https://library.kovanlabs.com/email");
+                email = jwt.getClaimAsString(CLAIM_EMAIL);
             }
             if (Objects.isNull(email) || email.isBlank()) {
-                email = jwt.getClaimAsString("https://library-management.com/email");
+                email = getHeaderFromRequestContext("X-User-Email");
             }
 
             String customUsername = getHeaderFromRequestContext("X-User-Username");
@@ -644,7 +655,7 @@ public class UserServiceImpl implements UserService {
                 name = jwt.getClaimAsString("nickname");
             }
             if (Objects.isNull(name) || name.isBlank()) {
-                name = jwt.getClaimAsString("https://library.kovanlabs.com/name");
+                name = jwt.getClaimAsString(CLAIM_NAME);
             }
 
             RoleEnum role = extractRoleFromJwt(jwt);
@@ -654,11 +665,15 @@ public class UserServiceImpl implements UserService {
             user = findUserEntityByIdentifier(principal.getName());
         }
 
+        user = reconcileSalesforcePendingReactivation(user);
+
         if (Objects.nonNull(user) && user.getStatus() == AccountStatus.ACTIVE) {
             user.setLastLoginAt(LocalDateTime.now());
             user.setInactivityWarningSentAt(null);
             user = userRepository.save(user);
             syncUserToSalesforce(user);
+        } else if (Objects.nonNull(user) && user.getStatus() == AccountStatus.DEACTIVATED) {
+            user = checkAndTransitionExpiredDeactivation(user);
         }
 
         return toUserResponse(user);
@@ -674,13 +689,17 @@ public class UserServiceImpl implements UserService {
         if (Objects.isNull(currentUser) || Objects.isNull(currentUser.id())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile not found");
         }
+        if (!"ACTIVE".equalsIgnoreCase(currentUser.status())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Account is " + currentUser.status() + ". Profile updates are restricted to ACTIVE accounts.");
+        }
         return updateUser(currentUser.id(), request);
     }
 
     private RoleEnum extractRoleFromJwt(Jwt jwt) {
         List<String> candidates = new ArrayList<>();
-        candidates.addAll(extractRolesList(jwt.getClaims().get("https://library.kovanlabs.com/roles")));
-        candidates.addAll(extractRolesList(jwt.getClaims().get("https://library.kovanlabs.com/role")));
+        candidates.addAll(extractRolesList(jwt.getClaims().get(CLAIM_ROLES)));
+        candidates.addAll(extractRolesList(jwt.getClaims().get(CLAIM_ROLE)));
         candidates.addAll(extractRolesList(jwt.getClaims().get("roles")));
         candidates.addAll(extractRolesList(jwt.getClaims().get("role")));
         candidates.addAll(extractRolesList(jwt.getClaims().get("permissions")));
@@ -755,7 +774,11 @@ public class UserServiceImpl implements UserService {
     public UserResponse reactivateUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
-        if (user.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED) {
+
+        user = reconcileSalesforcePendingReactivation(user);
+
+        if (user.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED
+                && user.getReactivationRequestStatus() != ReactivationRequestStatus.PENDING) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account is permanently deactivated and cannot be reactivated");
         }
         user.setStatus(AccountStatus.ACTIVE);
@@ -827,8 +850,12 @@ public class UserServiceImpl implements UserService {
             }
             if (Objects.isNull(user)) {
                 String email = jwt.getClaimAsString("email");
+
                 if (Objects.isNull(email) || email.isBlank()) {
-                    email = jwt.getClaimAsString("https://library.kovanlabs.com/email");
+                    email = jwt.getClaimAsString(CLAIM_EMAIL);
+                }
+                if (Objects.isNull(email) || email.isBlank()) {
+                    email = getHeaderFromRequestContext("X-User-Email");
                 }
                 if (Objects.nonNull(email) && !email.isBlank()) {
                     user = userRepository.findByEmail(email).orElse(null);
@@ -852,8 +879,7 @@ public class UserServiceImpl implements UserService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account is not deactivated");
         }
 
-        LocalDateTime deactivationDate = user.getDeactivatedAt() != null ? user.getDeactivatedAt() : user.getUpdatedAt();
-        if (deactivationDate != null && deactivationDate.plusDays(REACTIVATION_RESTRICTION_DAYS).isBefore(LocalDateTime.now())) {
+        if (accountDeactivationService.isReactivationWindowExpired(user)) {
             user.setStatus(AccountStatus.PERMANENTLY_DEACTIVATED);
             user.setReactivationRequestStatus(null);
             User savedUser = userRepository.save(user);
@@ -905,6 +931,22 @@ public class UserServiceImpl implements UserService {
                             .toList();
                     log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} reactivation requests from Salesforce SOQL",
                             filteredContacts.size());
+
+                    for (ContactSObject contact : filteredContacts) {
+                        if ("PENDING".equalsIgnoreCase(contact.getReactivationRequestStatus())) {
+                            findUserByContact(contact).ifPresent(u -> {
+                                if (u.getStatus() != AccountStatus.DEACTIVATED
+                                        || u.getReactivationRequestStatus() != ReactivationRequestStatus.PENDING) {
+                                    u.setStatus(AccountStatus.DEACTIVATED);
+                                    u.setReactivationRequestStatus(ReactivationRequestStatus.PENDING);
+                                    userRepository.save(u);
+                                    log.info("Reconciled MySQL user ID {} ({}) to DEACTIVATED with PENDING request",
+                                            u.getId(), u.getEmail());
+                                }
+                            });
+                        }
+                    }
+
                     return UserMapper.INSTANCE.toUserResponseList(filteredContacts);
                 }
             } catch (Exception e) {
@@ -919,8 +961,10 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * Rejects an account reactivation request for a deactivated user, setting request status to REJECTED
-     * while preserving the DEACTIVATED account status in both MySQL and Salesforce.
+     * Rejects an account reactivation request for a deactivated user, setting request status to REJECTED.
+     * If the 10-day reactivation window has elapsed, sets status to PERMANENTLY_DEACTIVATED;
+     * if still within the 10-day window, sets status to DEACTIVATED.
+     * Persists to MySQL and synchronizes to Salesforce.
      *
      * @param id The primary key identifier of the user whose request is being rejected
      * @return The updated {@link UserResponse}
@@ -932,39 +976,48 @@ public class UserServiceImpl implements UserService {
     public UserResponse rejectReactivation(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
-        user.setStatus(AccountStatus.DEACTIVATED);
-        user.setReactivationRequestStatus(ReactivationRequestStatus.REJECTED);
+
+        user = reconcileSalesforcePendingReactivation(user);
+
+        if (accountDeactivationService.isReactivationWindowExpired(user)) {
+            user.setStatus(AccountStatus.PERMANENTLY_DEACTIVATED);
+            user.setReactivationRequestStatus(ReactivationRequestStatus.REJECTED);
+        } else {
+            user.setStatus(AccountStatus.DEACTIVATED);
+            user.setReactivationRequestStatus(ReactivationRequestStatus.REJECTED);
+        }
         resetUserRewardPoints(user.getUuid());
         User savedUser = userRepository.save(user);
         syncUserToSalesforce(savedUser);
-        log.info("Successfully rejected account reactivation request for user ID: {}, Email: {}", id,
-                savedUser.getEmail());
+        log.info("Successfully rejected account reactivation request for user ID: {}, Email: {}, Status: {}",
+                id, savedUser.getEmail(), savedUser.getStatus());
         return toUserResponse(savedUser);
     }
 
     /**
      * Identifies accounts that have been deactivated for more than 10 days without a pending reactivation request,
      * updates their status to PERMANENTLY_DEACTIVATED in MySQL, and synchronizes the updated status to Salesforce.
+     * Delegates to {@link AccountDeactivationService#processExpiredDeactivations()}.
      *
      * @return The number of accounts permanently deactivated
      */
     @Override
     @Transactional
     public int processExpiredDeactivations() {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(REACTIVATION_RESTRICTION_DAYS);
-        List<User> expiredUsers = userRepository.findUsersEligibleForPermanentDeactivation(AccountStatus.DEACTIVATED, cutoff);
-        if (Objects.nonNull(expiredUsers) && !expiredUsers.isEmpty()) {
-            log.info("Processing {} expired deactivated user(s) for permanent deactivation", expiredUsers.size());
-            for (User user : expiredUsers) {
-                user.setStatus(AccountStatus.PERMANENTLY_DEACTIVATED);
-                user.setReactivationRequestStatus(null);
-                User savedUser = userRepository.save(user);
-                syncUserToSalesforce(savedUser);
-                log.info("Permanently deactivated user account ID: {}, Email: {}", savedUser.getId(), savedUser.getEmail());
-            }
-            return expiredUsers.size();
-        }
-        return 0;
+        return accountDeactivationService.processExpiredDeactivations();
+    }
+
+    /**
+     * Checks if a deactivated user account has exceeded the 10-day reactivation restriction window.
+     * If exceeded, updates the status to {@link AccountStatus#PERMANENTLY_DEACTIVATED}, clears any pending
+     * request status, persists the update to MySQL, and synchronizes to Salesforce.
+     * Delegates to {@link AccountDeactivationService#checkAndTransitionExpiredDeactivation(User)}.
+     *
+     * @param user The user entity to verify
+     * @return The updated user entity
+     */
+    private User checkAndTransitionExpiredDeactivation(User user) {
+        return accountDeactivationService.checkAndTransitionExpiredDeactivation(user);
     }
 
     private String getHeaderFromRequestContext(String headerName) {
@@ -976,5 +1029,67 @@ public class UserServiceImpl implements UserService {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private Optional<User> findUserByContact(ContactSObject contact) {
+        if (Objects.isNull(contact)) {
+            return Optional.empty();
+        }
+        if (Objects.nonNull(contact.getLegacyUserId())) {
+            var byId = userRepository.findById(contact.getLegacyUserId());
+            if (byId.isPresent()) {
+                return byId;
+            }
+        }
+        if (Objects.nonNull(contact.getExternalUserUuid()) && !contact.getExternalUserUuid().isBlank()) {
+            var byUuid = userRepository.findByUuid(contact.getExternalUserUuid());
+            if (byUuid.isPresent()) {
+                return byUuid;
+            }
+        }
+        if (Objects.nonNull(contact.getEmail()) && !contact.getEmail().isBlank()) {
+            return userRepository.findByEmail(contact.getEmail());
+        }
+        return Optional.empty();
+    }
+
+    private User reconcileSalesforcePendingReactivation(User user) {
+        if (Objects.isNull(user) || user.getStatus() == AccountStatus.ACTIVE) {
+            return user;
+        }
+
+        if (user.getStatus() == AccountStatus.DEACTIVATED
+                && user.getReactivationRequestStatus() == ReactivationRequestStatus.PENDING) {
+            return user;
+        }
+
+        if (Objects.nonNull(salesforceSyncDelegate)) {
+            try {
+                var sfContacts = salesforceSyncDelegate.fetchContactsFromSalesforce();
+                if (Objects.nonNull(sfContacts)) {
+                    final Long targetId = user.getId();
+                    final String targetUuid = user.getUuid();
+                    final String targetEmail = user.getEmail();
+
+                    var pendingContactOpt = sfContacts.stream()
+                            .filter(c -> (Objects.equals(c.getLegacyUserId(), targetId)
+                                    || (Objects.nonNull(targetUuid) && Objects.equals(c.getExternalUserUuid(), targetUuid))
+                                    || (Objects.nonNull(targetEmail) && Objects.nonNull(c.getEmail()) && c.getEmail().equalsIgnoreCase(targetEmail)))
+                                    && "PENDING".equalsIgnoreCase(c.getReactivationRequestStatus()))
+                            .findFirst();
+
+                    if (pendingContactOpt.isPresent()) {
+                        log.info("Reconciling user ID {} ({}) from Salesforce PENDING reactivation request.",
+                                targetId, targetEmail);
+                        user.setStatus(AccountStatus.DEACTIVATED);
+                        user.setReactivationRequestStatus(ReactivationRequestStatus.PENDING);
+                        return userRepository.save(user);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to check Salesforce for pending reactivation status: {}", e.getMessage());
+            }
+        }
+        return user;
     }
 }

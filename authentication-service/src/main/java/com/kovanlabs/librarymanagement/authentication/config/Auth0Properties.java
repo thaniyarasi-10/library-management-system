@@ -15,5 +15,7 @@ public class Auth0Properties {
 
     private String audience;
 
+    private String claimNamespace = "https://library-management.com";
+
     private String rolesClaim;
 }

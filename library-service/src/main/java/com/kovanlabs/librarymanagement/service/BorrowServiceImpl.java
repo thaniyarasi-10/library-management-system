@@ -7,6 +7,7 @@ import com.kovanlabs.librarymanagement.mapping.BorrowMapper;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
@@ -57,6 +58,11 @@ public class BorrowServiceImpl implements BorrowService {
         }
 
         User user = resolveUser(borrowRequestDto, userIdentifier);
+
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Account is " + user.getStatus() + ". Only ACTIVE accounts can borrow books.");
+        }
 
         if (!membershipService.hasActiveMembership(user.getUuid())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
@@ -158,6 +164,9 @@ public class BorrowServiceImpl implements BorrowService {
                 .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
                 .or(() -> userRepository.findByEmail(email))
                 .orElse(null);
+        if (Objects.nonNull(user) && user.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Account is permanently deactivated");
+        }
         return (Objects.isNull(user) || Objects.isNull(user.getId()))
                 ? Collections.emptyList()
                 : getBorrowsByUserId(user.getId());

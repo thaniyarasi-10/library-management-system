@@ -89,6 +89,10 @@ public class BookDonationServiceImpl implements BookDonationService {
         }
 
         User user = findUserByIdentifier(userUuid);
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Account is " + user.getStatus() + ". Only ACTIVE accounts can donate books.");
+        }
 
         String coverImageUrl = null;
         String coverImageKey = null;
@@ -136,6 +140,9 @@ public class BookDonationServiceImpl implements BookDonationService {
             return Collections.emptyList();
         }
         User user = findUserByIdentifier(userUuid);
+        if (user.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Account is permanently deactivated");
+        }
         List<BookDonation> donations = bookDonationRepository.findByUser_UuidOrderByCreatedAtDesc(user.getUuid());
         return BookDonationMapper.INSTANCE.mapToResponse(donations);
     }

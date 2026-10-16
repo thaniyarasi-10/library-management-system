@@ -3,6 +3,7 @@ package com.kovanlabs.librarymanagement.service;
 import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
 import com.kovanlabs.librarymanagement.database.entity.Membership;
 import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.MembershipStatus;
 import com.kovanlabs.librarymanagement.database.repository.MembershipRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
@@ -84,6 +85,10 @@ public class MembershipServiceImpl implements MembershipService {
     @Transactional
     public MembershipApplicationResponse applyForMembership(String email) {
         User user = findUserByIdentifier(email);
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Account is " + user.getStatus() + ". Only ACTIVE accounts can apply for membership.");
+        }
 
         boolean exists = membershipRepository.existsByUserUuidAndStatusIn(
                 user.getUuid(),
@@ -146,6 +151,10 @@ public class MembershipServiceImpl implements MembershipService {
         }
 
         User user = findUserByIdentifier(email);
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Account is " + user.getStatus() + ". Only ACTIVE accounts can sign agreements.");
+        }
 
         Membership membership = membershipRepository.findByUuid(membershipUuid)
                 .orElseThrow(
@@ -227,6 +236,9 @@ public class MembershipServiceImpl implements MembershipService {
     @Override
     public MembershipResponseDto getMyMembership(String email) {
         User user = findUserByIdentifier(email);
+        if (user.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Account is permanently deactivated");
+        }
 
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
@@ -248,6 +260,9 @@ public class MembershipServiceImpl implements MembershipService {
     @Transactional
     public MembershipResponseDto cancelMembership(String email) {
         User user = findUserByIdentifier(email);
+        if (user.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Account is permanently deactivated");
+        }
 
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
