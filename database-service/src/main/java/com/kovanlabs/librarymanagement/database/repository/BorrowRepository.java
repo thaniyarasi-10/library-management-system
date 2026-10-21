@@ -22,6 +22,8 @@ public interface BorrowRepository extends JpaRepository<Borrow, String> {
     List<Borrow> findByUser_IdOrderByIdDesc(Long userId);
     List<Borrow> findByUser_UuidOrderByIdDesc(String userUuid);
     long countByUser_UuidAndStatus(String userUuid, BorrowStatus status);
+    long countByUser_UuidAndReturnedDateIsNull(String userUuid);
+    long countByUser_UuidAndStatusNot(String userUuid, BorrowStatus status);
     List<Borrow> findByBook_UuidAndUser_Uuid(String bookUuid, String userUuid);
     Optional<Borrow> findFirstByBook_UuidAndUser_UuidOrderByDueDateDesc(String bookUuid, String userUuid);
     List<Borrow> findBySalesforceSyncStatus(SalesforceSyncStatus salesforceSyncStatus);

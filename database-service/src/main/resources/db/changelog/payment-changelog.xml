@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="1-create-payment-table" author="thani">
+        <createTable tableName="payment">
+
+            <column name="uuid" type="char(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" unique="true"/>
+            </column>
+
+            <column name="user_uuid" type="char(36)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="transaction_type" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="payment_type" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="razorpay_order_id" type="varchar(100)">
+                <constraints nullable="true"/>
+            </column>
+
+            <column name="razorpay_payment_id" type="varchar(100)">
+                <constraints nullable="true"/>
+            </column>
+
+            <column name="razorpay_refund_id" type="varchar(100)">
+                <constraints nullable="true"/>
+            </column>
+
+            <column name="payment_uuid" type="char(36)">
+                <constraints nullable="true"/>
+            </column>
+
+            <column name="reference_id" type="varchar(100)">
+                <constraints nullable="true"/>
+            </column>
+
+            <column name="amount" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="status" type="varchar(30)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="created_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="updated_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+
+        </createTable>
+    </changeSet>
+
+</databaseChangeLog>

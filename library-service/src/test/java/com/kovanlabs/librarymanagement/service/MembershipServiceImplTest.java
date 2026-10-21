@@ -216,9 +216,60 @@ class MembershipServiceImplTest {
         MembershipResponseDto result = membershipService.signAgreement(memUuid, file, email);
 
         assertNotNull(result);
-        assertEquals("ACTIVE", result.status());
+        assertEquals("PENDING", result.status());
+        assertTrue(result.isSigned());
         verify(s3Service).uploadFileBytes(eq("test-bucket"), eq("us-east-1"), anyString(), any(byte[].class), eq("application/pdf"));
         verify(membershipRepository).save(any(Membership.class));
+    }
+
+    @Test
+    void testActivateMembership_success() {
+        String memUuid = UUID.randomUUID().toString();
+        Membership pendingMembership = Membership.builder()
+                .uuid(memUuid)
+                .userUuid(userUuid)
+                .status(MembershipStatus.PENDING)
+                .signed(true)
+                .build();
+
+        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+                .thenReturn(Optional.of(pendingMembership));
+        when(membershipRepository.save(any(Membership.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MembershipResponseDto activated = membershipService.activateMembership(userUuid);
+
+        assertNotNull(activated);
+        assertEquals("ACTIVE", activated.status());
+        assertEquals(LocalDate.now().plusYears(1), activated.expiryDate());
+        verify(membershipRepository).save(pendingMembership);
+    }
+
+    @Test
+    void testActivateMembership_alreadyActive_returnsExisting() {
+        String memUuid = UUID.randomUUID().toString();
+        Membership activeMembership = Membership.builder()
+                .uuid(memUuid)
+                .userUuid(userUuid)
+                .status(MembershipStatus.ACTIVE)
+                .signed(true)
+                .build();
+
+        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+                .thenReturn(Optional.of(activeMembership));
+
+        MembershipResponseDto activated = membershipService.activateMembership(userUuid);
+
+        assertNotNull(activated);
+        assertEquals("ACTIVE", activated.status());
+        verify(membershipRepository, never()).save(any());
+    }
+
+    @Test
+    void testActivateMembership_notFound_throwsException() {
+        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+                .thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> membershipService.activateMembership(userUuid));
     }
 
     @Test

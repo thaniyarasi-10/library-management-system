@@ -204,17 +204,14 @@ public class MembershipServiceImpl implements MembershipService {
             s3Service.uploadFileBytes(membershipBucketName, membershipBucketRegion, pdfKey, pdfBytes,
                     "application/pdf");
 
-            membership.setStatus(MembershipStatus.ACTIVE);
+            membership.setStatus(MembershipStatus.PENDING);
             membership.setSigned(true);
             membership.setSignedAt(LocalDateTime.now());
-            membership.setActivatedAt(LocalDateTime.now());
-            membership.setExpiryDate(LocalDate.now().plusYears(1));
             membership.setSignedPdfKey(pdfKey);
 
             Membership updated = membershipRepository.save(membership);
-            log.info("Membership activated successfully for user: {} with ID: {}", email, updated.getMembershipId());
-
-            evictActiveMembershipCache(user.getUuid());
+            log.info("Membership agreement signed for user: {} with ID: {}. Pending payment verification.",
+                    email, updated.getMembershipId());
 
             return MembershipMapper.INSTANCE.mapToResponse(updated);
 
@@ -402,5 +399,40 @@ public class MembershipServiceImpl implements MembershipService {
             builder.run();
             return os.toByteArray();
         }
+    }
+
+    /**
+     * Activates a pending, signed membership for one year following successful payment verification.
+     *
+     * @param userUuid The user's unique UUID
+     * @return The updated active {@link MembershipResponseDto}
+     */
+    @Override
+    @Transactional
+    public MembershipResponseDto activateMembership(String userUuid) {
+        Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
+                userUuid,
+                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "No membership application found for user: " + userUuid));
+
+        if (!membership.isSigned()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Membership agreement must be digitally signed before activation");
+        }
+
+        if (membership.getStatus() == MembershipStatus.ACTIVE) {
+            log.info("Membership already active for userUuid: {}", userUuid);
+            return MembershipMapper.INSTANCE.mapToResponse(membership);
+        }
+
+        membership.setStatus(MembershipStatus.ACTIVE);
+        membership.setActivatedAt(LocalDateTime.now());
+        membership.setExpiryDate(LocalDate.now().plusYears(1));
+        Membership saved = membershipRepository.save(membership);
+
+        evictActiveMembershipCache(userUuid);
+        log.info("Membership activated successfully for userUuid: {} with ID: {}", userUuid, saved.getMembershipId());
+        return MembershipMapper.INSTANCE.mapToResponse(saved);
     }
 }

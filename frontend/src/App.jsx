@@ -140,6 +140,10 @@ export default function App() {
   const [selectedFineMemberId, setSelectedFineMemberId] = useState('');
   const [fineTotalBalance, setFineTotalBalance] = useState(0);
 
+  // Payments & Refunds
+  const [paymentResult, setPaymentResult] = useState(null); // { type: 'success' | 'error' | 'warning' | 'info', title: string, message: string }
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
   // Membership
   const [membership, setMembership] = useState(null);
   const [agreementText, setAgreementText] = useState('');
@@ -181,6 +185,28 @@ export default function App() {
   const rejectedRequestsCount = reactivationRequests.filter(r => r.reactivationRequestStatus === 'REJECTED').length;
 
   const baseUrl = '/api';
+
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (window.Razorpay) {
+        resolve(true);
+        return;
+      }
+      const existing = document.getElementById('razorpay-checkout-js');
+      if (existing) {
+        existing.onload = () => resolve(true);
+        existing.onerror = () => resolve(false);
+        return;
+      }
+      const script = document.createElement('script');
+      script.id = 'razorpay-checkout-js';
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
 
   const showToast = (message, type = 'info') => {
     const id = Date.now();
@@ -1090,12 +1116,98 @@ export default function App() {
 
   const handlePayFine = async (fineId) => {
     if (!fineId) return;
-    const res = await fetchApi(`/fines/${fineId}/pay`, { method: 'POST' });
-    if (res.ok) {
-      showToast('Fine payment processed successfully', 'success');
-      loadFines();
-    } else {
-      showToast(res.data?.message || 'Failed to settle fine', 'error');
+    setIsProcessingPayment(true);
+    try {
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) {
+        showToast('Could not load Razorpay payment gateway. Please check your network connection.', 'error');
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      const res = await fetchApi(`/payments/fine/${fineId}/order`, { method: 'POST' });
+      if (!res.ok || !res.data) {
+        showToast(res.data?.message || 'Failed to initialize fine payment order', 'error');
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      const orderData = res.data;
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: 'INR',
+        name: 'Padips Athenaeum',
+        description: orderData.description || `Overdue Book Fine Payment #${fineId}`,
+        order_id: orderData.orderId,
+        prefill: {
+          name: currentUser?.name || '',
+          email: currentUser?.email || '',
+          contact: currentUser?.phone || ''
+        },
+        theme: {
+          color: '#6366f1'
+        },
+        handler: async function (response) {
+          try {
+            const verifyRes = await fetchApi('/payments/verify', {
+              method: 'POST',
+              body: JSON.stringify({
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature
+              })
+            });
+
+            if (verifyRes.ok) {
+              setPaymentResult({
+                type: 'success',
+                title: 'Fine Settled Successfully!',
+                message: `Fine payment of ₹${(orderData.amount / 100).toFixed(2)} confirmed (Payment ID: ${response.razorpay_payment_id}). Outstanding dues updated.`
+              });
+              showToast('Fine payment settled successfully', 'success');
+              await loadFines();
+              await loadUserFinesTotal();
+            } else {
+              setPaymentResult({
+                type: 'error',
+                title: 'Payment Verification Failed',
+                message: verifyRes.data?.message || 'Payment received by gateway but backend verification failed.'
+              });
+              showToast('Payment verification failed', 'error');
+            }
+          } catch (verErr) {
+            console.error('Error verifying fine payment:', verErr);
+          } finally {
+            setIsProcessingPayment(false);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setIsProcessingPayment(false);
+            setPaymentResult({
+              type: 'warning',
+              title: 'Fine Payment Cancelled',
+              message: 'Payment window was closed. Your fine remains unpaid and can be settled anytime.'
+            });
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (response) {
+        setIsProcessingPayment(false);
+        setPaymentResult({
+          type: 'error',
+          title: 'Fine Payment Failed',
+          message: response.error?.description || 'Your payment was declined. The fine remains unpaid.'
+        });
+      });
+      rzp.open();
+    } catch (err) {
+      console.error('Fine payment error:', err);
+      setIsProcessingPayment(false);
+      showToast('Failed to start fine payment checkout.', 'error');
     }
   };
 
@@ -1144,12 +1256,108 @@ export default function App() {
     });
     if (res.ok && res.data) {
       setMembership(res.data);
-      showToast('Membership signed & activated successfully!', 'success');
+      showToast('Agreement signed successfully! Please complete your ₹500 security deposit payment to activate your membership.', 'info');
       setSigFile(null);
       setSigPreviewUrl('');
       await loadMembership(true);
     } else {
-      showToast(res.data?.message || 'Failed to activate membership', 'error');
+      showToast(res.data?.message || 'Failed to sign agreement', 'error');
+    }
+  };
+
+  const handlePayMembership = async () => {
+    setIsProcessingPayment(true);
+    try {
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) {
+        showToast('Could not load Razorpay payment gateway. Please check your network connection.', 'error');
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      const res = await fetchApi('/payments/membership/order', { method: 'POST' });
+      if (!res.ok || !res.data) {
+        showToast(res.data?.message || 'Failed to initialize membership payment order', 'error');
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      const orderData = res.data;
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: 'INR',
+        name: 'Padips Athenaeum',
+        description: orderData.description || '1-Year Library Membership Security Deposit',
+        order_id: orderData.orderId,
+        prefill: {
+          name: currentUser?.name || '',
+          email: currentUser?.email || '',
+          contact: currentUser?.phone || ''
+        },
+        theme: {
+          color: '#6366f1'
+        },
+        handler: async function (response) {
+          try {
+            const verifyRes = await fetchApi('/payments/verify', {
+              method: 'POST',
+              body: JSON.stringify({
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature
+              })
+            });
+
+            if (verifyRes.ok) {
+              setPaymentResult({
+                type: 'success',
+                title: 'Membership Activated for 1 Year!',
+                message: `Payment of ₹${(orderData.amount / 100).toFixed(2)} confirmed (Payment ID: ${response.razorpay_payment_id}). Your digital library membership is now ACTIVE for 1 year!`
+              });
+              showToast('Membership activated successfully!', 'success');
+              await loadMembership(false);
+            } else {
+              setPaymentResult({
+                type: 'error',
+                title: 'Payment Verification Failed',
+                message: verifyRes.data?.message || 'Payment received by gateway but backend verification failed.'
+              });
+              showToast('Payment verification failed', 'error');
+            }
+          } catch (verErr) {
+            console.error('Error verifying membership payment:', verErr);
+          } finally {
+            setIsProcessingPayment(false);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setIsProcessingPayment(false);
+            setPaymentResult({
+              type: 'warning',
+              title: 'Payment Incomplete',
+              message: 'Checkout closed without payment. Your signed agreement is saved — you can click "Pay ₹500 via Razorpay" below anytime to activate.'
+            });
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (response) {
+        setIsProcessingPayment(false);
+        setPaymentResult({
+          type: 'error',
+          title: 'Payment Declined',
+          message: response.error?.description || 'Payment was declined by gateway. You can retry paying without re-signing the agreement.'
+        });
+        showToast('Payment failed. You can retry anytime.', 'error');
+      });
+      rzp.open();
+    } catch (err) {
+      console.error('Payment checkout error:', err);
+      setIsProcessingPayment(false);
+      showToast('Failed to start payment checkout.', 'error');
     }
   };
 
@@ -1176,14 +1384,22 @@ export default function App() {
 
   const handleCancelMembership = () => {
     setConfirmConfig({
-      title: 'Cancel Library Membership',
-      message: 'Are you sure you want to cancel your membership? You will no longer be able to borrow new books.',
-      actionBtnText: 'Cancel Membership',
+      title: 'Cancel Library Membership & Refund Deposit',
+      message: 'Are you sure you want to cancel your membership? Your ₹500 security deposit will be refunded to your original payment method minus any outstanding unpaid fines. Any unreturned books will continue to accrue overdue fines.',
+      actionBtnText: 'Confirm Cancellation & Refund',
       onConfirm: async () => {
-        const res = await fetchApi('/memberships/cancel', { method: 'POST' });
-        if (res.ok) {
-          showToast('Membership cancelled successfully', 'success');
+        const res = await fetchApi('/payments/membership/cancel-with-refund', { method: 'POST' });
+        if (res.ok && res.data) {
+          const ref = res.data;
+          setPaymentResult({
+            type: 'info',
+            title: 'Membership Cancelled',
+            message: `${ref.message} (Security Deposit: ₹${(ref.originalDepositAmount / 100).toFixed(2)}, Unpaid Fines Deducted: ₹${(ref.unpaidFinesDeducted / 100).toFixed(2)}, Net Refund: ₹${(ref.refundAmount / 100).toFixed(2)}${ref.razorpayRefundId ? ` | Refund ID: ${ref.razorpayRefundId}` : ''})`
+          });
+          showToast('Membership cancelled and refund processed', 'success');
           loadMembership(false);
+          loadFines();
+          loadUserFinesTotal();
         } else {
           showToast(res.data?.message || 'Failed to cancel membership', 'error');
         }
@@ -1864,6 +2080,25 @@ export default function App() {
 
         {/* MAIN CONTENT AREA */}
         <main className="content-area">
+          {paymentResult && (
+            <div className={`payment-result-banner banner-${paymentResult.type || 'info'}`}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <Shield size={18} />
+                  <strong style={{ fontSize: '15px' }}>{paymentResult.title}</strong>
+                </div>
+                <p style={{ margin: 0, fontSize: '14px', lineHeight: 1.5 }}>{paymentResult.message}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentResult(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '4px', marginLeft: '12px' }}
+                aria-label="Dismiss payment notification"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          )}
           {/* PAGE 1: DASHBOARD */}
           {currentPage === 'dashboard' && (
             <div className="page-pane active">
@@ -1944,7 +2179,7 @@ export default function App() {
                       </div>
                       <div className="metric-data">
                         <span className="metric-label">My Outstanding Fines</span>
-                        <span className="metric-value text-danger">${fineTotalBalance.toFixed(2)}</span>
+                        <span className="metric-value text-danger">₹{fineTotalBalance.toFixed(2)}</span>
                       </div>
                     </div>
 
@@ -2902,7 +3137,7 @@ export default function App() {
                   </div>
                   <div className="summary-item text-right">
                     <span className="summary-label">Total Outstanding Balance:</span>
-                    <span className="summary-amount text-danger">${fineTotalBalance.toFixed(2)}</span>
+                    <span className="summary-amount text-danger">₹{fineTotalBalance.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -2931,7 +3166,7 @@ export default function App() {
                               <td>#{f.id || '—'}</td>
                               {userRole === 'ADMIN' && <td>{fineUser}</td>}
                               <td><strong>{fineTitle}</strong>{fineAuthor ? <><br /><span className="text-muted">{fineAuthor}</span></> : null}</td>
-                              <td><strong>${(f.amount || f.pendingFineAmount || 0).toFixed(2)}</strong></td>
+                              <td><strong>₹{(f.amount || f.pendingFineAmount || 0).toFixed(2)}</strong></td>
                               <td>
                                 <span style={{ color: f.status === 'PAID' ? '#10b981' : '#ef4444', fontWeight: 600 }}>
                                   {f.status}
@@ -2939,7 +3174,13 @@ export default function App() {
                               </td>
                               <td className="text-right">
                                 {f.status === 'UNPAID' || f.status === 'PENDING' ? (
-                                  <button className="btn btn-primary btn-sm" onClick={() => handlePayFine(f.id)}>Settle & Pay</button>
+                                  <button
+                                    className="btn btn-primary btn-sm"
+                                    disabled={isProcessingPayment}
+                                    onClick={() => handlePayFine(f.id)}
+                                  >
+                                    Pay Fine (₹{(f.amount || f.pendingFineAmount || 0).toFixed(2)})
+                                  </button>
                                 ) : null}
                               </td>
                             </tr>
@@ -2983,57 +3224,126 @@ export default function App() {
                   </button>
                 </div>
               ) : membership.status === 'PENDING' ? (
-                <div className="section-card">
-                  <div className="section-header">
-                    <h3>Review & Sign Agreement</h3>
-                    <p className="section-desc">Please review the agreement and upload your signature PNG to activate your membership</p>
-                  </div>
+                membership.isSigned ? (
+                  /* Step 3: Security Deposit Payment via Razorpay Checkout */
+                  <div className="section-card max-w-2xl" style={{ margin: '0 auto' }}>
+                    <div className="payment-steps-row">
+                      <div className="payment-step-badge completed"><span>✓</span> 1. Application</div>
+                      <div className="payment-step-badge completed"><span>✓</span> 2. Agreement Signed</div>
+                      <div className="payment-step-badge active"><span>3</span> Pay Security Deposit</div>
+                    </div>
 
-                  <div className="grid-2col mt-6">
-                    <div
-                      className="panel-agreement p-4 rounded-lg"
-                      style={{ background: '#ffffff', color: '#0f172a', border: '1px solid var(--border-color)', maxHeight: '450px', overflowY: 'auto' }}
-                      dangerouslySetInnerHTML={{ __html: agreementText || '<div style="padding: 20px; color: #475569;">Loading membership agreement template...</div>' }}
-                    />
-
-                    <div className="panel-signature" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                      <div className="form-group">
-                        <label className="form-label">Upload Signature PNG</label>
-                        <p className="section-desc mb-2">File must be a transparent PNG, maximum 50KB</p>
-
-                        <div className="file-upload-box text-center p-6 rounded-lg" style={{ border: '2px dashed var(--border-color)', cursor: 'pointer' }} onClick={() => document.getElementById('sigFileElem').click()}>
-                          <Upload size={36} className="mx-auto text-muted mb-2" style={{ margin: '0 auto 10px auto', display: 'block' }} />
-                          <span className="text-sm font-medium block">{sigFile ? sigFile.name : 'Click to select PNG signature file'}</span>
-                          <input
-                            type="file"
-                            id="sigFileElem"
-                            className="hidden"
-                            accept="image/png"
-                            onChange={(e) => {
-                              if (e.target.files && e.target.files[0]) {
-                                setSigFile(e.target.files[0]);
-                                setSigPreviewUrl(URL.createObjectURL(e.target.files[0]));
-                              }
-                            }}
-                          />
-                        </div>
+                    <div className="section-header text-center">
+                      <div className="brand-badge mb-4" style={{ margin: '0 auto', display: 'inline-flex', width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.15)', alignItems: 'center', justifyContent: 'center', color: '#818cf8' }}>
+                        <CreditCard size={28} />
                       </div>
+                      <h3>Activate 1-Year Library Membership</h3>
+                      <p className="section-desc">Agreement signed successfully! Complete your one-time refundable security deposit to activate your digital membership for 1 year.</p>
+                    </div>
 
-                      {sigPreviewUrl && (
-                        <div className="signature-preview-container mt-4" style={{ textAlign: 'center' }}>
-                          <span className="form-label block text-left">Signature Preview:</span>
-                          <div style={{ background: '#ffffff', padding: '10px', borderRadius: '4px', display: 'inline-block', marginTop: '5px', border: '1px solid var(--border-color)' }}>
-                            <img src={sigPreviewUrl} alt="Preview" style={{ maxHeight: '80px', maxWidth: '240px', display: 'block' }} />
+                    <div className="payment-order-card mt-6">
+                      <div className="payment-order-item">
+                        <span>Membership Period</span>
+                        <strong>1 Year (365 Days)</strong>
+                      </div>
+                      <div className="payment-order-item">
+                        <span>Agreement Status</span>
+                        <span style={{ color: '#22c55e', fontWeight: 600 }}>✓ Signed & Stored</span>
+                      </div>
+                      <div className="payment-order-item">
+                        <span>Refundable Security Deposit</span>
+                        <strong style={{ fontSize: '18px', color: '#6366f1' }}>₹500.00</strong>
+                      </div>
+                      <div className="payment-order-item" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+                        <span className="text-muted text-xs">
+                          * 100% refundable upon membership cancellation (minus any unpaid fines) or permanent deactivation.
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      className="btn btn-primary btn-block mt-6"
+                      disabled={isProcessingPayment}
+                      onClick={handlePayMembership}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '14px', fontSize: '15px' }}
+                    >
+                      {isProcessingPayment ? (
+                        <>
+                          <RefreshCw className="animate-spin" size={18} />
+                          Opening Razorpay Gateway...
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard size={18} />
+                          Pay ₹500 via Razorpay Checkout
+                        </>
+                      )}
+                    </button>
+
+                    <p className="text-muted text-center text-xs mt-3">
+                      Razorpay Test Mode. Supports UPI, Cards, NetBanking, and Wallets.
+                    </p>
+                  </div>
+                ) : (
+                  /* Step 2: Review & Sign Agreement */
+                  <div className="section-card">
+                    <div className="payment-steps-row">
+                      <div className="payment-step-badge completed"><span>✓</span> 1. Application</div>
+                      <div className="payment-step-badge active"><span>2</span> Sign Agreement</div>
+                      <div className="payment-step-badge"><span>3</span> Pay Security Deposit</div>
+                    </div>
+
+                    <div className="section-header">
+                      <h3>Review & Sign Agreement</h3>
+                      <p className="section-desc">Please review the agreement and upload your signature PNG to proceed to activation</p>
+                    </div>
+
+                    <div className="grid-2col mt-6">
+                      <div
+                        className="panel-agreement p-4 rounded-lg"
+                        style={{ background: '#ffffff', color: '#0f172a', border: '1px solid var(--border-color)', maxHeight: '450px', overflowY: 'auto' }}
+                        dangerouslySetInnerHTML={{ __html: agreementText || '<div style="padding: 20px; color: #475569;">Loading membership agreement template...</div>' }}
+                      />
+
+                      <div className="panel-signature" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                        <div className="form-group">
+                          <label className="form-label">Upload Signature PNG</label>
+                          <p className="section-desc mb-2">File must be a transparent PNG, maximum 50KB</p>
+
+                          <div className="file-upload-box text-center p-6 rounded-lg" style={{ border: '2px dashed var(--border-color)', cursor: 'pointer' }} onClick={() => document.getElementById('sigFileElem').click()}>
+                            <Upload size={36} className="mx-auto text-muted mb-2" style={{ margin: '0 auto 10px auto', display: 'block' }} />
+                            <span className="text-sm font-medium block">{sigFile ? sigFile.name : 'Click to select PNG signature file'}</span>
+                            <input
+                              type="file"
+                              id="sigFileElem"
+                              className="hidden"
+                              accept="image/png"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  setSigFile(e.target.files[0]);
+                                  setSigPreviewUrl(URL.createObjectURL(e.target.files[0]));
+                                }
+                              }}
+                            />
                           </div>
                         </div>
-                      )}
 
-                      <button className="btn btn-primary btn-block mt-6" disabled={!sigFile} onClick={handleSignatureSubmit}>
-                        Sign & Activate Membership
-                      </button>
+                        {sigPreviewUrl && (
+                          <div className="signature-preview-container mt-4" style={{ textAlign: 'center' }}>
+                            <span className="form-label block text-left">Signature Preview:</span>
+                            <div style={{ background: '#ffffff', padding: '10px', borderRadius: '4px', display: 'inline-block', marginTop: '5px', border: '1px solid var(--border-color)' }}>
+                              <img src={sigPreviewUrl} alt="Preview" style={{ maxHeight: '80px', maxWidth: '240px', display: 'block' }} />
+                            </div>
+                          </div>
+                        )}
+
+                        <button className="btn btn-primary btn-block mt-6" disabled={!sigFile} onClick={handleSignatureSubmit}>
+                          Sign Agreement & Proceed to Payment
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )
               ) : (
                 <div>
                   <div className="grid-2col">

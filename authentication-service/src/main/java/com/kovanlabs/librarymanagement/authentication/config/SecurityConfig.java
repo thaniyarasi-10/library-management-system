@@ -172,6 +172,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/donations/*/approve", "/api/donations/*/reject",
                                 "/donations/*/approve", "/donations/*/reject").hasAnyAuthority("donations:write", "ROLE_ADMIN")
+
+                        // Payment & Razorpay Webhook Endpoints
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/webhook/razorpay", "/webhook/razorpay",
+                                "/api/payments/webhook", "/payments/webhook")
+                        .permitAll()
+                        .requestMatchers("/api/payments", "/api/payments/**", "/payments", "/payments/**").authenticated()
+
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2

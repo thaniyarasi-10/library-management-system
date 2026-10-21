@@ -68,4 +68,12 @@ public interface MembershipService {
      * @return {@code true} if an active, valid membership exists, {@code false} otherwise
      */
     boolean hasActiveMembership(String userUuid);
+
+    /**
+     * Activates a pending, signed membership for one year following successful payment verification.
+     *
+     * @param userUuid The user's unique UUID
+     * @return The updated active {@link MembershipResponseDto}
+     */
+    MembershipResponseDto activateMembership(String userUuid);
 }

@@ -884,6 +884,7 @@ public class UserServiceImpl implements UserService {
             user.setReactivationRequestStatus(null);
             User savedUser = userRepository.save(user);
             syncUserToSalesforce(savedUser);
+            accountDeactivationService.notifyPermanentDeactivation(savedUser.getUuid());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Reactivation period of 10 days has expired. Account is permanently deactivated.");
         }
@@ -989,6 +990,9 @@ public class UserServiceImpl implements UserService {
         resetUserRewardPoints(user.getUuid());
         User savedUser = userRepository.save(user);
         syncUserToSalesforce(savedUser);
+        if (savedUser.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED) {
+            accountDeactivationService.notifyPermanentDeactivation(savedUser.getUuid());
+        }
         log.info("Successfully rejected account reactivation request for user ID: {}, Email: {}, Status: {}",
                 id, savedUser.getEmail(), savedUser.getStatus());
         return toUserResponse(savedUser);
