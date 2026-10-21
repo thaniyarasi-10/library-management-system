@@ -424,6 +424,13 @@ export default function App() {
     }
   }, [currentPage, isAuthenticated, currentUser, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
 
+  // Load fines for deactivated user so pending fines can be reviewed and paid
+  useEffect(() => {
+    if (isAuthenticated && currentUser && (currentUser.status === 'DEACTIVATED' || currentUser.status === 'PERMANENTLY_DEACTIVATED')) {
+      loadFines();
+    }
+  }, [isAuthenticated, currentUser?.status, currentUser?.hasPendingFines]);
+
   const handleSignOut = () => {
     userFetchedRef.current = false;
     setIsUserSyncing(false);
@@ -474,7 +481,7 @@ export default function App() {
     const res = await fetchApi('/fines/me');
     if (res.ok && res.data) {
       const fList = Array.isArray(res.data) ? res.data : [];
-      const total = fList.reduce((acc, f) => acc + (f.status === 'UNPAID' ? (f.amount || 0) : 0), 0);
+      const total = fList.reduce((acc, f) => acc + ((f.status !== 'PAID') ? (f.pendingFineAmount || f.amount || 0) : 0), 0);
       setFineTotalBalance(total);
     }
   };
@@ -1100,7 +1107,7 @@ export default function App() {
       if (res.ok && res.data) {
         const fList = Array.isArray(res.data) ? res.data : [];
         setFines(fList);
-        const total = fList.reduce((acc, f) => acc + (f.status === 'UNPAID' ? (f.amount || 0) : 0), 0);
+        const total = fList.reduce((acc, f) => acc + ((f.status !== 'PAID') ? (f.pendingFineAmount || f.amount || 0) : 0), 0);
         setFineTotalBalance(total);
       }
     } else {
@@ -1108,7 +1115,7 @@ export default function App() {
       if (res.ok && res.data) {
         const fList = Array.isArray(res.data) ? res.data : [];
         setFines(fList);
-        const total = fList.reduce((acc, f) => acc + (f.status === 'UNPAID' ? (f.amount || 0) : 0), 0);
+        const total = fList.reduce((acc, f) => acc + ((f.status !== 'PAID') ? (f.pendingFineAmount || f.amount || 0) : 0), 0);
         setFineTotalBalance(total);
       }
     }
@@ -1168,6 +1175,10 @@ export default function App() {
               showToast('Fine payment settled successfully', 'success');
               await loadFines();
               await loadUserFinesTotal();
+              const meRes = await fetchApi('/user/me');
+              if (meRes.ok && meRes.data) {
+                setCurrentUser(meRes.data);
+              }
             } else {
               setPaymentResult({
                 type: 'error',
@@ -1717,6 +1728,16 @@ export default function App() {
     const isPending = currentUser.reactivationRequestStatus === 'PENDING' || currentUser.reactivationRequested;
     const isPermanentlyDeactivated = currentUser.status === 'PERMANENTLY_DEACTIVATED' && !isPending;
 
+    const unpaidFines = fines.filter(f => f.status === 'PENDING' || f.status === 'UNPAID' || f.status !== 'PAID');
+    const hasPendingFines = Boolean(
+      currentUser.hasPendingFines ||
+      (currentUser.pendingFineAmount && currentUser.pendingFineAmount > 0) ||
+      unpaidFines.length > 0
+    );
+    const totalPendingFine = (currentUser.pendingFineAmount && currentUser.pendingFineAmount > 0)
+      ? currentUser.pendingFineAmount
+      : unpaidFines.reduce((acc, f) => acc + (f.pendingFineAmount || f.amount || 0), 0) || fineTotalBalance || 0;
+
     const handleReactivateRequest = async () => {
       setRequestingReactivation(true);
       const res = await fetchApi('/user/me/request-reactivation', { method: 'POST' });
@@ -1736,6 +1757,7 @@ export default function App() {
     const handleRefreshStatus = async () => {
       setRefreshingStatus(true);
       const res = await fetchApi('/user/me');
+      await loadFines();
       setRefreshingStatus(false);
       if (res.ok && res.data) {
         setCurrentUser(res.data);
@@ -1783,6 +1805,29 @@ export default function App() {
             </p>
           </div>
 
+          {paymentResult && (
+            <div className={`payment-result-banner banner-${paymentResult.type || 'info'}`} style={{ textAlign: 'left', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '20px', lineHeight: 1 }}>
+                  {paymentResult.type === 'success' ? '✅' : paymentResult.type === 'warning' ? '⚠️' : 'ℹ️'}
+                </span>
+                <div>
+                  <strong style={{ fontSize: '14px', display: 'block', marginBottom: '2px' }}>{paymentResult.title}</strong>
+                  <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.4 }}>{paymentResult.message}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-link"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0 4px' }}
+                onClick={() => setPaymentResult(null)}
+                title="Dismiss"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
           {isPermanentlyDeactivated ? (
             <div style={{ textAlign: 'left', marginBottom: '24px', padding: '18px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.35)' }}>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
@@ -1806,7 +1851,7 @@ export default function App() {
                     Reactivation Request Under Review
                   </strong>
                   <span style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-main)', opacity: 0.9 }}>
-                    Your account reactivation request was submitted within the allowable window and is currently awaiting administrator review. Your account will not be permanently deactivated while this request is pending. Once approved by library administration, you will regain full access to your account.
+                  Your reactivation request is pending administrator review
                   </span>
                 </div>
               </div>
@@ -1821,58 +1866,116 @@ export default function App() {
                       Your account has been deactivated
                     </strong>
                     <span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-main)', opacity: 0.9 }}>
-                      Your account has been deactivated due to inactivity. Reactivation requests must be submitted within <strong>10 days</strong> of your account's deactivation date. If no request is submitted within 10 days, your account will be permanently deactivated and no further reactivation requests will be permitted.
+                    Your account is deactivated due to inactivity. Submit a reactivation request within 10 days to avoid permanent deactivation.
                     </span>
                   </div>
                 </div>
               </div>
 
-              {currentUser.hasPendingFines ? (
-                <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              {/* Outstanding Fines Section */}
+              {hasPendingFines ? (
+                <div className="deactivated-fine-card">
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                    <CreditCard size={18} color="#f59e0b" />
-                    <strong style={{ fontSize: '14px', color: '#f59e0b' }}>Outstanding Fines Detected</strong>
+                    <CreditCard size={20} color="#f59e0b" />
+                    <strong style={{ fontSize: '15px', color: '#f59e0b' }}>Outstanding Fine Detected</strong>
                   </div>
                   <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '8px' }}>
-                    You have unpaid pending fines of <strong style={{ color: '#f59e0b', fontSize: '15px' }}>${Number(currentUser.pendingFineAmount || 0).toFixed(2)}</strong>.
+                    You have unpaid pending fines of <strong style={{ color: '#f59e0b', fontSize: '16px' }}>₹{Number(totalPendingFine).toFixed(2)}</strong>.
                   </p>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-                    You can only submit a reactivation request after all outstanding fines have been cleared. Please contact library support or settle pending dues first.
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                    Please settle your pending fine to enable account reactivation:
                   </p>
-                </div>
-              ) : currentUser.reactivationRequestStatus === 'REJECTED' ? (
-                <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                    <X size={18} color="#ef4444" />
-                    <strong style={{ fontSize: '14px', color: '#ef4444' }}>Reactivation Request Rejected</strong>
-                  </div>
-                  <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '14px' }}>
-                    Your previous account reactivation request was rejected by an administrator. If you believe this is in error, you may submit a new reactivation request within the 10-day window.
-                  </p>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-block"
-                    onClick={handleReactivateRequest}
-                    disabled={requestingReactivation}
-                  >
-                    {requestingReactivation ? 'Submitting Request...' : 'Submit New Request'}
-                  </button>
+
+                  {unpaidFines.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {unpaidFines.map((f, idx) => {
+                        const fineAmt = f.pendingFineAmount || f.amount || 0;
+                        return (
+                          <div key={f.id ?? `unpaid-fine-${idx}`} className="deactivated-fine-item">
+                            <div className="deactivated-fine-details">
+                              <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>
+                                {f.bookTitle || 'Library Book Overdue Fine'}
+                              </strong>
+                              {f.bookAuthor && (
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>by {f.bookAuthor}</span>
+                              )}
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fine #{f.id}</span>
+                            </div>
+                            <div className="deactivated-fine-actions">
+                              <span style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b', marginRight: '6px' }}>
+                                ₹{Number(fineAmt).toFixed(2)}
+                              </span>
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={isProcessingPayment}
+                                onClick={() => handlePayFine(f.id)}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 14px' }}
+                              >
+                                {isProcessingPayment ? (
+                                  <>
+                                    <RefreshCw size={12} className="spin" />
+                                    <span>Processing...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CreditCard size={12} />
+                                    <span>Pay Fine</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '10px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-block"
+                        disabled={isProcessingPayment}
+                        onClick={() => {
+                          if (unpaidFines[0]?.id) {
+                            handlePayFine(unpaidFines[0].id);
+                          } else {
+                            loadFines();
+                          }
+                        }}
+                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        {isProcessingPayment ? (
+                          <>
+                            <RefreshCw size={14} className="spin" />
+                            <span>Opening Razorpay...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CreditCard size={16} />
+                            <span>Pay Fine (₹{Number(totalPendingFine).toFixed(2)}) via Razorpay</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-subtle)' }}>
-                  <strong style={{ display: 'block', fontSize: '14px', marginBottom: '6px' }}>
-                    Request Account Reactivation
-                  </strong>
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                    You have no pending fines. You may request the library administrator to reactivate your account within the 10-day window.
-                  </p>
+                <div style={{ marginBottom: '24px' }}>
                   <button
                     type="button"
                     className="btn btn-primary btn-block"
                     onClick={handleReactivateRequest}
                     disabled={requestingReactivation}
+                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                   >
-                    {requestingReactivation ? 'Submitting Request...' : 'Request Reactivation'}
+                    {requestingReactivation ? (
+                      <>
+                        <RefreshCw size={16} className="spin" />
+                        <span>Submitting Request...</span>
+                      </>
+                    ) : (
+                      currentUser.reactivationRequestStatus === 'REJECTED' ? 'Submit New Request' : 'Request Reactivation'
+                    )}
                   </button>
                 </div>
               )}
