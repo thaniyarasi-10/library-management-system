@@ -21,8 +21,8 @@ public class UserPaymentProfile extends BaseEntity {
     @Column(name = "user_uuid", nullable = false, unique = true, length = 36)
     private String userUuid;
 
-    @Column(name = "card_holder_name", nullable = false, length = 100)
-    private String cardHolderName;
+    @Column(name = "account_holder_name", nullable = false, length = 100)
+    private String accountHolderName;
 
     @Column(name = "bank_name", nullable = false, length = 100)
     private String bankName;
@@ -32,10 +32,4 @@ public class UserPaymentProfile extends BaseEntity {
 
     @Column(name = "ifsc_code", nullable = false, length = 11)
     private String ifscCode;
-
-    @Column(name = "card_last_four", length = 4)
-    private String cardLastFour;
-
-    @Column(name = "card_network", length = 20)
-    private String cardNetwork;
 }

@@ -56,4 +56,16 @@
         </createTable>
     </changeSet>
 
+    <changeSet id="2-rename-card-holder-to-account-holder" author="thani">
+        <renameColumn tableName="user_payment_profile"
+                      oldColumnName="card_holder_name"
+                      newColumnName="account_holder_name"
+                      columnDataType="varchar(100)"/>
+    </changeSet>
+
+    <changeSet id="3-drop-card-columns-from-payment-profile" author="thani">
+        <dropColumn tableName="user_payment_profile" columnName="card_last_four"/>
+        <dropColumn tableName="user_payment_profile" columnName="card_network"/>
+    </changeSet>
+
 </databaseChangeLog>

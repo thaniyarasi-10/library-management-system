@@ -5,12 +5,10 @@ import java.time.LocalDateTime;
 public record UserPaymentProfileResponseDto(
         String uuid,
         String userUuid,
-        String cardHolderName,
+        String accountHolderName,
         String bankName,
         String maskedAccountNumber,
         String ifscCode,
-        String cardLastFour,
-        String cardNetwork,
         LocalDateTime updatedAt
 ) {
 }

@@ -69,9 +69,7 @@ class UserPaymentProfileServiceImplTest {
                 .bankName("HDFC Bank")
                 .accountNumber("987654321012")
                 .ifscCode("HDFC0001234")
-                .cardHolderName("John Doe")
-                .cardLastFour("1234")
-                .cardNetwork("VISA")
+                .accountHolderName("John Doe")
                 .updatedAt(LocalDateTime.now())
                 .build();
 
@@ -82,8 +80,7 @@ class UserPaymentProfileServiceImplTest {
         assertNotNull(result);
         assertEquals("HDFC Bank", result.bankName());
         assertEquals("HDFC0001234", result.ifscCode());
-        assertEquals("John Doe", result.cardHolderName());
-        assertEquals("1234", result.cardLastFour());
+        assertEquals("John Doe", result.accountHolderName());
         assertTrue(result.maskedAccountNumber().endsWith("1012"));
     }
 
@@ -124,11 +121,11 @@ class UserPaymentProfileServiceImplTest {
     }
 
     @Test
-    @DisplayName("saveOrUpdateProfile throws BAD_REQUEST when card holder name is blank")
+    @DisplayName("saveOrUpdateProfile throws BAD_REQUEST when account holder name is blank")
     void testSaveOrUpdate_blankHolderName() {
         mockFindUser();
         UserPaymentProfileRequestDto req = new UserPaymentProfileRequestDto(
-                "HDFC Bank", "123456789012", "HDFC0001234", "   ", "4111222233334444", "VISA");
+                "HDFC Bank", "123456789012", "HDFC0001234", "   ");
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.saveOrUpdateProfile(req, email));
@@ -140,7 +137,7 @@ class UserPaymentProfileServiceImplTest {
     void testSaveOrUpdate_invalidIfsc() {
         mockFindUser();
         UserPaymentProfileRequestDto req = new UserPaymentProfileRequestDto(
-                "HDFC Bank", "123456789012", "INVALID_IFSC", "John Doe", null, null);
+                "HDFC Bank", "123456789012", "INVALID_IFSC", "John Doe");
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.saveOrUpdateProfile(req, email));
@@ -152,7 +149,7 @@ class UserPaymentProfileServiceImplTest {
     void testSaveOrUpdate_nullIfsc() {
         mockFindUser();
         UserPaymentProfileRequestDto req = new UserPaymentProfileRequestDto(
-                "HDFC Bank", "123456789012", null, "John Doe", null, null);
+                "HDFC Bank", "123456789012", null, "John Doe");
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.saveOrUpdateProfile(req, email));
@@ -164,7 +161,7 @@ class UserPaymentProfileServiceImplTest {
     void testSaveOrUpdate_invalidAccount() {
         mockFindUser();
         UserPaymentProfileRequestDto req = new UserPaymentProfileRequestDto(
-                "HDFC Bank", "123", "HDFC0001234", "John Doe", null, null);
+                "HDFC Bank", "123", "HDFC0001234", "John Doe");
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.saveOrUpdateProfile(req, email));
@@ -176,7 +173,7 @@ class UserPaymentProfileServiceImplTest {
     void testSaveOrUpdate_nullAccount() {
         mockFindUser();
         UserPaymentProfileRequestDto req = new UserPaymentProfileRequestDto(
-                "HDFC Bank", null, "HDFC0001234", "John Doe", null, null);
+                "HDFC Bank", null, "HDFC0001234", "John Doe");
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.saveOrUpdateProfile(req, email));
@@ -184,20 +181,8 @@ class UserPaymentProfileServiceImplTest {
     }
 
     @Test
-    @DisplayName("saveOrUpdateProfile throws BAD_REQUEST when card number is invalid format")
-    void testSaveOrUpdate_invalidCardFormat() {
-        mockFindUser();
-        UserPaymentProfileRequestDto req = new UserPaymentProfileRequestDto(
-                "HDFC Bank", "123456789012", "HDFC0001234", "John Doe", "1234-invalid", null);
-
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> service.saveOrUpdateProfile(req, email));
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-    }
-
-    @Test
-    @DisplayName("saveOrUpdateProfile creates new profile detecting VISA card")
-    void testSaveOrUpdate_newProfile_visaCard() {
+    @DisplayName("saveOrUpdateProfile creates new bank profile successfully")
+    void testSaveOrUpdate_newProfile() {
         mockFindUser();
         when(paymentProfileRepository.findByUserUuid(userUuid)).thenReturn(Optional.empty());
 
@@ -207,9 +192,7 @@ class UserPaymentProfileServiceImplTest {
                 .bankName("State Bank of India")
                 .accountNumber("123456789012")
                 .ifscCode("SBIN0001234")
-                .cardHolderName("Jane Doe")
-                .cardLastFour("4444")
-                .cardNetwork("VISA")
+                .accountHolderName("Jane Doe")
                 .updatedAt(LocalDateTime.now())
                 .build();
 
@@ -219,55 +202,20 @@ class UserPaymentProfileServiceImplTest {
                 "State Bank of India",
                 "123456789012",
                 "sbin0001234",
-                "Jane Doe",
-                "4111 2222 3333 4444",
-                null
+                "Jane Doe"
         );
 
         UserPaymentProfileResponseDto result = service.saveOrUpdateProfile(req, email);
 
         assertNotNull(result);
-        assertEquals("Jane Doe", result.cardHolderName());
-        assertEquals("4444", result.cardLastFour());
-        assertEquals("VISA", result.cardNetwork());
+        assertEquals("Jane Doe", result.accountHolderName());
         assertEquals("SBIN0001234", result.ifscCode());
+        assertEquals("State Bank of India", result.bankName());
     }
 
     @Test
-    @DisplayName("saveOrUpdateProfile creates new profile detecting Mastercard, RuPay and Amex")
-    void testSaveOrUpdate_cardDetection() {
-        mockFindUser();
-        when(paymentProfileRepository.findByUserUuid(userUuid)).thenReturn(Optional.empty());
-
-        when(paymentProfileRepository.save(any(UserPaymentProfile.class))).thenAnswer(invocation -> {
-            UserPaymentProfile p = invocation.getArgument(0);
-            p.setUuid("uuid-" + p.getCardNetwork());
-            p.setUpdatedAt(LocalDateTime.now());
-            return p;
-        });
-
-        // Mastercard
-        UserPaymentProfileRequestDto reqMc = new UserPaymentProfileRequestDto(
-                "Axis Bank", "123456789012", "UTIB0001234", "User Mc", "5200123412341234", null);
-        UserPaymentProfileResponseDto resMc = service.saveOrUpdateProfile(reqMc, email);
-        assertEquals("MASTERCARD", resMc.cardNetwork());
-
-        // RuPay
-        UserPaymentProfileRequestDto reqRp = new UserPaymentProfileRequestDto(
-                "Bank of India", "123456789012", "BKID0001234", "User Rp", "6521123412341234", null);
-        UserPaymentProfileResponseDto resRp = service.saveOrUpdateProfile(reqRp, email);
-        assertEquals("RUPAY", resRp.cardNetwork());
-
-        // Amex
-        UserPaymentProfileRequestDto reqAmex = new UserPaymentProfileRequestDto(
-                "ICICI Bank", "123456789012", "ICIC0001234", "User Amex", "378212345612345", null);
-        UserPaymentProfileResponseDto resAmex = service.saveOrUpdateProfile(reqAmex, email);
-        assertEquals("AMEX", resAmex.cardNetwork());
-    }
-
-    @Test
-    @DisplayName("saveOrUpdateProfile updates existing profile retaining card if card is omitted")
-    void testSaveOrUpdate_updateExisting_retainCard() {
+    @DisplayName("saveOrUpdateProfile updates existing bank profile")
+    void testSaveOrUpdate_updateExisting() {
         mockFindUser();
 
         UserPaymentProfile existing = UserPaymentProfile.builder()
@@ -276,9 +224,7 @@ class UserPaymentProfileServiceImplTest {
                 .bankName("Old Bank")
                 .accountNumber("111122223333")
                 .ifscCode("OLDB0001234")
-                .cardHolderName("Existing Name")
-                .cardLastFour("9999")
-                .cardNetwork("VISA")
+                .accountHolderName("Existing Name")
                 .build();
 
         when(paymentProfileRepository.findByUserUuid(userUuid)).thenReturn(Optional.of(existing));
@@ -291,18 +237,14 @@ class UserPaymentProfileServiceImplTest {
                 "New Bank",
                 "999988887777",
                 "NEWB0001234",
-                "Updated Name",
-                null,
-                null
+                "Updated Name"
         );
 
         UserPaymentProfileResponseDto result = service.saveOrUpdateProfile(req, email);
 
         assertNotNull(result);
         assertEquals("New Bank", result.bankName());
-        assertEquals("Updated Name", result.cardHolderName());
-        assertEquals("9999", result.cardLastFour());
-        assertEquals("VISA", result.cardNetwork());
+        assertEquals("Updated Name", result.accountHolderName());
     }
 
     @Test

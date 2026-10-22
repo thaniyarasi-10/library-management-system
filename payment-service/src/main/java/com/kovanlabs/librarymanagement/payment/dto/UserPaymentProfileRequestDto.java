@@ -14,11 +14,7 @@ public record UserPaymentProfileRequestDto(
         @Pattern(regexp = "^[A-Z]{4}0[A-Z0-9]{6}$", message = "Invalid IFSC code format")
         String ifscCode,
 
-        @NotBlank(message = "Card holder name is required")
-        String cardHolderName,
-
-        String cardNumber,
-
-        String cardNetwork
+        @NotBlank(message = "Account holder name is required")
+        String accountHolderName
 ) {
 }

@@ -16,7 +16,6 @@ public interface UserPaymentProfileMapper {
 
     @Mapping(target = "uuid", ignore = true)
     @Mapping(target = "userUuid", ignore = true)
-    @Mapping(target = "cardLastFour", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     UserPaymentProfile mapToEntity(UserPaymentProfileRequestDto request);
@@ -24,7 +23,6 @@ public interface UserPaymentProfileMapper {
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "uuid", ignore = true)
     @Mapping(target = "userUuid", ignore = true)
-    @Mapping(target = "cardLastFour", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     void updateEntityFromDto(UserPaymentProfileRequestDto request, @MappingTarget UserPaymentProfile profile);

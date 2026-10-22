@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
 public class UserPaymentProfileServiceImpl implements UserPaymentProfileService {
 
     private static final Pattern IFSC_PATTERN = Pattern.compile("^[A-Z]{4}0[A-Z0-9]{6}$");
-    private static final Pattern ACCOUNT_NUM_PATTERN = Pattern.compile("^[0-9]{9,30}$");
+    private static final Pattern ACCOUNT_NUM_PATTERN = Pattern.compile("^\\d{9,30}$");
 
     private final UserPaymentProfileRepository paymentProfileRepository;
     private final UserRepository userRepository;
@@ -58,27 +58,13 @@ public class UserPaymentProfileServiceImpl implements UserPaymentProfileService 
         var cleanIfsc = validateAndFormatIfsc(request.ifscCode());
         var cleanAccount = validateAndFormatAccountNumber(request.accountNumber());
         var cleanBank = request.bankName().trim();
-        var cleanHolder = request.cardHolderName().trim();
+        var cleanHolder = request.accountHolderName().trim();
 
         if (cleanHolder.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Card holder name cannot be empty");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account holder name cannot be empty");
         }
 
         var existingProfile = paymentProfileRepository.findByUserUuid(user.getUuid()).orElse(null);
-
-        String cardLastFour = existingProfile != null ? existingProfile.getCardLastFour() : null;
-        String cardNetwork = existingProfile != null ? existingProfile.getCardNetwork() : null;
-
-        if (request.cardNumber() != null && !request.cardNumber().isBlank()) {
-            var cleanCard = request.cardNumber().replaceAll("[\\s-]", "");
-            if (cleanCard.length() < 12 || cleanCard.length() > 19 || !cleanCard.chars().allMatch(Character::isDigit)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid card number format");
-            }
-            cardLastFour = cleanCard.substring(cleanCard.length() - 4);
-            cardNetwork = detectCardNetwork(cleanCard, request.cardNetwork());
-        } else if (request.cardNetwork() != null && !request.cardNetwork().isBlank()) {
-            cardNetwork = request.cardNetwork().trim().toUpperCase();
-        }
 
         UserPaymentProfile profileToSave;
         if (existingProfile != null) {
@@ -93,12 +79,10 @@ public class UserPaymentProfileServiceImpl implements UserPaymentProfileService 
         profileToSave.setBankName(cleanBank);
         profileToSave.setAccountNumber(cleanAccount);
         profileToSave.setIfscCode(cleanIfsc);
-        profileToSave.setCardHolderName(cleanHolder);
-        profileToSave.setCardLastFour(cardLastFour);
-        profileToSave.setCardNetwork(cardNetwork);
+        profileToSave.setAccountHolderName(cleanHolder);
 
         var saved = paymentProfileRepository.save(profileToSave);
-        log.info("Saved payment profile for userUuid: {}", user.getUuid());
+        log.info("Saved bank account profile for userUuid: {}", user.getUuid());
         return UserPaymentProfileMapper.INSTANCE.mapToResponse(saved);
     }
 
@@ -108,7 +92,7 @@ public class UserPaymentProfileServiceImpl implements UserPaymentProfileService 
         var user = findUserByIdentifier(email);
         paymentProfileRepository.findByUserUuid(user.getUuid()).ifPresent(profile -> {
             paymentProfileRepository.delete(profile);
-            log.info("Deleted payment profile for userUuid: {}", user.getUuid());
+            log.info("Deleted bank account profile for userUuid: {}", user.getUuid());
         });
     }
 
@@ -141,24 +125,5 @@ public class UserPaymentProfileServiceImpl implements UserPaymentProfileService 
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid bank account number: must be 9 to 30 digits");
         }
         return formatted;
-    }
-
-    private String detectCardNetwork(String cardNumber, String explicitNetwork) {
-        if (explicitNetwork != null && !explicitNetwork.isBlank()) {
-            return explicitNetwork.trim().toUpperCase();
-        }
-        if (cardNumber.startsWith("4")) {
-            return "VISA";
-        }
-        if (cardNumber.matches("^(5[1-5]|222[1-9]|22[3-9]|2[3-6]|27[01]|2720).*")) {
-            return "MASTERCARD";
-        }
-        if (cardNumber.matches("^(60|65|81|82).*")) {
-            return "RUPAY";
-        }
-        if (cardNumber.startsWith("34") || cardNumber.startsWith("37")) {
-            return "AMEX";
-        }
-        return "CARD";
     }
 }

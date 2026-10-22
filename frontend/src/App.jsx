@@ -4,7 +4,7 @@ import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
-  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock, Clock, Landmark
+  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock, Clock, Landmark, ShieldCheck
 } from 'lucide-react';
 import './styles.css';
 
@@ -103,7 +103,6 @@ export default function App() {
 
   // Navigation
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [globalSearch, setGlobalSearch] = useState('');
 
   // Data states
   const [dashboardStats, setDashboardStats] = useState({ books: 0, members: 0 });
@@ -144,17 +143,12 @@ export default function App() {
   const [paymentResult, setPaymentResult] = useState(null); // { type: 'success' | 'error' | 'warning' | 'info', title: string, message: string }
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
-  // Amazon-Style Payment Profile & Bank Details State
+  // Bank Account Details State
   const [paymentProfile, setPaymentProfile] = useState(null);
-  const [isLoadingPaymentProfile, setIsLoadingPaymentProfile] = useState(false);
   const [isSavingPaymentProfile, setIsSavingPaymentProfile] = useState(false);
   const [isEditingPaymentProfile, setIsEditingPaymentProfile] = useState(false);
   const [paymentProfileForm, setPaymentProfileForm] = useState({
-    cardHolderName: '',
-    cardNumber: '',
-    cardExpiry: '12/29',
-    cardCvv: '',
-    cardNetwork: 'visa',
+    accountHolderName: '',
     bankName: '',
     accountNumber: '',
     ifscCode: '',
@@ -177,7 +171,6 @@ export default function App() {
 
   // Modals & Drawers
   const [activeModal, setActiveModal] = useState(null); // 'createBook', 'editBook', 'createDonation', 'editDonation', 'createUser', 'editUser', 'adminBorrow', 'userBorrow', 'confirm'
-  const [drawerData, setDrawerData] = useState(null); // { type: 'book'|'member', data: obj }
   const [confirmConfig, setConfirmConfig] = useState({ title: '', message: '', actionBtnText: 'Confirm', onConfirm: null });
 
   // Form models
@@ -185,9 +178,6 @@ export default function App() {
   const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [profileForm, setProfileForm] = useState({ name: '', email: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [promptPhoneForm, setPromptPhoneForm] = useState({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
-  const [selectedBookForCover, setSelectedBookForCover] = useState({ id: '', title: '' });
-  const [coverFile, setCoverFile] = useState(null);
-  const [coverPreview, setCoverPreview] = useState('');
   const [adminBorrowSelect, setAdminBorrowSelect] = useState({ memberId: '', bookId: '' });
   const [userBorrowBookId, setUserBorrowBookId] = useState('');
 
@@ -921,24 +911,6 @@ export default function App() {
     }
   };
 
-  const handleDeactivateMember = async (userId, name) => {
-    setConfirmConfig({
-      title: 'Deactivate Member',
-      message: `Are you sure you want to deactivate member "${name}"?`,
-      actionBtnText: 'Deactivate Account',
-      onConfirm: async () => {
-        const res = await fetchApi(`/user/${userId}/deactivate`, { method: 'POST' });
-        if (res.ok) {
-          showToast(`Member "${name}" deactivated successfully`, 'success');
-          loadMembers(membersPage, memberSearchQuery);
-        } else {
-          showToast(res.data?.message || 'Failed to deactivate member', 'error');
-        }
-      }
-    });
-    setActiveModal('confirm');
-  };
-
   // Borrows Loader - Only loads active circulation records for the current view
   const loadBorrows = async () => {
     if (userRole === 'ADMIN') {
@@ -1167,7 +1139,7 @@ export default function App() {
         description: orderData.description || `Overdue Book Fine Payment #${fineId}`,
         order_id: orderData.orderId,
         prefill: {
-          name: paymentProfile?.cardHolderName || currentUser?.name || '',
+          name: paymentProfile?.accountHolderName || currentUser?.name || '',
           email: currentUser?.email || '',
           contact: currentUser?.phone || ''
         },
@@ -1321,7 +1293,7 @@ export default function App() {
         description: orderData.description || '1-Year Library Membership Security Deposit',
         order_id: orderData.orderId,
         prefill: {
-          name: paymentProfile?.cardHolderName || currentUser?.name || '',
+          name: paymentProfile?.accountHolderName || currentUser?.name || '',
           email: currentUser?.email || '',
           contact: currentUser?.phone || ''
         },
@@ -1533,32 +1505,7 @@ export default function App() {
     }
   };
 
-  // ============================================================
-  // Amazon-Style Payment & Bank Profile Functions & Helpers
-  // ============================================================
-  const detectCardNetwork = (rawNumber) => {
-    const clean = (rawNumber || '').replace(/\D/g, '');
-    if (!clean) return 'visa';
-    if (/^4/.test(clean)) return 'visa';
-    if (/^(5[1-5]|2[2-7])/.test(clean)) return 'mastercard';
-    if (/^(34|37)/.test(clean)) return 'amex';
-    if (/^(60|65|81|82|508)/.test(clean)) return 'rupay';
-    return 'visa';
-  };
-
-  const formatCardNumber = (val) => {
-    const clean = (val || '').replace(/\D/g, '').slice(0, 16);
-    return clean.replace(/(\d{4})(?=\d)/g, '$1 ');
-  };
-
-  const formatExpiry = (val) => {
-    const clean = (val || '').replace(/\D/g, '').slice(0, 4);
-    if (clean.length > 2) {
-      return `${clean.slice(0, 2)}/${clean.slice(2)}`;
-    }
-    return clean;
-  };
-
+  // Bank Account Profile Functions & Helpers
   const formatIfsc = (val) => {
     return (val || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 11).toUpperCase();
   };
@@ -1590,11 +1537,7 @@ export default function App() {
     } else {
       setIsEditingPaymentProfile(true);
       setPaymentProfileForm({
-        cardHolderName: paymentProfile?.cardHolderName || currentUser?.name || '',
-        cardNumber: paymentProfile?.cardLastFour ? `•••• •••• •••• ${paymentProfile.cardLastFour}` : '',
-        cardExpiry: '12/29',
-        cardCvv: '•••',
-        cardNetwork: (paymentProfile?.cardNetwork || 'visa').toLowerCase(),
+        accountHolderName: paymentProfile?.accountHolderName || currentUser?.name || '',
         bankName: paymentProfile?.bankName || '',
         accountNumber: '',
         ifscCode: paymentProfile?.ifscCode || '',
@@ -1606,10 +1549,10 @@ export default function App() {
 
   const handleSavePaymentProfile = async (e) => {
     e.preventDefault();
-    const { cardHolderName, cardNumber, bankName, accountNumber, ifscCode, cardNetwork } = paymentProfileForm;
+    const { accountHolderName, bankName, accountNumber, ifscCode } = paymentProfileForm;
 
-    if (!cardHolderName.trim()) {
-      setPaymentProfileForm(prev => ({ ...prev, formError: 'Card holder name is required' }));
+    if (!accountHolderName.trim()) {
+      setPaymentProfileForm(prev => ({ ...prev, formError: 'Account holder name is required' }));
       return;
     }
     if (!bankName.trim()) {
@@ -1630,15 +1573,11 @@ export default function App() {
     setIsSavingPaymentProfile(true);
     setPaymentProfileForm(prev => ({ ...prev, formError: '' }));
 
-    const detectedNetwork = detectCardNetwork(cardNumber) || cardNetwork || 'visa';
-
     const payload = {
-      cardHolderName: cardHolderName.trim(),
+      accountHolderName: accountHolderName.trim(),
       bankName: bankName.trim(),
       accountNumber: accountNumber.trim(),
-      ifscCode: cleanIfsc,
-      cardNumber: cardNumber.replace(/\s/g, ''),
-      cardNetwork: detectedNetwork.toUpperCase()
+      ifscCode: cleanIfsc
     };
 
     const res = await fetchApi('/user/payment-profile', {
@@ -1651,9 +1590,9 @@ export default function App() {
     if (res.ok && res.data) {
       setPaymentProfile(res.data);
       setIsEditingPaymentProfile(false);
-      showToast('Payment and bank details saved successfully', 'success');
+      showToast('Bank account details saved successfully', 'success');
     } else {
-      const errMsg = res.data?.message || 'Failed to save payment profile';
+      const errMsg = res.data?.message || 'Failed to save bank account details';
       setPaymentProfileForm(prev => ({ ...prev, formError: errMsg }));
       showToast(errMsg, 'error');
     }
@@ -1661,85 +1600,24 @@ export default function App() {
 
   const handleDeletePaymentProfile = () => {
     setConfirmConfig({
-      title: 'Delete Saved Payment Profile',
-      message: 'Are you sure you want to delete your saved card and bank details? You will need to re-enter them for refunds or security deposit returns.',
-      actionBtnText: 'Delete Profile',
+      title: 'Delete Saved Bank Account',
+      message: 'Are you sure you want to delete your saved bank account details? You will need to re-enter them for refunds or security deposit returns.',
+      actionBtnText: 'Delete Account',
       onConfirm: async () => {
         const res = await fetchApi('/user/payment-profile', { method: 'DELETE' });
         if (res.ok) {
           setPaymentProfile(null);
           setIsEditingPaymentProfile(false);
           setActiveModal(null);
-          showToast('Payment profile removed', 'info');
+          showToast('Bank account details removed', 'info');
         } else {
-          showToast(res.data?.message || 'Failed to delete payment profile', 'error');
+          showToast(res.data?.message || 'Failed to delete bank details', 'error');
         }
       }
     });
     setActiveModal('confirm');
   };
 
-  const renderAmazonCard = (data) => {
-    const network = (data.cardNetwork || 'visa').toLowerCase();
-    const holder = data.cardHolderName || 'NAME ON CARD';
-    const number = data.cardNumber || (data.cardLastFour ? `•••• •••• •••• ${data.cardLastFour}` : '•••• •••• •••• ••••');
-    const expiry = data.cardExpiry || '12/29';
-    const bank = data.bankName || 'GLOBAL BANK';
-
-    return (
-      <div className="amazon-card-wrapper">
-        <div className={`amazon-credit-card network-${network}`}>
-          <div className="card-top-row">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div className="card-chip"></div>
-              <div className="card-wireless">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.8">
-                  <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
-                  <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
-                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
-                  <circle cx="12" cy="20" r="1"></circle>
-                </svg>
-              </div>
-            </div>
-            <div className="card-network-badge-wrap">
-              {network === 'visa' && <span className="card-network-badge visa">VISA</span>}
-              {network === 'mastercard' && (
-                <div className="card-network-badge mastercard">
-                  <span className="mc-circle-red"></span>
-                  <span className="mc-circle-yellow"></span>
-                </div>
-              )}
-              {network === 'rupay' && <span className="card-network-badge rupay">RuPay</span>}
-              {network === 'amex' && <span className="card-network-badge amex">AMEX</span>}
-              {!['visa', 'mastercard', 'rupay', 'amex'].includes(network) && (
-                <span className="card-network-badge visa">{network.toUpperCase()}</span>
-              )}
-            </div>
-          </div>
-
-          <div style={{ zIndex: 1 }}>
-            <span style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', opacity: 0.7, display: 'block', marginBottom: '2px' }}>
-              {bank}
-            </span>
-            <div className="card-number-display">
-              {number}
-            </div>
-          </div>
-
-          <div className="card-bottom-row">
-            <div className="card-holder-group">
-              <span className="card-field-label">Card Holder</span>
-              <span className="card-field-value">{holder}</span>
-            </div>
-            <div className="card-expiry-group">
-              <span className="card-field-label">Expires</span>
-              <span className="card-field-value">{expiry}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   // Render loading screen while Auth0 verifies session or profile is synchronizing
   if (isLoading || (isAuthenticated && (isUserSyncing || !currentUser))) {
@@ -2006,8 +1884,8 @@ export default function App() {
               background: isPermanentlyDeactivated
                 ? 'rgba(239, 68, 68, 0.2)'
                 : isPending
-                ? 'rgba(245, 158, 11, 0.2)'
-                : 'rgba(239, 68, 68, 0.15)',
+                  ? 'rgba(245, 158, 11, 0.2)'
+                  : 'rgba(239, 68, 68, 0.15)',
               color: isPermanentlyDeactivated ? '#ef4444' : isPending ? '#f59e0b' : '#ef4444',
               margin: '0 auto 16px',
               display: 'flex',
@@ -2024,8 +1902,8 @@ export default function App() {
               {isPermanentlyDeactivated
                 ? 'Account Permanently Deactivated'
                 : isPending
-                ? 'Reactivation Request Pending Review'
-                : 'Account Deactivated'}
+                  ? 'Reactivation Request Pending Review'
+                  : 'Account Deactivated'}
             </h1>
             <p className="brand-subtitle" style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
               Logged in as <strong>{currentUser.name || currentUser.email}</strong>
@@ -2078,7 +1956,7 @@ export default function App() {
                     Reactivation Request Under Review
                   </strong>
                   <span style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-main)', opacity: 0.9 }}>
-                  Your reactivation request is pending administrator review
+                    Your reactivation request is pending administrator review
                   </span>
                 </div>
               </div>
@@ -2430,8 +2308,8 @@ export default function App() {
                     }}
                     style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                   >
-                    <CreditCard size={14} />
-                    <span>Payment & Bank Details</span>
+                    <Landmark size={14} />
+                    <span>Bank Account Details</span>
                   </button>
                   <div className="dropdown-divider"></div>
                   <button className="dropdown-item danger" onClick={handleSignOut}>Sign Out</button>
@@ -3168,9 +3046,9 @@ export default function App() {
                             const reqStatus = (req.reactivationRequestStatus || (req.reactivationRequested ? 'PENDING' : 'NONE')).toUpperCase();
                             const matchesTab =
                               reactivationTab === 'ALL' ? true :
-                              reactivationTab === 'PENDING' ? (reqStatus === 'PENDING' || (req.reactivationRequested && reqStatus !== 'APPROVED' && reqStatus !== 'REJECTED')) :
-                              reactivationTab === 'APPROVED' ? reqStatus === 'APPROVED' :
-                              reactivationTab === 'REJECTED' ? reqStatus === 'REJECTED' : true;
+                                reactivationTab === 'PENDING' ? (reqStatus === 'PENDING' || (req.reactivationRequested && reqStatus !== 'APPROVED' && reqStatus !== 'REJECTED')) :
+                                  reactivationTab === 'APPROVED' ? reqStatus === 'APPROVED' :
+                                    reactivationTab === 'REJECTED' ? reqStatus === 'REJECTED' : true;
 
                             if (!matchesTab) return false;
 
@@ -3199,10 +3077,10 @@ export default function App() {
                                     {reactivationTab === 'PENDING'
                                       ? ' No pending request'
                                       : reactivationTab === 'APPROVED'
-                                      ? 'No reactivation requests have been approved yet.'
-                                      : reactivationTab === 'REJECTED'
-                                      ? 'No account reactivation requests are currently marked as rejected.'
-                                      : 'There are currently no account reactivation requests recorded in the system.'}
+                                        ? 'No reactivation requests have been approved yet.'
+                                        : reactivationTab === 'REJECTED'
+                                          ? 'No account reactivation requests are currently marked as rejected.'
+                                          : 'There are currently no account reactivation requests recorded in the system.'}
                                   </p>
                                 </td>
                               </tr>
@@ -3233,12 +3111,12 @@ export default function App() {
                                 <td>
                                   <span style={{
                                     color: String(req.status || '').toUpperCase() === 'ACTIVE' ? '#10b981' :
-                                           String(req.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? '#dc2626' : '#ef4444',
+                                      String(req.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? '#dc2626' : '#ef4444',
                                     fontWeight: '600',
                                     fontSize: '13px'
                                   }}>
                                     {String(req.status || '').toUpperCase() === 'ACTIVE' ? 'Active' :
-                                     String(req.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? 'Permanently Deactivated' : 'Deactivated'}
+                                      String(req.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? 'Permanently Deactivated' : 'Deactivated'}
                                   </span>
                                 </td>
                                 <td>
@@ -3624,13 +3502,13 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Amazon-Style Saved Payment & Bank Details Card */}
+                    {/* Saved Bank Details Card */}
                     {paymentProfile ? (
                       <div className="amazon-payment-box mt-4">
                         <div className="amazon-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <CreditCard size={18} color="var(--accent-primary)" />
-                            <span>Saved Payment Method</span>
+                            <Landmark size={18} color="var(--accent-primary)" />
+                            <span>Linked Refund Bank Account</span>
                           </div>
                           <button
                             type="button"
@@ -3638,25 +3516,25 @@ export default function App() {
                             style={{ fontSize: '12px', padding: 0, color: 'var(--accent-primary)', textDecoration: 'underline' }}
                             onClick={() => openPaymentProfileModal(true)}
                           >
-                            Change / Edit Card
+                            Edit Bank Details
                           </button>
                         </div>
 
                         <div className="saved-profile-card" style={{ marginBottom: 0 }}>
                           <div className="saved-profile-info">
                             <div className="saved-profile-icon">
-                              <CreditCard size={20} />
+                              <Landmark size={20} />
                             </div>
                             <div className="saved-profile-details">
                               <strong className="saved-profile-title">
-                                {(paymentProfile.cardNetwork || 'Card').toUpperCase()} ending in {paymentProfile.cardLastFour || '••••'}
+                                {paymentProfile.bankName}
                               </strong>
                               <span className="saved-profile-sub">
-                                {paymentProfile.cardHolderName} • {paymentProfile.bankName}
+                                {paymentProfile.accountHolderName} • A/C: {paymentProfile.maskedAccountNumber || '••••••••'} • IFSC: {paymentProfile.ifscCode}
                               </span>
                               <div className="bank-detail-badge">
-                                <Landmark size={12} />
-                                <span>Refunds route to: {paymentProfile.bankName} ({paymentProfile.maskedAccountNumber || '••••••••'})</span>
+                                <ShieldCheck size={12} />
+                                <span>Security deposit & dues refunds routed directly to this verified bank account</span>
                               </div>
                             </div>
                           </div>
@@ -3665,11 +3543,11 @@ export default function App() {
                     ) : (
                       <div className="amazon-payment-box mt-4" style={{ textAlign: 'left' }}>
                         <div className="amazon-section-title">
-                          <CreditCard size={18} color="var(--accent-primary)" />
-                          <span>Card & Bank Refund Account</span>
+                          <Landmark size={18} color="var(--accent-primary)" />
+                          <span>Bank Refund Account</span>
                         </div>
                         <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                          Save your credit/debit card and bank details (Amazon style) for seamless checkouts and direct security deposit refunds.
+                          Add your bank account details for direct security deposit refunds and automated settlements.
                         </p>
                         <button
                           type="button"
@@ -3678,7 +3556,7 @@ export default function App() {
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                         >
                           <Plus size={14} />
-                          <span>Add Card & Bank Details</span>
+                          <span>Add Bank Account Details</span>
                         </button>
                       </div>
                     )}
@@ -4405,20 +4283,17 @@ export default function App() {
         </div>
       )}
 
-      {/* 0.5 Amazon-Style Payment & Bank Profile Modal */}
+      {/* Bank Account Details Modal */}
       {activeModal === 'paymentProfile' && (
         <div className="modal-backdrop open">
-          <div className="modal-card" style={{ maxWidth: '640px' }}>
+          <div className="modal-card" style={{ maxWidth: '500px' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <CreditCard size={20} />
+                  <Landmark size={20} />
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Payment & Bank Profile</h3>
-                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
-                    Amazon-style card management & instant refund bank routing
-                  </p>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Bank Account Details</h3>
                 </div>
               </div>
               <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
@@ -4426,45 +4301,23 @@ export default function App() {
 
             {paymentProfile && !isEditingPaymentProfile ? (
               <div className="modal-body">
-                {/* 3D Saved Card */}
-                {renderAmazonCard({
-                  cardHolderName: paymentProfile.cardHolderName,
-                  cardLastFour: paymentProfile.cardLastFour,
-                  cardNetwork: paymentProfile.cardNetwork,
-                  bankName: paymentProfile.bankName,
-                  cardExpiry: '12/29'
-                })}
-
-                {/* Saved Bank Details */}
-                <div className="amazon-payment-box">
-                  <div className="amazon-section-title">
-                    <Landmark size={18} color="var(--accent-primary)" />
-                    <span>Linked Refund Bank Account</span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', padding: '18px', background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-medium)' }}>
+                  <div>
+                    <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Account Holder</span>
+                    <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.accountHolderName}</strong>
                   </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
-                    <div>
-                      <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Bank Name</span>
-                      <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.bankName}</strong>
-                    </div>
-                    <div>
-                      <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Account Number</span>
-                      <strong style={{ fontSize: '14px', color: 'var(--text-main)', letterSpacing: '1px' }}>{paymentProfile.maskedAccountNumber || '••••••••'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>IFSC Code</span>
-                      <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.ifscCode}</strong>
-                    </div>
-                    <div>
-                      <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Card Holder</span>
-                      <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.cardHolderName}</strong>
-                    </div>
+                  <div>
+                    <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Bank Name</span>
+                    <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.bankName}</strong>
                   </div>
-                </div>
-
-                <div className="card-security-note">
-                  <Shield size={16} color="#22c55e" style={{ flexShrink: 0 }} />
-                  <span>PCI-DSS compliant: Card details tokenized securely via Razorpay. Full numbers are never stored on library servers.</span>
+                  <div>
+                    <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Account Number</span>
+                    <strong style={{ fontSize: '14px', color: 'var(--text-main)', letterSpacing: '1px' }}>{paymentProfile.maskedAccountNumber || '••••••••'}</strong>
+                  </div>
+                  <div>
+                    <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>IFSC Code</span>
+                    <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.ifscCode}</strong>
+                  </div>
                 </div>
 
                 <div className="modal-footer" style={{ marginTop: '20px', padding: '16px 0 0 0', background: 'transparent' }}>
@@ -4475,7 +4328,7 @@ export default function App() {
                     onClick={handleDeletePaymentProfile}
                   >
                     <Trash2 size={14} style={{ marginRight: '6px' }} />
-                    Delete Profile
+                    Delete Account
                   </button>
                   <button
                     type="button"
@@ -4490,103 +4343,21 @@ export default function App() {
             ) : (
               <form onSubmit={handleSavePaymentProfile}>
                 <div className="modal-body">
-                  {/* Live Interactive 3D Card Graphic */}
-                  {renderAmazonCard({
-                    cardHolderName: paymentProfileForm.cardHolderName || 'NAME ON CARD',
-                    cardNumber: paymentProfileForm.cardNumber || '•••• •••• •••• ••••',
-                    cardExpiry: paymentProfileForm.cardExpiry || '12/29',
-                    cardNetwork: paymentProfileForm.cardNetwork,
-                    bankName: paymentProfileForm.bankName || 'BANK NAME'
-                  })}
-
-                  {/* Card Network Selector */}
-                  <div style={{ marginBottom: '14px' }}>
-                    <label className="form-label" style={{ fontSize: '12px', marginBottom: '6px', display: 'block' }}>
-                      Card Network
-                    </label>
-                    <div className="card-network-tabs">
-                      {['visa', 'mastercard', 'rupay', 'amex'].map((net) => (
-                        <button
-                          key={net}
-                          type="button"
-                          className={`card-network-tab ${paymentProfileForm.cardNetwork === net ? 'active' : ''}`}
-                          onClick={() => setPaymentProfileForm(prev => ({ ...prev, cardNetwork: net }))}
-                        >
-                          {net === 'mastercard' ? 'MasterCard' : net === 'rupay' ? 'RuPay' : net === 'amex' ? 'Amex' : 'Visa'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Card Inputs */}
                   <div className="form-group mb-3">
                     <label className="form-label">
-                      Card Holder Name <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                      Account Holder Name <span style={{ color: 'var(--accent-primary)' }}>*</span>
                     </label>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="Name as it appears on your card (e.g. JOHN DOE)"
+                      placeholder="e.g. JOHN DOE"
                       required
-                      value={paymentProfileForm.cardHolderName}
-                      onChange={e => setPaymentProfileForm({ ...paymentProfileForm, cardHolderName: e.target.value.toUpperCase() })}
+                      value={paymentProfileForm.accountHolderName}
+                      onChange={e => setPaymentProfileForm({ ...paymentProfileForm, accountHolderName: e.target.value.toUpperCase() })}
                     />
                     <small className="text-muted" style={{ fontSize: '11px' }}>
-                      Explicit name on the card (used for Razorpay authentication and card verification)
+                      Name as registered with your bank account
                     </small>
-                  </div>
-
-                  <div className="form-group mb-3">
-                    <label className="form-label">Card Number</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="•••• •••• •••• ••••"
-                      maxLength={19}
-                      value={paymentProfileForm.cardNumber}
-                      onChange={e => {
-                        const formatted = formatCardNumber(e.target.value);
-                        const net = detectCardNetwork(formatted);
-                        setPaymentProfileForm({
-                          ...paymentProfileForm,
-                          cardNumber: formatted,
-                          cardNetwork: net
-                        });
-                      }}
-                    />
-                  </div>
-
-                  <div className="form-grid-2 mb-4">
-                    <div className="form-group">
-                      <label className="form-label">Expires</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="MM/YY"
-                        maxLength={5}
-                        value={paymentProfileForm.cardExpiry}
-                        onChange={e => setPaymentProfileForm({ ...paymentProfileForm, cardExpiry: formatExpiry(e.target.value) })}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">CVV / CVC</label>
-                      <input
-                        type="password"
-                        className="form-input"
-                        placeholder="•••"
-                        maxLength={4}
-                        value={paymentProfileForm.cardCvv}
-                        onChange={e => setPaymentProfileForm({ ...paymentProfileForm, cardCvv: e.target.value.replace(/\D/g, '') })}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '20px 0' }}></div>
-
-                  {/* Bank Details Inputs */}
-                  <div className="amazon-section-title">
-                    <Landmark size={18} color="var(--accent-primary)" />
-                    <span>Bank Account Details (For Direct Refunds & Payouts)</span>
                   </div>
 
                   <div className="form-group mb-3">
@@ -4638,11 +4409,6 @@ export default function App() {
                       {paymentProfileForm.formError}
                     </div>
                   )}
-
-                  <div className="card-security-note">
-                    <Shield size={16} color="#22c55e" style={{ flexShrink: 0 }} />
-                    <span>Your bank account details are encrypted and securely used for deposit refunds and fine adjustments.</span>
-                  </div>
                 </div>
 
                 <div className="modal-footer">
@@ -4668,10 +4434,10 @@ export default function App() {
                     {isSavingPaymentProfile ? (
                       <>
                         <RefreshCw className="animate-spin" size={16} />
-                        <span>Saving Profile...</span>
+                        <span>Saving Details...</span>
                       </>
                     ) : (
-                      'Save Payment Profile'
+                      'Save Bank Details'
                     )}
                   </button>
                 </div>

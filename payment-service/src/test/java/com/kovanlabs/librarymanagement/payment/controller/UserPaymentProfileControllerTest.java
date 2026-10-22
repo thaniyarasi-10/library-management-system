@@ -45,8 +45,6 @@ class UserPaymentProfileControllerTest {
                 "State Bank of India",
                 "••••••••1234",
                 "SBIN0001234",
-                "1234",
-                "VISA",
                 LocalDateTime.now()
         );
 
@@ -54,9 +52,7 @@ class UserPaymentProfileControllerTest {
                 "State Bank of India",
                 "123456789012",
                 "SBIN0001234",
-                "John Doe",
-                "4111222233331234",
-                "VISA"
+                "John Doe"
         );
     }
 
@@ -70,7 +66,7 @@ class UserPaymentProfileControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
-        assertEquals("John Doe", response.getBody().cardHolderName());
+        assertEquals("John Doe", response.getBody().accountHolderName());
         assertEquals("SBIN0001234", response.getBody().ifscCode());
         verify(paymentProfileService).getProfile(email);
     }
