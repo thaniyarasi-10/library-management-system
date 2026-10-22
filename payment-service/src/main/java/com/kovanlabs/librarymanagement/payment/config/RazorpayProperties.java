@@ -1,4 +1,4 @@
-package com.kovanlabs.librarymanagement.config;
+package com.kovanlabs.librarymanagement.payment.config;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "razorpay")
 public class RazorpayProperties {
 
-    private String keyId ;
+    private String keyId;
 
     private String keySecret;
 

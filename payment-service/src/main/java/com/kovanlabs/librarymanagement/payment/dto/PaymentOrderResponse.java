@@ -1,4 +1,4 @@
-package com.kovanlabs.librarymanagement.dto;
+package com.kovanlabs.librarymanagement.payment.dto;
 
 public record PaymentOrderResponse(
         String orderId,

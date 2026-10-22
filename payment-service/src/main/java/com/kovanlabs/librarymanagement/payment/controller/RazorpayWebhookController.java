@@ -1,6 +1,6 @@
-package com.kovanlabs.librarymanagement.controller;
+package com.kovanlabs.librarymanagement.payment.controller;
 
-import com.kovanlabs.librarymanagement.service.PaymentService;
+import com.kovanlabs.librarymanagement.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;

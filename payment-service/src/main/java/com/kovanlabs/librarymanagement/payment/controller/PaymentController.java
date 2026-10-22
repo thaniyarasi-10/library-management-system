@@ -1,10 +1,10 @@
-package com.kovanlabs.librarymanagement.controller;
+package com.kovanlabs.librarymanagement.payment.controller;
 
-import com.kovanlabs.librarymanagement.dto.MembershipCancellationRefundResponse;
-import com.kovanlabs.librarymanagement.dto.PaymentOrderResponse;
-import com.kovanlabs.librarymanagement.dto.PaymentResponseDto;
-import com.kovanlabs.librarymanagement.dto.VerifyPaymentRequest;
-import com.kovanlabs.librarymanagement.service.PaymentService;
+import com.kovanlabs.librarymanagement.payment.dto.MembershipCancellationRefundResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentOrderResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentResponseDto;
+import com.kovanlabs.librarymanagement.payment.dto.VerifyPaymentRequest;
+import com.kovanlabs.librarymanagement.payment.service.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -43,14 +43,6 @@ public class PaymentController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/webhook")
-    public ResponseEntity<Void> handleWebhook(
-            @RequestBody String payload,
-            @RequestHeader(value = "X-Razorpay-Signature", required = false) String signatureHeader) {
-        paymentService.handleWebhook(payload, signatureHeader);
-        return ResponseEntity.ok().build();
-    }
-
     @PostMapping("/membership/cancel-with-refund")
     public ResponseEntity<MembershipCancellationRefundResponse> cancelMembershipWithRefund(Principal principal) {
         MembershipCancellationRefundResponse response = paymentService.cancelMembershipWithRefund(principal.getName());
@@ -58,7 +50,7 @@ public class PaymentController {
     }
 
     @GetMapping("/my-payments")
-    public ResponseEntity<List<PaymentResponseDto>> getMyPayments(Principal principal) {
+    public ResponseEntity<List<PaymentResponseDto>> getUserPayments(Principal principal) {
         List<PaymentResponseDto> payments = paymentService.getUserPayments(principal.getName());
         return ResponseEntity.ok(payments);
     }

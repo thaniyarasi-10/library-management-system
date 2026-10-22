@@ -1,7 +1,7 @@
-package com.kovanlabs.librarymanagement.listener;
+package com.kovanlabs.librarymanagement.payment.listener;
 
 import com.kovanlabs.librarymanagement.common.event.UserPermanentlyDeactivatedEvent;
-import com.kovanlabs.librarymanagement.service.PaymentService;
+import com.kovanlabs.librarymanagement.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;

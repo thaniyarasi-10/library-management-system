@@ -4,7 +4,7 @@ import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
-  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock, Clock
+  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock, Clock, Landmark
 } from 'lucide-react';
 import './styles.css';
 
@@ -143,6 +143,23 @@ export default function App() {
   // Payments & Refunds
   const [paymentResult, setPaymentResult] = useState(null); // { type: 'success' | 'error' | 'warning' | 'info', title: string, message: string }
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
+  // Amazon-Style Payment Profile & Bank Details State
+  const [paymentProfile, setPaymentProfile] = useState(null);
+  const [isLoadingPaymentProfile, setIsLoadingPaymentProfile] = useState(false);
+  const [isSavingPaymentProfile, setIsSavingPaymentProfile] = useState(false);
+  const [isEditingPaymentProfile, setIsEditingPaymentProfile] = useState(false);
+  const [paymentProfileForm, setPaymentProfileForm] = useState({
+    cardHolderName: '',
+    cardNumber: '',
+    cardExpiry: '12/29',
+    cardCvv: '',
+    cardNetwork: 'visa',
+    bankName: '',
+    accountNumber: '',
+    ifscCode: '',
+    formError: ''
+  });
 
   // Membership
   const [membership, setMembership] = useState(null);
@@ -384,6 +401,7 @@ export default function App() {
         if (res.ok && res.data) {
           setCurrentUser(res.data);
           sessionStorage.removeItem('auth0_pending_username');
+          loadPaymentProfile();
           if (!res.data.phone && !sessionStorage.getItem('phone_prompt_dismissed')) {
             setPromptPhoneForm({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
             setActiveModal('missingPhonePrompt');
@@ -419,6 +437,7 @@ export default function App() {
       loadFines();
     } else if (currentPage === 'membership') {
       loadMembership(true);
+      loadPaymentProfile();
     } else if (currentPage === 'donations') {
       loadDonations();
     }
@@ -1148,7 +1167,7 @@ export default function App() {
         description: orderData.description || `Overdue Book Fine Payment #${fineId}`,
         order_id: orderData.orderId,
         prefill: {
-          name: currentUser?.name || '',
+          name: paymentProfile?.cardHolderName || currentUser?.name || '',
           email: currentUser?.email || '',
           contact: currentUser?.phone || ''
         },
@@ -1302,7 +1321,7 @@ export default function App() {
         description: orderData.description || '1-Year Library Membership Security Deposit',
         order_id: orderData.orderId,
         prefill: {
-          name: currentUser?.name || '',
+          name: paymentProfile?.cardHolderName || currentUser?.name || '',
           email: currentUser?.email || '',
           contact: currentUser?.phone || ''
         },
@@ -1512,6 +1531,214 @@ export default function App() {
       setPromptPhoneForm(prev => ({ ...prev, phoneError: errMsg }));
       showToast(errMsg, 'error');
     }
+  };
+
+  // ============================================================
+  // Amazon-Style Payment & Bank Profile Functions & Helpers
+  // ============================================================
+  const detectCardNetwork = (rawNumber) => {
+    const clean = (rawNumber || '').replace(/\D/g, '');
+    if (!clean) return 'visa';
+    if (/^4/.test(clean)) return 'visa';
+    if (/^(5[1-5]|2[2-7])/.test(clean)) return 'mastercard';
+    if (/^(34|37)/.test(clean)) return 'amex';
+    if (/^(60|65|81|82|508)/.test(clean)) return 'rupay';
+    return 'visa';
+  };
+
+  const formatCardNumber = (val) => {
+    const clean = (val || '').replace(/\D/g, '').slice(0, 16);
+    return clean.replace(/(\d{4})(?=\d)/g, '$1 ');
+  };
+
+  const formatExpiry = (val) => {
+    const clean = (val || '').replace(/\D/g, '').slice(0, 4);
+    if (clean.length > 2) {
+      return `${clean.slice(0, 2)}/${clean.slice(2)}`;
+    }
+    return clean;
+  };
+
+  const formatIfsc = (val) => {
+    return (val || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 11).toUpperCase();
+  };
+
+  const loadPaymentProfile = useCallback(async () => {
+    if (!isAuthenticated) return null;
+    setIsLoadingPaymentProfile(true);
+    try {
+      const res = await fetchApi('/user/payment-profile');
+      if (res.ok && res.data) {
+        setPaymentProfile(res.data);
+        return res.data;
+      } else {
+        setPaymentProfile(null);
+        return null;
+      }
+    } catch (err) {
+      console.warn('Error loading payment profile:', err);
+      setPaymentProfile(null);
+      return null;
+    } finally {
+      setIsLoadingPaymentProfile(false);
+    }
+  }, [isAuthenticated, fetchApi]);
+
+  const openPaymentProfileModal = (forceEdit = false) => {
+    if (paymentProfile && !forceEdit) {
+      setIsEditingPaymentProfile(false);
+    } else {
+      setIsEditingPaymentProfile(true);
+      setPaymentProfileForm({
+        cardHolderName: paymentProfile?.cardHolderName || currentUser?.name || '',
+        cardNumber: paymentProfile?.cardLastFour ? `•••• •••• •••• ${paymentProfile.cardLastFour}` : '',
+        cardExpiry: '12/29',
+        cardCvv: '•••',
+        cardNetwork: (paymentProfile?.cardNetwork || 'visa').toLowerCase(),
+        bankName: paymentProfile?.bankName || '',
+        accountNumber: '',
+        ifscCode: paymentProfile?.ifscCode || '',
+        formError: ''
+      });
+    }
+    setActiveModal('paymentProfile');
+  };
+
+  const handleSavePaymentProfile = async (e) => {
+    e.preventDefault();
+    const { cardHolderName, cardNumber, bankName, accountNumber, ifscCode, cardNetwork } = paymentProfileForm;
+
+    if (!cardHolderName.trim()) {
+      setPaymentProfileForm(prev => ({ ...prev, formError: 'Card holder name is required' }));
+      return;
+    }
+    if (!bankName.trim()) {
+      setPaymentProfileForm(prev => ({ ...prev, formError: 'Bank name is required' }));
+      return;
+    }
+    if (!accountNumber.trim()) {
+      setPaymentProfileForm(prev => ({ ...prev, formError: 'Account number is required' }));
+      return;
+    }
+    const cleanIfsc = ifscCode.trim().toUpperCase();
+    const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+    if (!ifscRegex.test(cleanIfsc)) {
+      setPaymentProfileForm(prev => ({ ...prev, formError: 'Invalid IFSC code format (e.g. HDFC0001234)' }));
+      return;
+    }
+
+    setIsSavingPaymentProfile(true);
+    setPaymentProfileForm(prev => ({ ...prev, formError: '' }));
+
+    const detectedNetwork = detectCardNetwork(cardNumber) || cardNetwork || 'visa';
+
+    const payload = {
+      cardHolderName: cardHolderName.trim(),
+      bankName: bankName.trim(),
+      accountNumber: accountNumber.trim(),
+      ifscCode: cleanIfsc,
+      cardNumber: cardNumber.replace(/\s/g, ''),
+      cardNetwork: detectedNetwork.toUpperCase()
+    };
+
+    const res = await fetchApi('/user/payment-profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+
+    setIsSavingPaymentProfile(false);
+
+    if (res.ok && res.data) {
+      setPaymentProfile(res.data);
+      setIsEditingPaymentProfile(false);
+      showToast('Payment and bank details saved successfully', 'success');
+    } else {
+      const errMsg = res.data?.message || 'Failed to save payment profile';
+      setPaymentProfileForm(prev => ({ ...prev, formError: errMsg }));
+      showToast(errMsg, 'error');
+    }
+  };
+
+  const handleDeletePaymentProfile = () => {
+    setConfirmConfig({
+      title: 'Delete Saved Payment Profile',
+      message: 'Are you sure you want to delete your saved card and bank details? You will need to re-enter them for refunds or security deposit returns.',
+      actionBtnText: 'Delete Profile',
+      onConfirm: async () => {
+        const res = await fetchApi('/user/payment-profile', { method: 'DELETE' });
+        if (res.ok) {
+          setPaymentProfile(null);
+          setIsEditingPaymentProfile(false);
+          setActiveModal(null);
+          showToast('Payment profile removed', 'info');
+        } else {
+          showToast(res.data?.message || 'Failed to delete payment profile', 'error');
+        }
+      }
+    });
+    setActiveModal('confirm');
+  };
+
+  const renderAmazonCard = (data) => {
+    const network = (data.cardNetwork || 'visa').toLowerCase();
+    const holder = data.cardHolderName || 'NAME ON CARD';
+    const number = data.cardNumber || (data.cardLastFour ? `•••• •••• •••• ${data.cardLastFour}` : '•••• •••• •••• ••••');
+    const expiry = data.cardExpiry || '12/29';
+    const bank = data.bankName || 'GLOBAL BANK';
+
+    return (
+      <div className="amazon-card-wrapper">
+        <div className={`amazon-credit-card network-${network}`}>
+          <div className="card-top-row">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="card-chip"></div>
+              <div className="card-wireless">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.8">
+                  <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                  <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                  <circle cx="12" cy="20" r="1"></circle>
+                </svg>
+              </div>
+            </div>
+            <div className="card-network-badge-wrap">
+              {network === 'visa' && <span className="card-network-badge visa">VISA</span>}
+              {network === 'mastercard' && (
+                <div className="card-network-badge mastercard">
+                  <span className="mc-circle-red"></span>
+                  <span className="mc-circle-yellow"></span>
+                </div>
+              )}
+              {network === 'rupay' && <span className="card-network-badge rupay">RuPay</span>}
+              {network === 'amex' && <span className="card-network-badge amex">AMEX</span>}
+              {!['visa', 'mastercard', 'rupay', 'amex'].includes(network) && (
+                <span className="card-network-badge visa">{network.toUpperCase()}</span>
+              )}
+            </div>
+          </div>
+
+          <div style={{ zIndex: 1 }}>
+            <span style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', opacity: 0.7, display: 'block', marginBottom: '2px' }}>
+              {bank}
+            </span>
+            <div className="card-number-display">
+              {number}
+            </div>
+          </div>
+
+          <div className="card-bottom-row">
+            <div className="card-holder-group">
+              <span className="card-field-label">Card Holder</span>
+              <span className="card-field-value">{holder}</span>
+            </div>
+            <div className="card-expiry-group">
+              <span className="card-field-label">Expires</span>
+              <span className="card-field-value">{expiry}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   // Render loading screen while Auth0 verifies session or profile is synchronizing
@@ -1856,8 +2083,51 @@ export default function App() {
                 </div>
               </div>
             </div>
+          ) : !hasPendingFines ? (
+            /* Fine settled or no fines: display strictly ONLY the Request Reactivation button */
+            <div style={{ marginTop: '24px', marginBottom: '24px' }}>
+              <button
+                type="button"
+                className="btn btn-primary btn-block"
+                onClick={handleReactivateRequest}
+                disabled={requestingReactivation}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '16px', fontSize: '16px', fontWeight: '700' }}
+              >
+                {requestingReactivation ? (
+                  <>
+                    <RefreshCw size={18} className="spin" />
+                    <span>Submitting Request...</span>
+                  </>
+                ) : (
+                  currentUser.reactivationRequestStatus === 'REJECTED' ? 'Submit New Request' : 'Request Reactivation'
+                )}
+              </button>
+            </div>
           ) : (
             <>
+              {paymentResult && (
+                <div className={`payment-result-banner banner-${paymentResult.type || 'info'}`} style={{ textAlign: 'left', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: '20px', lineHeight: 1 }}>
+                      {paymentResult.type === 'success' ? '✅' : paymentResult.type === 'warning' ? '⚠️' : 'ℹ️'}
+                    </span>
+                    <div>
+                      <strong style={{ fontSize: '14px', display: 'block', marginBottom: '2px' }}>{paymentResult.title}</strong>
+                      <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.4 }}>{paymentResult.message}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-link"
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0 4px' }}
+                    onClick={() => setPaymentResult(null)}
+                    title="Dismiss"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+
               <div style={{ textAlign: 'left', marginBottom: '20px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                   <span style={{ fontSize: '22px', lineHeight: 1 }}>⚠️</span>
@@ -1866,119 +2136,98 @@ export default function App() {
                       Your account has been deactivated
                     </strong>
                     <span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-main)', opacity: 0.9 }}>
-                    Your account is deactivated due to inactivity. Submit a reactivation request within 10 days to avoid permanent deactivation.
+                      Your account is deactivated due to inactivity. Please settle your overdue fine to request reactivation.
                     </span>
                   </div>
                 </div>
               </div>
 
               {/* Outstanding Fines Section */}
-              {hasPendingFines ? (
-                <div className="deactivated-fine-card">
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                    <CreditCard size={20} color="#f59e0b" />
-                    <strong style={{ fontSize: '15px', color: '#f59e0b' }}>Outstanding Fine Detected</strong>
-                  </div>
-                  <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '8px' }}>
-                    You have unpaid pending fines of <strong style={{ color: '#f59e0b', fontSize: '16px' }}>₹{Number(totalPendingFine).toFixed(2)}</strong>.
-                  </p>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
-                    Please settle your pending fine to enable account reactivation:
-                  </p>
+              <div className="deactivated-fine-card">
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                  <CreditCard size={20} color="#f59e0b" />
+                  <strong style={{ fontSize: '15px', color: '#f59e0b' }}>Outstanding Fine Detected</strong>
+                </div>
+                <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '8px' }}>
+                  You have unpaid pending fines of <strong style={{ color: '#f59e0b', fontSize: '16px' }}>₹{Number(totalPendingFine).toFixed(2)}</strong>.
+                </p>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                  Please settle your pending fine to enable account reactivation:
+                </p>
 
-                  {unpaidFines.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {unpaidFines.map((f, idx) => {
-                        const fineAmt = f.pendingFineAmount || f.amount || 0;
-                        return (
-                          <div key={f.id ?? `unpaid-fine-${idx}`} className="deactivated-fine-item">
-                            <div className="deactivated-fine-details">
-                              <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>
-                                {f.bookTitle || 'Library Book Overdue Fine'}
-                              </strong>
-                              {f.bookAuthor && (
-                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>by {f.bookAuthor}</span>
-                              )}
-                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fine #{f.id}</span>
-                            </div>
-                            <div className="deactivated-fine-actions">
-                              <span style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b', marginRight: '6px' }}>
-                                ₹{Number(fineAmt).toFixed(2)}
-                              </span>
-                              <button
-                                type="button"
-                                className="btn btn-primary btn-sm"
-                                disabled={isProcessingPayment}
-                                onClick={() => handlePayFine(f.id)}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 14px' }}
-                              >
-                                {isProcessingPayment ? (
-                                  <>
-                                    <RefreshCw size={12} className="spin" />
-                                    <span>Processing...</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <CreditCard size={12} />
-                                    <span>Pay Fine</span>
-                                  </>
-                                )}
-                              </button>
-                            </div>
+                {unpaidFines.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {unpaidFines.map((f, idx) => {
+                      const fineAmt = f.pendingFineAmount || f.amount || 0;
+                      return (
+                        <div key={f.id ?? `unpaid-fine-${idx}`} className="deactivated-fine-item">
+                          <div className="deactivated-fine-details">
+                            <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>
+                              {f.bookTitle || 'Library Book Overdue Fine'}
+                            </strong>
+                            {f.bookAuthor && (
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>by {f.bookAuthor}</span>
+                            )}
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fine #{f.id}</span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div style={{ marginTop: '10px' }}>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-block"
-                        disabled={isProcessingPayment}
-                        onClick={() => {
-                          if (unpaidFines[0]?.id) {
-                            handlePayFine(unpaidFines[0].id);
-                          } else {
-                            loadFines();
-                          }
-                        }}
-                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                      >
-                        {isProcessingPayment ? (
-                          <>
-                            <RefreshCw size={14} className="spin" />
-                            <span>Opening Razorpay...</span>
-                          </>
-                        ) : (
-                          <>
-                            <CreditCard size={16} />
-                            <span>Pay Fine (₹{Number(totalPendingFine).toFixed(2)}) via Razorpay</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ marginBottom: '24px' }}>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-block"
-                    onClick={handleReactivateRequest}
-                    disabled={requestingReactivation}
-                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                  >
-                    {requestingReactivation ? (
-                      <>
-                        <RefreshCw size={16} className="spin" />
-                        <span>Submitting Request...</span>
-                      </>
-                    ) : (
-                      currentUser.reactivationRequestStatus === 'REJECTED' ? 'Submit New Request' : 'Request Reactivation'
-                    )}
-                  </button>
-                </div>
-              )}
+                          <div className="deactivated-fine-actions">
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b', marginRight: '6px' }}>
+                              ₹{Number(fineAmt).toFixed(2)}
+                            </span>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              disabled={isProcessingPayment}
+                              onClick={() => handlePayFine(f.id)}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 14px' }}
+                            >
+                              {isProcessingPayment ? (
+                                <>
+                                  <RefreshCw size={12} className="spin" />
+                                  <span>Processing...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CreditCard size={12} />
+                                  <span>Pay Fine</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: '10px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-block"
+                      disabled={isProcessingPayment}
+                      onClick={() => {
+                        if (unpaidFines[0]?.id) {
+                          handlePayFine(unpaidFines[0].id);
+                        } else {
+                          loadFines();
+                        }
+                      }}
+                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                    >
+                      {isProcessingPayment ? (
+                        <>
+                          <RefreshCw size={14} className="spin" />
+                          <span>Opening Razorpay...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard size={16} />
+                          <span>Pay Fine (₹{Number(totalPendingFine).toFixed(2)}) via Razorpay</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
             </>
           )}
 
@@ -2172,6 +2421,17 @@ export default function App() {
                   >
                     <Award size={14} />
                     <span>{userRole === 'ADMIN' ? 'Membership' : 'Digital Membership'}</span>
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      openPaymentProfileModal();
+                      setShowUserDropdown(false);
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <CreditCard size={14} />
+                    <span>Payment & Bank Details</span>
                   </button>
                   <div className="dropdown-divider"></div>
                   <button className="dropdown-item danger" onClick={handleSignOut}>Sign Out</button>
@@ -3364,6 +3624,65 @@ export default function App() {
                       </div>
                     </div>
 
+                    {/* Amazon-Style Saved Payment & Bank Details Card */}
+                    {paymentProfile ? (
+                      <div className="amazon-payment-box mt-4">
+                        <div className="amazon-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <CreditCard size={18} color="var(--accent-primary)" />
+                            <span>Saved Payment Method</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-link btn-sm"
+                            style={{ fontSize: '12px', padding: 0, color: 'var(--accent-primary)', textDecoration: 'underline' }}
+                            onClick={() => openPaymentProfileModal(true)}
+                          >
+                            Change / Edit Card
+                          </button>
+                        </div>
+
+                        <div className="saved-profile-card" style={{ marginBottom: 0 }}>
+                          <div className="saved-profile-info">
+                            <div className="saved-profile-icon">
+                              <CreditCard size={20} />
+                            </div>
+                            <div className="saved-profile-details">
+                              <strong className="saved-profile-title">
+                                {(paymentProfile.cardNetwork || 'Card').toUpperCase()} ending in {paymentProfile.cardLastFour || '••••'}
+                              </strong>
+                              <span className="saved-profile-sub">
+                                {paymentProfile.cardHolderName} • {paymentProfile.bankName}
+                              </span>
+                              <div className="bank-detail-badge">
+                                <Landmark size={12} />
+                                <span>Refunds route to: {paymentProfile.bankName} ({paymentProfile.maskedAccountNumber || '••••••••'})</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="amazon-payment-box mt-4" style={{ textAlign: 'left' }}>
+                        <div className="amazon-section-title">
+                          <CreditCard size={18} color="var(--accent-primary)" />
+                          <span>Card & Bank Refund Account</span>
+                        </div>
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                          Save your credit/debit card and bank details (Amazon style) for seamless checkouts and direct security deposit refunds.
+                        </p>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => openPaymentProfileModal(true)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <Plus size={14} />
+                          <span>Add Card & Bank Details</span>
+                        </button>
+                      </div>
+                    )}
+
                     <button
                       className="btn btn-primary btn-block mt-6"
                       disabled={isProcessingPayment}
@@ -4082,6 +4401,282 @@ export default function App() {
                 <button type="submit" className="btn btn-primary">Save Changes</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 0.5 Amazon-Style Payment & Bank Profile Modal */}
+      {activeModal === 'paymentProfile' && (
+        <div className="modal-backdrop open">
+          <div className="modal-card" style={{ maxWidth: '640px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CreditCard size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Payment & Bank Profile</h3>
+                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Amazon-style card management & instant refund bank routing
+                  </p>
+                </div>
+              </div>
+              <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
+            </div>
+
+            {paymentProfile && !isEditingPaymentProfile ? (
+              <div className="modal-body">
+                {/* 3D Saved Card */}
+                {renderAmazonCard({
+                  cardHolderName: paymentProfile.cardHolderName,
+                  cardLastFour: paymentProfile.cardLastFour,
+                  cardNetwork: paymentProfile.cardNetwork,
+                  bankName: paymentProfile.bankName,
+                  cardExpiry: '12/29'
+                })}
+
+                {/* Saved Bank Details */}
+                <div className="amazon-payment-box">
+                  <div className="amazon-section-title">
+                    <Landmark size={18} color="var(--accent-primary)" />
+                    <span>Linked Refund Bank Account</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
+                    <div>
+                      <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Bank Name</span>
+                      <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.bankName}</strong>
+                    </div>
+                    <div>
+                      <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Account Number</span>
+                      <strong style={{ fontSize: '14px', color: 'var(--text-main)', letterSpacing: '1px' }}>{paymentProfile.maskedAccountNumber || '••••••••'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>IFSC Code</span>
+                      <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.ifscCode}</strong>
+                    </div>
+                    <div>
+                      <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Card Holder</span>
+                      <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.cardHolderName}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card-security-note">
+                  <Shield size={16} color="#22c55e" style={{ flexShrink: 0 }} />
+                  <span>PCI-DSS compliant: Card details tokenized securely via Razorpay. Full numbers are never stored on library servers.</span>
+                </div>
+
+                <div className="modal-footer" style={{ marginTop: '20px', padding: '16px 0 0 0', background: 'transparent' }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ color: '#ef4444' }}
+                    onClick={handleDeletePaymentProfile}
+                  >
+                    <Trash2 size={14} style={{ marginRight: '6px' }} />
+                    Delete Profile
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => openPaymentProfileModal(true)}
+                  >
+                    <Edit2 size={14} style={{ marginRight: '6px' }} />
+                    Update Details
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSavePaymentProfile}>
+                <div className="modal-body">
+                  {/* Live Interactive 3D Card Graphic */}
+                  {renderAmazonCard({
+                    cardHolderName: paymentProfileForm.cardHolderName || 'NAME ON CARD',
+                    cardNumber: paymentProfileForm.cardNumber || '•••• •••• •••• ••••',
+                    cardExpiry: paymentProfileForm.cardExpiry || '12/29',
+                    cardNetwork: paymentProfileForm.cardNetwork,
+                    bankName: paymentProfileForm.bankName || 'BANK NAME'
+                  })}
+
+                  {/* Card Network Selector */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <label className="form-label" style={{ fontSize: '12px', marginBottom: '6px', display: 'block' }}>
+                      Card Network
+                    </label>
+                    <div className="card-network-tabs">
+                      {['visa', 'mastercard', 'rupay', 'amex'].map((net) => (
+                        <button
+                          key={net}
+                          type="button"
+                          className={`card-network-tab ${paymentProfileForm.cardNetwork === net ? 'active' : ''}`}
+                          onClick={() => setPaymentProfileForm(prev => ({ ...prev, cardNetwork: net }))}
+                        >
+                          {net === 'mastercard' ? 'MasterCard' : net === 'rupay' ? 'RuPay' : net === 'amex' ? 'Amex' : 'Visa'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Card Inputs */}
+                  <div className="form-group mb-3">
+                    <label className="form-label">
+                      Card Holder Name <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Name as it appears on your card (e.g. JOHN DOE)"
+                      required
+                      value={paymentProfileForm.cardHolderName}
+                      onChange={e => setPaymentProfileForm({ ...paymentProfileForm, cardHolderName: e.target.value.toUpperCase() })}
+                    />
+                    <small className="text-muted" style={{ fontSize: '11px' }}>
+                      Explicit name on the card (used for Razorpay authentication and card verification)
+                    </small>
+                  </div>
+
+                  <div className="form-group mb-3">
+                    <label className="form-label">Card Number</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="•••• •••• •••• ••••"
+                      maxLength={19}
+                      value={paymentProfileForm.cardNumber}
+                      onChange={e => {
+                        const formatted = formatCardNumber(e.target.value);
+                        const net = detectCardNetwork(formatted);
+                        setPaymentProfileForm({
+                          ...paymentProfileForm,
+                          cardNumber: formatted,
+                          cardNetwork: net
+                        });
+                      }}
+                    />
+                  </div>
+
+                  <div className="form-grid-2 mb-4">
+                    <div className="form-group">
+                      <label className="form-label">Expires</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="MM/YY"
+                        maxLength={5}
+                        value={paymentProfileForm.cardExpiry}
+                        onChange={e => setPaymentProfileForm({ ...paymentProfileForm, cardExpiry: formatExpiry(e.target.value) })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">CVV / CVC</label>
+                      <input
+                        type="password"
+                        className="form-input"
+                        placeholder="•••"
+                        maxLength={4}
+                        value={paymentProfileForm.cardCvv}
+                        onChange={e => setPaymentProfileForm({ ...paymentProfileForm, cardCvv: e.target.value.replace(/\D/g, '') })}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '20px 0' }}></div>
+
+                  {/* Bank Details Inputs */}
+                  <div className="amazon-section-title">
+                    <Landmark size={18} color="var(--accent-primary)" />
+                    <span>Bank Account Details (For Direct Refunds & Payouts)</span>
+                  </div>
+
+                  <div className="form-group mb-3">
+                    <label className="form-label">
+                      Bank Name <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. HDFC Bank, State Bank of India, ICICI Bank"
+                      required
+                      value={paymentProfileForm.bankName}
+                      onChange={e => setPaymentProfileForm({ ...paymentProfileForm, bankName: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-grid-2 mb-3">
+                    <div className="form-group">
+                      <label className="form-label">
+                        Account Number <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. 123456789012"
+                        required
+                        value={paymentProfileForm.accountNumber}
+                        onChange={e => setPaymentProfileForm({ ...paymentProfileForm, accountNumber: e.target.value.replace(/[^\d]/g, '') })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">
+                        IFSC Code <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. HDFC0001234"
+                        required
+                        maxLength={11}
+                        value={paymentProfileForm.ifscCode}
+                        onChange={e => setPaymentProfileForm({ ...paymentProfileForm, ifscCode: formatIfsc(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+
+                  {paymentProfileForm.formError && (
+                    <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', fontSize: '13px', marginTop: '10px' }}>
+                      {paymentProfileForm.formError}
+                    </div>
+                  )}
+
+                  <div className="card-security-note">
+                    <Shield size={16} color="#22c55e" style={{ flexShrink: 0 }} />
+                    <span>Your bank account details are encrypted and securely used for deposit refunds and fine adjustments.</span>
+                  </div>
+                </div>
+
+                <div className="modal-footer">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      if (paymentProfile) {
+                        setIsEditingPaymentProfile(false);
+                      } else {
+                        setActiveModal(null);
+                      }
+                    }}
+                    disabled={isSavingPaymentProfile}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={isSavingPaymentProfile}
+                  >
+                    {isSavingPaymentProfile ? (
+                      <>
+                        <RefreshCw className="animate-spin" size={16} />
+                        <span>Saving Profile...</span>
+                      </>
+                    ) : (
+                      'Save Payment Profile'
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

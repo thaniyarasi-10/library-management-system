@@ -1,17 +1,18 @@
-package com.kovanlabs.librarymanagement.service;
+package com.kovanlabs.librarymanagement.payment.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kovanlabs.librarymanagement.config.RazorpayProperties;
 import com.kovanlabs.librarymanagement.database.entity.Fine;
 import com.kovanlabs.librarymanagement.database.entity.Membership;
 import com.kovanlabs.librarymanagement.database.entity.Payment;
 import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.entity.UserProvider;
 import com.kovanlabs.librarymanagement.database.enums.*;
 import com.kovanlabs.librarymanagement.database.repository.*;
-import com.kovanlabs.librarymanagement.dto.MembershipCancellationRefundResponse;
-import com.kovanlabs.librarymanagement.dto.PaymentOrderResponse;
-import com.kovanlabs.librarymanagement.dto.PaymentResponseDto;
-import com.kovanlabs.librarymanagement.dto.VerifyPaymentRequest;
+import com.kovanlabs.librarymanagement.payment.config.RazorpayProperties;
+import com.kovanlabs.librarymanagement.payment.dto.MembershipCancellationRefundResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentOrderResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentResponseDto;
+import com.kovanlabs.librarymanagement.payment.dto.VerifyPaymentRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -51,12 +53,6 @@ class PaymentServiceImplTest {
 
     @Mock
     private BorrowRepository borrowRepository;
-
-    @Mock
-    private MembershipService membershipService;
-
-    @Mock
-    private FineService fineService;
 
     @Mock
     private RazorpayClientService razorpayClientService;
@@ -94,7 +90,8 @@ class PaymentServiceImplTest {
 
     @Test
     void testCreateMembershipOrder_success() {
-        when(membershipService.hasActiveMembership(userUuid)).thenReturn(false);
+        when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid))
+                .thenReturn(Optional.empty());
 
         Membership pendingSigned = Membership.builder()
                 .uuid(UUID.randomUUID().toString())
@@ -126,14 +123,22 @@ class PaymentServiceImplTest {
 
     @Test
     void testCreateMembershipOrder_alreadyActive_throwsBadRequest() {
-        when(membershipService.hasActiveMembership(userUuid)).thenReturn(true);
+        Membership active = Membership.builder()
+                .uuid(UUID.randomUUID().toString())
+                .userUuid(userUuid)
+                .status(MembershipStatus.ACTIVE)
+                .expiryDate(LocalDate.now().plusMonths(6))
+                .build();
+        when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid))
+                .thenReturn(Optional.of(active));
 
         assertThrows(ResponseStatusException.class, () -> paymentService.createMembershipOrder(userEmail));
     }
 
     @Test
     void testCreateMembershipOrder_notSigned_throwsBadRequest() {
-        when(membershipService.hasActiveMembership(userUuid)).thenReturn(false);
+        when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid))
+                .thenReturn(Optional.empty());
 
         Membership unsigned = Membership.builder()
                 .uuid(UUID.randomUUID().toString())
@@ -234,12 +239,21 @@ class PaymentServiceImplTest {
         when(razorpayClientService.verifyPaymentSignature(orderId, payId, sig)).thenReturn(true);
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
 
+        Membership pendingMem = Membership.builder()
+                .uuid(UUID.randomUUID().toString())
+                .userUuid(userUuid)
+                .status(MembershipStatus.PENDING)
+                .build();
+        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+                .thenReturn(Optional.of(pendingMem));
+
         PaymentResponseDto response = paymentService.verifyPayment(request, userEmail);
 
         assertNotNull(response);
         assertEquals("SUCCESS", response.status());
         assertEquals(payId, response.razorpayPaymentId());
-        verify(membershipService).activateMembership(userUuid);
+        assertEquals(MembershipStatus.ACTIVE, pendingMem.getStatus());
+        verify(membershipRepository).save(pendingMem);
     }
 
     @Test
@@ -264,11 +278,21 @@ class PaymentServiceImplTest {
         when(razorpayClientService.verifyPaymentSignature(orderId, payId, sig)).thenReturn(true);
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
 
+        Fine fine = Fine.builder()
+                .id(101L)
+                .userUuid(userUuid)
+                .pendingFineAmount(BigDecimal.valueOf(25.00))
+                .status(FineStatus.PENDING)
+                .build();
+        when(fineRepository.findById(101L)).thenReturn(Optional.of(fine));
+
         PaymentResponseDto response = paymentService.verifyPayment(request, userEmail);
 
         assertNotNull(response);
         assertEquals("SUCCESS", response.status());
-        verify(fineService).payFine(101L);
+        assertEquals(FineStatus.PAID, fine.getStatus());
+        assertEquals(BigDecimal.ZERO, fine.getPendingFineAmount());
+        verify(fineRepository).save(fine);
     }
 
     @Test
@@ -295,7 +319,7 @@ class PaymentServiceImplTest {
 
         assertEquals(PaymentStatus.FAILED, payment.getStatus());
         verify(paymentRepository).save(payment);
-        verify(membershipService, never()).activateMembership(any());
+        verify(membershipRepository, never()).save(any());
     }
 
     @Test
@@ -320,7 +344,7 @@ class PaymentServiceImplTest {
 
         assertNotNull(response);
         assertEquals("SUCCESS", response.status());
-        verify(membershipService, never()).activateMembership(any());
+        verify(membershipRepository, never()).save(any());
     }
 
     // ==========================================
@@ -349,12 +373,21 @@ class PaymentServiceImplTest {
 
         when(paymentRepository.findByRazorpayOrderId("order_web_1")).thenReturn(Optional.of(payment));
 
+        Membership pendingMem = Membership.builder()
+                .uuid(UUID.randomUUID().toString())
+                .userUuid(userUuid)
+                .status(MembershipStatus.PENDING)
+                .build();
+        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+                .thenReturn(Optional.of(pendingMem));
+
         paymentService.handleWebhook(payload, "good_sig");
 
         assertEquals(PaymentStatus.SUCCESS, payment.getStatus());
         assertEquals("pay_web_1", payment.getRazorpayPaymentId());
         verify(paymentRepository).save(payment);
-        verify(membershipService).activateMembership(userUuid);
+        assertEquals(MembershipStatus.ACTIVE, pendingMem.getStatus());
+        verify(membershipRepository).save(pendingMem);
     }
 
     @Test
@@ -407,8 +440,7 @@ class PaymentServiceImplTest {
 
         paymentService.handleWebhook(payload, "good_sig");
 
-        // Should NOT activate membership or save payment again
-        verify(membershipService, never()).activateMembership(anyString());
+        verify(membershipRepository, never()).save(any());
         verify(paymentRepository, never()).save(payment);
     }
 
@@ -449,7 +481,6 @@ class PaymentServiceImplTest {
 
         paymentService.handleWebhook(payload, "good_sig");
 
-        // Status must remain SUCCESS and not be overwritten
         assertEquals(PaymentStatus.SUCCESS, payment.getStatus());
         verify(paymentRepository, never()).save(payment);
     }
@@ -500,7 +531,7 @@ class PaymentServiceImplTest {
         when(paymentRepository.findByRazorpayRefundId("rfnd_failed_1")).thenReturn(Optional.of(refund));
         when(paymentRepository.findByUuid(origPaymentUuid)).thenReturn(Optional.of(origPayment));
         when(paymentRepository.findByPaymentUuidAndTransactionType(origPaymentUuid, TransactionType.REFUND))
-                .thenReturn(List.of()); // No other successful refunds
+                .thenReturn(List.of());
 
         paymentService.handleWebhook(payload, "sig");
 
@@ -568,8 +599,15 @@ class PaymentServiceImplTest {
                 eq(userUuid), eq(PaymentType.MEMBERSHIP), eq(TransactionType.PAYMENT), eq(PaymentStatus.SUCCESS)))
                 .thenReturn(Optional.of(origPayment));
 
-        // ₹50 unpaid fines (5000 paise) -> eligible refund = 50000 - 5000 = 45000 paise (₹450)
-        when(fineService.calculateTotalPendingFineForUser(userUuid)).thenReturn(BigDecimal.valueOf(50.00));
+        Fine pendingFine = Fine.builder()
+                .id(99L)
+                .userUuid(userUuid)
+                .pendingFineAmount(BigDecimal.valueOf(50.00)) // ₹50 unpaid fine = 5000 paise
+                .status(FineStatus.PENDING)
+                .build();
+        when(fineRepository.findByUserUuidAndStatus(userUuid, FineStatus.PENDING))
+                .thenReturn(List.of(pendingFine));
+
         when(paymentRepository.findByPaymentUuidAndTransactionType(origPaymentUuid, TransactionType.REFUND))
                 .thenReturn(List.of());
         when(razorpayClientService.refundPayment("pay_orig_123", 45000L)).thenReturn("rfnd_cancel_450");
@@ -582,7 +620,8 @@ class PaymentServiceImplTest {
         assertEquals(45000L, response.refundAmount());
         assertEquals("rfnd_cancel_450", response.razorpayRefundId());
 
-        verify(membershipService).cancelMembership(userEmail);
+        assertEquals(MembershipStatus.CANCELLED, activeMem.getStatus());
+        verify(membershipRepository).save(activeMem);
         verify(paymentRepository).save(argThat(p ->
                 p.getTransactionType() == TransactionType.REFUND &&
                 p.getAmount() == 45000L &&
@@ -612,8 +651,15 @@ class PaymentServiceImplTest {
         when(paymentRepository.findTopByUserUuidAndPaymentTypeAndTransactionTypeAndStatusOrderByCreatedAtDesc(
                 any(), any(), any(), any())).thenReturn(Optional.of(origPayment));
 
-        // ₹600 unpaid fines (60000 paise) -> eligible refund is 0
-        when(fineService.calculateTotalPendingFineForUser(userUuid)).thenReturn(BigDecimal.valueOf(600.00));
+        Fine largeFine = Fine.builder()
+                .id(100L)
+                .userUuid(userUuid)
+                .pendingFineAmount(BigDecimal.valueOf(600.00)) // ₹600 fines
+                .status(FineStatus.PENDING)
+                .build();
+        when(fineRepository.findByUserUuidAndStatus(userUuid, FineStatus.PENDING))
+                .thenReturn(List.of(largeFine));
+
         when(paymentRepository.findByPaymentUuidAndTransactionType(origPaymentUuid, TransactionType.REFUND))
                 .thenReturn(List.of());
 
@@ -623,7 +669,8 @@ class PaymentServiceImplTest {
         assertEquals(0L, response.refundAmount());
         assertNull(response.razorpayRefundId());
         verify(razorpayClientService, never()).refundPayment(anyString(), anyLong());
-        verify(membershipService).cancelMembership(userEmail);
+        assertEquals(MembershipStatus.CANCELLED, activeMem.getStatus());
+        verify(membershipRepository).save(activeMem);
     }
 
     // ==========================================
@@ -733,8 +780,7 @@ class PaymentServiceImplTest {
     @Test
     void testFindUserByIdentifier_viaProviderId() {
         String auth0Sub = "auth0|12345";
-        com.kovanlabs.librarymanagement.database.entity.UserProvider up =
-                new com.kovanlabs.librarymanagement.database.entity.UserProvider();
+        UserProvider up = new UserProvider();
         up.setUserUuid(userUuid);
         up.setProviderId(auth0Sub);
 
@@ -755,7 +801,8 @@ class PaymentServiceImplTest {
 
     @Test
     void testCreateMembershipOrder_noApplicationFound_throwsBadRequest() {
-        when(membershipService.hasActiveMembership(userUuid)).thenReturn(false);
+        when(membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid))
+                .thenReturn(Optional.empty());
         when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
                 .thenReturn(Optional.empty());
 
@@ -850,7 +897,8 @@ class PaymentServiceImplTest {
         when(paymentRepository.findByRazorpayOrderId(orderId)).thenReturn(Optional.of(payment));
         when(razorpayClientService.verifyPaymentSignature(orderId, payId, sig)).thenReturn(true);
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
-        doThrow(new RuntimeException("Simulated fine settlement error")).when(fineService).payFine(106L);
+
+        when(fineRepository.findById(106L)).thenThrow(new RuntimeException("Simulated fine settlement error"));
 
         PaymentResponseDto response = paymentService.verifyPayment(request, userEmail);
         assertNotNull(response);
@@ -894,10 +942,19 @@ class PaymentServiceImplTest {
 
         when(paymentRepository.findByRazorpayOrderId("order_web_fine")).thenReturn(Optional.of(payment));
 
+        Fine fine = Fine.builder()
+                .id(107L)
+                .userUuid(userUuid)
+                .pendingFineAmount(BigDecimal.valueOf(25.00))
+                .status(FineStatus.PENDING)
+                .build();
+        when(fineRepository.findById(107L)).thenReturn(Optional.of(fine));
+
         paymentService.handleWebhook(payload, "good_sig");
 
         assertEquals(PaymentStatus.SUCCESS, payment.getStatus());
-        verify(fineService).payFine(107L);
+        assertEquals(FineStatus.PAID, fine.getStatus());
+        verify(fineRepository).save(fine);
     }
 
     @Test
@@ -915,7 +972,7 @@ class PaymentServiceImplTest {
                 .build();
 
         when(paymentRepository.findByRazorpayOrderId("order_web_fine_err")).thenReturn(Optional.of(payment));
-        doThrow(new RuntimeException("Fine settlement failed")).when(fineService).payFine(108L);
+        when(fineRepository.findById(108L)).thenThrow(new RuntimeException("Fine settlement failed"));
 
         paymentService.handleWebhook(payload, "good_sig");
 
@@ -950,13 +1007,15 @@ class PaymentServiceImplTest {
         when(paymentRepository.findTopByUserUuidAndPaymentTypeAndTransactionTypeAndStatusOrderByCreatedAtDesc(
                 any(), any(), any(), any())).thenReturn(Optional.empty());
 
-        when(fineService.calculateTotalPendingFineForUser(userUuid)).thenReturn(BigDecimal.ZERO);
+        when(fineRepository.findByUserUuidAndStatus(userUuid, FineStatus.PENDING))
+                .thenReturn(List.of());
 
         MembershipCancellationRefundResponse response = paymentService.cancelMembershipWithRefund(userEmail);
 
         assertTrue(response.cancelled());
         assertEquals(50000L, response.refundAmount());
         assertNull(response.razorpayRefundId());
-        verify(membershipService).cancelMembership(userEmail);
+        assertEquals(MembershipStatus.CANCELLED, activeMem.getStatus());
+        verify(membershipRepository).save(activeMem);
     }
 }

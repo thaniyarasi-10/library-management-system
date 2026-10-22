@@ -1,7 +1,7 @@
-package com.kovanlabs.librarymanagement.mapping;
+package com.kovanlabs.librarymanagement.payment.mapping;
 
 import com.kovanlabs.librarymanagement.database.entity.Payment;
-import com.kovanlabs.librarymanagement.dto.PaymentResponseDto;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentResponseDto;
 import org.mapstruct.Mapper;
 import org.mapstruct.factory.Mappers;
 
@@ -12,7 +12,7 @@ public interface PaymentMapper {
 
     PaymentMapper INSTANCE = Mappers.getMapper(PaymentMapper.class);
 
-    PaymentResponseDto toDto(Payment payment);
+    PaymentResponseDto mapToResponse(Payment payment);
 
-    List<PaymentResponseDto> toDtoList(List<Payment> payments);
+    List<PaymentResponseDto> mapToResponseList(List<Payment> payments);
 }

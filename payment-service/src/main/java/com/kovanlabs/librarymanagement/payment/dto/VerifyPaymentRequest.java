@@ -1,4 +1,4 @@
-package com.kovanlabs.librarymanagement.dto;
+package com.kovanlabs.librarymanagement.payment.dto;
 
 import jakarta.validation.constraints.NotBlank;
 

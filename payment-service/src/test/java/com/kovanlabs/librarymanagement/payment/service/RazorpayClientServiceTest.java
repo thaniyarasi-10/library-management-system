@@ -1,7 +1,7 @@
-package com.kovanlabs.librarymanagement.service;
+package com.kovanlabs.librarymanagement.payment.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kovanlabs.librarymanagement.config.RazorpayProperties;
+import com.kovanlabs.librarymanagement.payment.config.RazorpayProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -175,7 +175,7 @@ class RazorpayClientServiceTest {
     @Test
     void testRefundPayment_success() {
         when(restClient.post()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(eq("/payments/{paymentId}/refund"), eq("pay_123"))).thenReturn(requestBodySpec);
+        when(requestBodyUriSpec.uri(eq("/payments/pay_123/refund"))).thenReturn(requestBodySpec);
         when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
         when(requestBodySpec.body(any(Map.class))).thenReturn(requestBodySpec);
         when(requestBodySpec.retrieve()).thenReturn(responseSpec);
@@ -189,7 +189,7 @@ class RazorpayClientServiceTest {
     @Test
     void testRefundPayment_missingId_throwsException() {
         when(restClient.post()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(eq("/payments/{paymentId}/refund"), eq("pay_123"))).thenReturn(requestBodySpec);
+        when(requestBodyUriSpec.uri(eq("/payments/pay_123/refund"))).thenReturn(requestBodySpec);
         when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
         when(requestBodySpec.body(any(Map.class))).thenReturn(requestBodySpec);
         when(requestBodySpec.retrieve()).thenReturn(responseSpec);
@@ -215,7 +215,7 @@ class RazorpayClientServiceTest {
     @Test
     void testRefundPayment_nullBody_throwsException() {
         when(restClient.post()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(eq("/payments/{paymentId}/refund"), eq("pay_123"))).thenReturn(requestBodySpec);
+        when(requestBodyUriSpec.uri(eq("/payments/pay_123/refund"))).thenReturn(requestBodySpec);
         when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
         when(requestBodySpec.body(any(Map.class))).thenReturn(requestBodySpec);
         when(requestBodySpec.retrieve()).thenReturn(responseSpec);
@@ -228,7 +228,7 @@ class RazorpayClientServiceTest {
     @Test
     void testRefundPayment_networkError_throwsBadGateway() {
         when(restClient.post()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(eq("/payments/{paymentId}/refund"), eq("pay_123"))).thenReturn(requestBodySpec);
+        when(requestBodyUriSpec.uri(eq("/payments/pay_123/refund"))).thenReturn(requestBodySpec);
         when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
         when(requestBodySpec.body(any(Map.class))).thenReturn(requestBodySpec);
         when(requestBodySpec.retrieve()).thenThrow(new RuntimeException("Timeout"));

@@ -125,6 +125,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/user/me/request-reactivation", "/user/me/request-reactivation")
                         .authenticated()
 
+                        // User Payment Profile / Bank Account Details (Authenticated User/Admin)
+                        .requestMatchers("/api/user/payment-profile", "/user/payment-profile",
+                                "/api/user/payment-profile/**", "/user/payment-profile/**")
+                        .authenticated()
+
                         // User Registration (Public)
                         .requestMatchers(HttpMethod.POST, "/api/user", "/user")
                         .permitAll()

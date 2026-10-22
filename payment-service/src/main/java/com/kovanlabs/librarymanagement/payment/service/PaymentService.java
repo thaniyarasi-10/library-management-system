@@ -1,9 +1,9 @@
-package com.kovanlabs.librarymanagement.service;
+package com.kovanlabs.librarymanagement.payment.service;
 
-import com.kovanlabs.librarymanagement.dto.MembershipCancellationRefundResponse;
-import com.kovanlabs.librarymanagement.dto.PaymentOrderResponse;
-import com.kovanlabs.librarymanagement.dto.PaymentResponseDto;
-import com.kovanlabs.librarymanagement.dto.VerifyPaymentRequest;
+import com.kovanlabs.librarymanagement.payment.dto.MembershipCancellationRefundResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentOrderResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentResponseDto;
+import com.kovanlabs.librarymanagement.payment.dto.VerifyPaymentRequest;
 
 import java.util.List;
 

@@ -17,8 +17,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findByRazorpayOrderId(String orderId);
 
-    Optional<Payment> findByRazorpayPaymentId(String paymentId);
-
     Optional<Payment> findByRazorpayRefundId(String refundId);
 
     List<Payment> findByUserUuidOrderByCreatedAtDesc(String userUuid);
@@ -27,13 +25,4 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findTopByUserUuidAndPaymentTypeAndTransactionTypeAndStatusOrderByCreatedAtDesc(
             String userUuid, PaymentType paymentType, TransactionType transactionType, PaymentStatus status);
-
-    boolean existsByRazorpayPaymentId(String paymentId);
-
-    boolean existsByRazorpayRefundId(String refundId);
-
-    boolean existsByPaymentUuidAndTransactionType(
-            String paymentUuid, TransactionType transactionType);
-
-    List<Payment> findByUserUuidAndTransactionType(String userUuid, TransactionType transactionType);
 }

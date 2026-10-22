@@ -1,19 +1,19 @@
-package com.kovanlabs.librarymanagement.service;
+package com.kovanlabs.librarymanagement.payment.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kovanlabs.librarymanagement.config.RazorpayProperties;
 import com.kovanlabs.librarymanagement.database.entity.Fine;
 import com.kovanlabs.librarymanagement.database.entity.Membership;
 import com.kovanlabs.librarymanagement.database.entity.Payment;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.*;
 import com.kovanlabs.librarymanagement.database.repository.*;
-import com.kovanlabs.librarymanagement.dto.MembershipCancellationRefundResponse;
-import com.kovanlabs.librarymanagement.dto.PaymentOrderResponse;
-import com.kovanlabs.librarymanagement.dto.PaymentResponseDto;
-import com.kovanlabs.librarymanagement.dto.VerifyPaymentRequest;
-import com.kovanlabs.librarymanagement.mapping.PaymentMapper;
+import com.kovanlabs.librarymanagement.payment.config.RazorpayProperties;
+import com.kovanlabs.librarymanagement.payment.dto.MembershipCancellationRefundResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentOrderResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentResponseDto;
+import com.kovanlabs.librarymanagement.payment.dto.VerifyPaymentRequest;
+import com.kovanlabs.librarymanagement.payment.mapping.PaymentMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -22,10 +22,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 
 @Slf4j
 @Service
@@ -41,13 +42,14 @@ public class PaymentServiceImpl implements PaymentService {
     private final MembershipRepository membershipRepository;
     private final FineRepository fineRepository;
     private final BorrowRepository borrowRepository;
-    private final MembershipService membershipService;
-    private final FineService fineService;
     private final RazorpayClientService razorpayClientService;
     private final RazorpayProperties razorpayProperties;
     private final ObjectMapper objectMapper;
 
     private User findUserByIdentifier(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User identity is required");
+        }
         return userProviderRepository.findByProviderId(identifier)
                 .flatMap(up -> userRepository.findByUuid(up.getUserUuid()))
                 .or(() -> userRepository.findByEmail(identifier))
@@ -59,7 +61,12 @@ public class PaymentServiceImpl implements PaymentService {
     public PaymentOrderResponse createMembershipOrder(String email) {
         User user = findUserByIdentifier(email);
 
-        if (membershipService.hasActiveMembership(user.getUuid())) {
+        boolean hasActive = membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(user.getUuid())
+                .map(m -> m.getStatus() == MembershipStatus.ACTIVE
+                        && (Objects.isNull(m.getExpiryDate()) || !m.getExpiryDate().isBefore(LocalDate.now())))
+                .orElse(false);
+
+        if (hasActive) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User already has an active library membership");
         }
 
@@ -172,7 +179,7 @@ public class PaymentServiceImpl implements PaymentService {
         // Idempotency: If already verified and marked SUCCESS, return without re-processing
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
             log.info("Payment order {} already successfully verified", request.razorpayOrderId());
-            return PaymentMapper.INSTANCE.toDto(payment);
+            return PaymentMapper.INSTANCE.mapToResponse(payment);
         }
 
         boolean isValid = razorpayClientService.verifyPaymentSignature(
@@ -195,19 +202,12 @@ public class PaymentServiceImpl implements PaymentService {
         log.info("Payment verified successfully for order: {}, paymentId: {}", request.razorpayOrderId(), request.razorpayPaymentId());
 
         if (payment.getPaymentType() == PaymentType.MEMBERSHIP) {
-            membershipService.activateMembership(payment.getUserUuid());
-            log.info("Activated library membership for user: {}", payment.getUserUuid());
+            activateMembershipInternal(payment.getUserUuid());
         } else if (payment.getPaymentType() == PaymentType.FINE) {
-            try {
-                Long fineId = Long.parseLong(payment.getReferenceId());
-                fineService.payFine(fineId);
-                log.info("Settled fineId: {} as PAID after payment", fineId);
-            } catch (Exception e) {
-                log.error("Failed to mark fine as paid after payment verification: {}", e.getMessage(), e);
-            }
+            settleFineInternal(payment.getReferenceId());
         }
 
-        return PaymentMapper.INSTANCE.toDto(savedPayment);
+        return PaymentMapper.INSTANCE.mapToResponse(savedPayment);
     }
 
     @Override
@@ -222,7 +222,6 @@ public class PaymentServiceImpl implements PaymentService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing webhook payload body");
         }
 
-        // Verify the X-Razorpay-Signature header using HMAC-SHA256 and the exact raw request body BEFORE parsing the JSON
         boolean isValid = razorpayClientService.verifyWebhookSignature(payload, signatureHeader);
         if (!isValid) {
             log.warn("Invalid webhook signature received from Razorpay");
@@ -248,9 +247,8 @@ public class PaymentServiceImpl implements PaymentService {
 
                 if (Objects.nonNull(orderId) && !orderId.isBlank()) {
                     paymentRepository.findByRazorpayOrderId(orderId).ifPresent(payment -> {
-                        // Idempotency: prevent duplicate updates and multiple activations/settlements
                         if (payment.getStatus() == PaymentStatus.SUCCESS) {
-                            log.info("Webhook duplicate event: payment order {} is already SUCCESS. Skipping idempotent update.", orderId);
+                            log.info("Webhook duplicate event: payment order {} is already SUCCESS. Skipping.", orderId);
                             return;
                         }
 
@@ -261,17 +259,10 @@ public class PaymentServiceImpl implements PaymentService {
                         paymentRepository.save(payment);
                         log.info("Webhook confirmed payment order {} as SUCCESS (paymentId: {})", orderId, paymentId);
 
-                        // Activate membership or settle fines ONLY when payment is confirmed
                         if (payment.getPaymentType() == PaymentType.MEMBERSHIP) {
-                            membershipService.activateMembership(payment.getUserUuid());
-                            log.info("Activated library membership for user: {}", payment.getUserUuid());
+                            activateMembershipInternal(payment.getUserUuid());
                         } else if (payment.getPaymentType() == PaymentType.FINE) {
-                            try {
-                                fineService.payFine(Long.parseLong(payment.getReferenceId()));
-                                log.info("Settled fineId: {} as PAID after webhook payment confirmation", payment.getReferenceId());
-                            } catch (Exception e) {
-                                log.error("Webhook fine settlement failed for fineId {}: {}", payment.getReferenceId(), e.getMessage());
-                            }
+                            settleFineInternal(payment.getReferenceId());
                         }
                     });
                 }
@@ -283,11 +274,9 @@ public class PaymentServiceImpl implements PaymentService {
                 if (Objects.nonNull(orderId) && !orderId.isBlank()) {
                     paymentRepository.findByRazorpayOrderId(orderId).ifPresent(payment -> {
                         if (payment.getStatus() == PaymentStatus.FAILED) {
-                            log.info("Webhook duplicate event: payment order {} is already FAILED. Skipping.", orderId);
                             return;
                         }
                         if (payment.getStatus() == PaymentStatus.SUCCESS) {
-                            log.warn("Webhook received payment.failed for already SUCCESS payment order {}. Ignoring.", orderId);
                             return;
                         }
                         payment.setStatus(PaymentStatus.FAILED);
@@ -304,7 +293,6 @@ public class PaymentServiceImpl implements PaymentService {
                 if (Objects.nonNull(refundId) && !refundId.isBlank()) {
                     paymentRepository.findByRazorpayRefundId(refundId).ifPresent(refundPayment -> {
                         if (refundPayment.getStatus() == PaymentStatus.SUCCESS) {
-                            log.info("Webhook duplicate event: refund {} is already SUCCESS. Skipping.", refundId);
                             return;
                         }
                         refundPayment.setStatus(PaymentStatus.SUCCESS);
@@ -318,14 +306,12 @@ public class PaymentServiceImpl implements PaymentService {
                 if (Objects.nonNull(refundId) && !refundId.isBlank()) {
                     paymentRepository.findByRazorpayRefundId(refundId).ifPresent(refundPayment -> {
                         if (refundPayment.getStatus() == PaymentStatus.FAILED) {
-                            log.info("Webhook duplicate event: refund {} is already FAILED. Skipping.", refundId);
                             return;
                         }
                         refundPayment.setStatus(PaymentStatus.FAILED);
                         paymentRepository.save(refundPayment);
                         log.info("Webhook marked refund {} as FAILED", refundId);
 
-                        // Revert original payment status if needed
                         if (Objects.nonNull(refundPayment.getPaymentUuid())) {
                             paymentRepository.findByUuid(refundPayment.getPaymentUuid()).ifPresent(orig -> {
                                 long successfulRefunds = paymentRepository.findByPaymentUuidAndTransactionType(
@@ -345,8 +331,6 @@ public class PaymentServiceImpl implements PaymentService {
                         }
                     });
                 }
-            } else {
-                log.info("Razorpay webhook event '{}' is safely ignored.", event);
             }
         } catch (Exception e) {
             log.error("Error processing Razorpay webhook event [{}]: {}", event, e.getMessage(), e);
@@ -365,7 +349,6 @@ public class PaymentServiceImpl implements PaymentService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "User does not have an active or pending membership to cancel"));
 
-        // Find the original membership payment
         Payment originalPayment = paymentRepository.findTopByUserUuidAndPaymentTypeAndTransactionTypeAndStatusOrderByCreatedAtDesc(
                 user.getUuid(),
                 PaymentType.MEMBERSHIP,
@@ -373,7 +356,11 @@ public class PaymentServiceImpl implements PaymentService {
                 PaymentStatus.SUCCESS
         ).orElse(null);
 
-        BigDecimal unpaidFines = fineService.calculateTotalPendingFineForUser(user.getUuid());
+        BigDecimal unpaidFines = fineRepository.findByUserUuidAndStatus(user.getUuid(), FineStatus.PENDING).stream()
+                .map(Fine::getPendingFineAmount)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
         long unpaidFinesPaise = (Objects.nonNull(unpaidFines))
                 ? unpaidFines.multiply(BigDecimal.valueOf(100)).longValue()
                 : 0L;
@@ -383,7 +370,6 @@ public class PaymentServiceImpl implements PaymentService {
         String refundId = null;
 
         if (Objects.nonNull(originalPayment)) {
-            // Check cumulative refunds on this original payment to prevent exceeding
             long alreadyRefunded = paymentRepository.findByPaymentUuidAndTransactionType(
                     originalPayment.getUuid(),
                     TransactionType.REFUND
@@ -403,10 +389,9 @@ public class PaymentServiceImpl implements PaymentService {
                     .userUuid(user.getUuid())
                     .transactionType(TransactionType.REFUND)
                     .paymentType(PaymentType.MEMBERSHIP)
-                    .paymentUuid(originalPayment.getUuid())
-                    .razorpayPaymentId(originalPayment.getRazorpayPaymentId())
                     .razorpayRefundId(refundId)
-                    .referenceId(originalPayment.getReferenceId())
+                    .paymentUuid(originalPayment.getUuid())
+                    .referenceId(originalPayment.getRazorpayPaymentId())
                     .amount(refundToIssue)
                     .status(PaymentStatus.SUCCESS)
                     .build();
@@ -422,8 +407,9 @@ public class PaymentServiceImpl implements PaymentService {
             eligibleRefundPaise = refundToIssue;
         }
 
-        // Cancel membership
-        membershipService.cancelMembership(email);
+        membership.setStatus(MembershipStatus.CANCELLED);
+        membership.setCancelledAt(LocalDateTime.now());
+        membershipRepository.save(membership);
         log.info("Membership cancelled with refund for user: {}, refund amount: {} paise", email, eligibleRefundPaise);
 
         return new MembershipCancellationRefundResponse(
@@ -453,12 +439,6 @@ public class PaymentServiceImpl implements PaymentService {
             return null;
         }
 
-        // Prevent duplicate deactivation refunds
-        boolean hasExistingRefund = paymentRepository.findByPaymentUuidAndTransactionType(
-                originalPayment.getUuid(),
-                TransactionType.REFUND
-        ).stream().anyMatch(p -> p.getAmount() != null && p.getAmount() > 0);
-
         long alreadyRefunded = paymentRepository.findByPaymentUuidAndTransactionType(
                 originalPayment.getUuid(),
                 TransactionType.REFUND
@@ -473,11 +453,9 @@ public class PaymentServiceImpl implements PaymentService {
             return null;
         }
 
-        // Calculate unreturned books (borrows where returnedDate is null)
         long unreturnedBooks = borrowRepository.countByUser_UuidAndReturnedDateIsNull(userUuid);
         long deductionPaise = unreturnedBooks * BOOK_REPLACEMENT_FEE_PAISE;
 
-        // ₹500 minus ₹100 for each unreturned book. Do not include unpaid fines. Never negative.
         long eligibleRefundPaise = Math.max(0L, MEMBERSHIP_FEE_PAISE - deductionPaise);
         long refundToIssue = Math.min(eligibleRefundPaise, maxRefundable);
 
@@ -490,15 +468,14 @@ public class PaymentServiceImpl implements PaymentService {
                 .userUuid(userUuid)
                 .transactionType(TransactionType.REFUND)
                 .paymentType(PaymentType.MEMBERSHIP)
-                .paymentUuid(originalPayment.getUuid())
-                .razorpayPaymentId(originalPayment.getRazorpayPaymentId())
                 .razorpayRefundId(refundId)
-                .referenceId(originalPayment.getReferenceId())
+                .paymentUuid(originalPayment.getUuid())
+                .referenceId(originalPayment.getRazorpayPaymentId())
                 .amount(refundToIssue)
                 .status(PaymentStatus.SUCCESS)
                 .build();
 
-        Payment savedRefund = paymentRepository.save(refundRecord);
+        Payment saved = paymentRepository.save(refundRecord);
 
         if (alreadyRefunded + refundToIssue >= originalPayment.getAmount()) {
             originalPayment.setStatus(PaymentStatus.REFUNDED);
@@ -507,16 +484,43 @@ public class PaymentServiceImpl implements PaymentService {
         }
         paymentRepository.save(originalPayment);
 
-        log.info("Processed permanent deactivation refund for userUuid: {}: amount: {} paise, unreturned books: {}",
-                userUuid, refundToIssue, unreturnedBooks);
-
-        return PaymentMapper.INSTANCE.toDto(savedRefund);
+        return PaymentMapper.INSTANCE.mapToResponse(saved);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<PaymentResponseDto> getUserPayments(String email) {
         User user = findUserByIdentifier(email);
-        List<Payment> payments = paymentRepository.findByUserUuidOrderByCreatedAtDesc(user.getUuid());
-        return PaymentMapper.INSTANCE.toDtoList(payments);
+        List<Payment> list = paymentRepository.findByUserUuidOrderByCreatedAtDesc(user.getUuid());
+        return PaymentMapper.INSTANCE.mapToResponseList(list);
+    }
+
+    private void activateMembershipInternal(String userUuid) {
+        membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
+                userUuid,
+                List.of(MembershipStatus.PENDING, MembershipStatus.ACTIVE)
+        ).ifPresent(membership -> {
+            if (membership.getStatus() != MembershipStatus.ACTIVE) {
+                membership.setStatus(MembershipStatus.ACTIVE);
+                membership.setActivatedAt(LocalDateTime.now());
+                membership.setExpiryDate(LocalDate.now().plusYears(1));
+                membershipRepository.save(membership);
+                log.info("Activated library membership for user: {}", userUuid);
+            }
+        });
+    }
+
+    private void settleFineInternal(String referenceId) {
+        try {
+            Long fineId = Long.parseLong(referenceId);
+            fineRepository.findById(fineId).ifPresent(fine -> {
+                fine.setStatus(FineStatus.PAID);
+                fine.setPendingFineAmount(BigDecimal.ZERO);
+                fineRepository.save(fine);
+                log.info("Settled fineId: {} as PAID after payment", fineId);
+            });
+        } catch (Exception e) {
+            log.error("Failed to mark fine as paid after payment: {}", e.getMessage(), e);
+        }
     }
 }

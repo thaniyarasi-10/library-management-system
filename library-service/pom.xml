@@ -47,6 +47,11 @@
 
         <dependency>
             <groupId>com.kovanlabs</groupId>
+            <artifactId>payment-service</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.kovanlabs</groupId>
             <artifactId>common</artifactId>
         </dependency>
 

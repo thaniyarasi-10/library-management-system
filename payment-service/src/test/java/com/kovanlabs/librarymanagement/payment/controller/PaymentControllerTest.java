@@ -1,10 +1,10 @@
-package com.kovanlabs.librarymanagement.controller;
+package com.kovanlabs.librarymanagement.payment.controller;
 
-import com.kovanlabs.librarymanagement.dto.MembershipCancellationRefundResponse;
-import com.kovanlabs.librarymanagement.dto.PaymentOrderResponse;
-import com.kovanlabs.librarymanagement.dto.PaymentResponseDto;
-import com.kovanlabs.librarymanagement.dto.VerifyPaymentRequest;
-import com.kovanlabs.librarymanagement.service.PaymentService;
+import com.kovanlabs.librarymanagement.payment.dto.MembershipCancellationRefundResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentOrderResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentResponseDto;
+import com.kovanlabs.librarymanagement.payment.dto.VerifyPaymentRequest;
+import com.kovanlabs.librarymanagement.payment.service.PaymentService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,7 +15,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.security.Principal;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -107,19 +106,6 @@ class PaymentControllerTest {
     }
 
     @Test
-    void testHandleWebhook() {
-        String payload = "{\"event\":\"order.paid\"}";
-        String sig = "sig_header";
-
-        doNothing().when(paymentService).handleWebhook(payload, sig);
-
-        ResponseEntity<Void> result = paymentController.handleWebhook(payload, sig);
-
-        assertEquals(HttpStatus.OK, result.getStatusCode());
-        verify(paymentService).handleWebhook(payload, sig);
-    }
-
-    @Test
     void testCancelMembershipWithRefund() {
         MembershipCancellationRefundResponse response = new MembershipCancellationRefundResponse(
                 true,
@@ -140,7 +126,7 @@ class PaymentControllerTest {
     }
 
     @Test
-    void testGetMyPayments() {
+    void testGetUserPayments() {
         PaymentResponseDto dto = new PaymentResponseDto(
                 UUID.randomUUID().toString(),
                 1L,
@@ -158,7 +144,7 @@ class PaymentControllerTest {
 
         when(paymentService.getUserPayments(email)).thenReturn(List.of(dto));
 
-        ResponseEntity<List<PaymentResponseDto>> result = paymentController.getMyPayments(principal);
+        ResponseEntity<List<PaymentResponseDto>> result = paymentController.getUserPayments(principal);
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertNotNull(result.getBody());

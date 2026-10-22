@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="1-create-user-payment-profile-table" author="thani">
+        <createTable tableName="user_payment_profile">
+
+            <column name="uuid" type="char(36)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" unique="true"/>
+            </column>
+
+            <column name="user_uuid" type="char(36)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+
+            <column name="card_holder_name" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="bank_name" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="account_number" type="varchar(30)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="ifsc_code" type="varchar(11)">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="card_last_four" type="varchar(4)">
+                <constraints nullable="true"/>
+            </column>
+
+            <column name="card_network" type="varchar(20)">
+                <constraints nullable="true"/>
+            </column>
+
+            <column name="created_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="updated_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+
+        </createTable>
+    </changeSet>
+
+</databaseChangeLog>

@@ -71,6 +71,11 @@ class SecurityConfigTest {
             return ResponseEntity.ok("callback");
         }
 
+        @GetMapping({"/api/user/payment-profile", "/user/payment-profile"})
+        public ResponseEntity<String> getPaymentProfile() {
+            return ResponseEntity.ok("payment-profile");
+        }
+
         @GetMapping({"/api/user", "/user"})
         public ResponseEntity<String> getUsers() {
             return ResponseEntity.ok("users");
@@ -222,6 +227,18 @@ class SecurityConfigTest {
         when(mockJwtDecoder.decode("me-token")).thenReturn(jwt);
 
         mockMvc.perform(get("/api/auth/me")
+                        .header("Authorization", "Bearer me-token"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void userPaymentProfileEndpoint_whenValidToken_shouldBeAllowed() throws Exception {
+        Jwt jwt = createJwtWithClaims(Map.of(
+                "sub", "auth0|12345"
+        ));
+        when(mockJwtDecoder.decode("me-token")).thenReturn(jwt);
+
+        mockMvc.perform(get("/api/user/payment-profile")
                         .header("Authorization", "Bearer me-token"))
                 .andExpect(status().isOk());
     }

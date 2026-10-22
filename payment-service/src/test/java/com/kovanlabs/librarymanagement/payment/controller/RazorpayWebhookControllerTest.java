@@ -1,6 +1,6 @@
-package com.kovanlabs.librarymanagement.controller;
+package com.kovanlabs.librarymanagement.payment.controller;
 
-import com.kovanlabs.librarymanagement.service.PaymentService;
+import com.kovanlabs.librarymanagement.payment.service.PaymentService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
