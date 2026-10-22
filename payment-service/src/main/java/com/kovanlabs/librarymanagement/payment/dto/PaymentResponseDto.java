@@ -1,5 +1,8 @@
 package com.kovanlabs.librarymanagement.payment.dto;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 public record PaymentResponseDto(
         String uuid,
         Long id,
@@ -12,6 +15,9 @@ public record PaymentResponseDto(
         String paymentUuid,
         String referenceId,
         Long amount,
-        String status
+        String status,
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt,
+        List<PaymentResponseDto> refunds
 ) {
 }

@@ -10,8 +10,10 @@ import com.kovanlabs.librarymanagement.database.enums.*;
 import com.kovanlabs.librarymanagement.database.repository.*;
 import com.kovanlabs.librarymanagement.payment.config.RazorpayProperties;
 import com.kovanlabs.librarymanagement.payment.dto.MembershipCancellationRefundResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentHistoryResponseDto;
 import com.kovanlabs.librarymanagement.payment.dto.PaymentOrderResponse;
 import com.kovanlabs.librarymanagement.payment.dto.PaymentResponseDto;
+import com.kovanlabs.librarymanagement.payment.dto.RazorpayOrderDetails;
 import com.kovanlabs.librarymanagement.payment.dto.VerifyPaymentRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +22,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -112,13 +117,7 @@ class PaymentServiceImplTest {
         assertEquals(50000L, response.amount());
         assertEquals("MEMBERSHIP", response.paymentType());
 
-        verify(paymentRepository).save(argThat(p ->
-                p.getUserUuid().equals(userUuid) &&
-                p.getTransactionType() == TransactionType.PAYMENT &&
-                p.getPaymentType() == PaymentType.MEMBERSHIP &&
-                p.getAmount() == 50000L &&
-                p.getStatus() == PaymentStatus.PENDING
-        ));
+        verify(paymentRepository, never()).save(any());
     }
 
     @Test
@@ -177,11 +176,7 @@ class PaymentServiceImplTest {
         assertEquals(2500L, response.amount());
         assertEquals("FINE", response.paymentType());
 
-        verify(paymentRepository).save(argThat(p ->
-                p.getPaymentType() == PaymentType.FINE &&
-                p.getAmount() == 2500L &&
-                p.getStatus() == PaymentStatus.PENDING
-        ));
+        verify(paymentRepository, never()).save(any());
     }
 
     @Test
@@ -225,18 +220,11 @@ class PaymentServiceImplTest {
         String sig = "valid_sig";
         VerifyPaymentRequest request = new VerifyPaymentRequest(orderId, payId, sig);
 
-        Payment payment = Payment.builder()
-                .uuid(UUID.randomUUID().toString())
-                .userUuid(userUuid)
-                .paymentType(PaymentType.MEMBERSHIP)
-                .transactionType(TransactionType.PAYMENT)
-                .razorpayOrderId(orderId)
-                .amount(50000L)
-                .status(PaymentStatus.PENDING)
-                .build();
-
-        when(paymentRepository.findByRazorpayOrderId(orderId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.findByRazorpayOrderId(orderId)).thenReturn(Optional.empty());
         when(razorpayClientService.verifyPaymentSignature(orderId, payId, sig)).thenReturn(true);
+        when(razorpayClientService.fetchOrder(orderId)).thenReturn(
+                new RazorpayOrderDetails(orderId, 50000L, Map.of("user_uuid", userUuid, "payment_type", "MEMBERSHIP"))
+        );
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Membership pendingMem = Membership.builder()
@@ -254,6 +242,7 @@ class PaymentServiceImplTest {
         assertEquals(payId, response.razorpayPaymentId());
         assertEquals(MembershipStatus.ACTIVE, pendingMem.getStatus());
         verify(membershipRepository).save(pendingMem);
+        verify(paymentRepository).save(argThat(p -> p.getStatus() == PaymentStatus.SUCCESS && p.getAmount() == 50000L));
     }
 
     @Test
@@ -263,19 +252,11 @@ class PaymentServiceImplTest {
         String sig = "valid_sig";
         VerifyPaymentRequest request = new VerifyPaymentRequest(orderId, payId, sig);
 
-        Payment payment = Payment.builder()
-                .uuid(UUID.randomUUID().toString())
-                .userUuid(userUuid)
-                .paymentType(PaymentType.FINE)
-                .transactionType(TransactionType.PAYMENT)
-                .razorpayOrderId(orderId)
-                .referenceId("101")
-                .amount(2500L)
-                .status(PaymentStatus.PENDING)
-                .build();
-
-        when(paymentRepository.findByRazorpayOrderId(orderId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.findByRazorpayOrderId(orderId)).thenReturn(Optional.empty());
         when(razorpayClientService.verifyPaymentSignature(orderId, payId, sig)).thenReturn(true);
+        when(razorpayClientService.fetchOrder(orderId)).thenReturn(
+                new RazorpayOrderDetails(orderId, 2500L, Map.of("user_uuid", userUuid, "payment_type", "FINE", "reference_id", "101"))
+        );
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Fine fine = Fine.builder()
@@ -293,32 +274,27 @@ class PaymentServiceImplTest {
         assertEquals(FineStatus.PAID, fine.getStatus());
         assertEquals(BigDecimal.ZERO, fine.getPendingFineAmount());
         verify(fineRepository).save(fine);
+        verify(paymentRepository).save(argThat(p -> p.getStatus() == PaymentStatus.SUCCESS && p.getAmount() == 2500L));
     }
 
     @Test
-    void testVerifyPayment_invalidSignature_marksFailedAndThrows() {
+    void testVerifyPayment_invalidSignature_throwsBadRequestWithoutSaving() {
         String orderId = "order_m_2";
         String payId = "pay_m_2";
         String sig = "invalid_sig";
         VerifyPaymentRequest request = new VerifyPaymentRequest(orderId, payId, sig);
 
-        Payment payment = Payment.builder()
-                .uuid(UUID.randomUUID().toString())
-                .userUuid(userUuid)
-                .paymentType(PaymentType.MEMBERSHIP)
-                .transactionType(TransactionType.PAYMENT)
-                .razorpayOrderId(orderId)
-                .amount(50000L)
-                .status(PaymentStatus.PENDING)
-                .build();
-
-        when(paymentRepository.findByRazorpayOrderId(orderId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.findByRazorpayOrderId(orderId)).thenReturn(Optional.empty());
         when(razorpayClientService.verifyPaymentSignature(orderId, payId, sig)).thenReturn(false);
+        when(razorpayClientService.fetchOrder(orderId)).thenReturn(
+                new RazorpayOrderDetails(orderId, 50000L, Map.of("user_uuid", userUuid, "payment_type", "MEMBERSHIP"))
+        );
 
-        assertThrows(ResponseStatusException.class, () -> paymentService.verifyPayment(request, userEmail));
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> paymentService.verifyPayment(request, userEmail));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
 
-        assertEquals(PaymentStatus.FAILED, payment.getStatus());
-        verify(paymentRepository).save(payment);
+        verify(paymentRepository, never()).save(any());
         verify(membershipRepository, never()).save(any());
     }
 
@@ -368,7 +344,7 @@ class PaymentServiceImplTest {
                 .userUuid(userUuid)
                 .paymentType(PaymentType.MEMBERSHIP)
                 .razorpayOrderId("order_web_1")
-                .status(PaymentStatus.PENDING)
+                .status(PaymentStatus.FAILED)
                 .build();
 
         when(paymentRepository.findByRazorpayOrderId("order_web_1")).thenReturn(Optional.of(payment));
@@ -391,24 +367,42 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void testHandleWebhook_paymentFailed() {
-        String payload = "{\"event\":\"payment.failed\",\"payload\":{\"payment\":{\"entity\":{\"order_id\":\"order_fail_1\",\"id\":\"pay_fail_1\"}}}}";
+    void testHandleWebhook_paymentCaptured_createsNewRecordViaMapper() {
+        String payload = "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":{\"order_id\":\"order_web_new\",\"id\":\"pay_web_new\",\"amount\":50000,\"notes\":{\"user_uuid\":\"" + userUuid + "\",\"payment_type\":\"MEMBERSHIP\"}}}}}";
         when(razorpayClientService.verifyWebhookSignature(anyString(), anyString())).thenReturn(true);
+        when(paymentRepository.findByRazorpayOrderId("order_web_new")).thenReturn(Optional.empty());
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Payment payment = Payment.builder()
+        Membership pendingMem = Membership.builder()
                 .uuid(UUID.randomUUID().toString())
                 .userUuid(userUuid)
-                .paymentType(PaymentType.MEMBERSHIP)
-                .razorpayOrderId("order_fail_1")
-                .status(PaymentStatus.PENDING)
+                .status(MembershipStatus.PENDING)
                 .build();
-
-        when(paymentRepository.findByRazorpayOrderId("order_fail_1")).thenReturn(Optional.of(payment));
+        when(membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(eq(userUuid), any()))
+                .thenReturn(Optional.of(pendingMem));
 
         paymentService.handleWebhook(payload, "good_sig");
 
-        assertEquals(PaymentStatus.FAILED, payment.getStatus());
-        verify(paymentRepository).save(payment);
+        verify(paymentRepository).save(argThat(p ->
+                p.getStatus() == PaymentStatus.SUCCESS &&
+                "order_web_new".equals(p.getRazorpayOrderId()) &&
+                "pay_web_new".equals(p.getRazorpayPaymentId()) &&
+                p.getTransactionType() == TransactionType.PAYMENT &&
+                p.getAmount() == 50000L
+        ));
+        assertEquals(MembershipStatus.ACTIVE, pendingMem.getStatus());
+        verify(membershipRepository).save(pendingMem);
+    }
+
+    @Test
+    void testHandleWebhook_paymentFailed() {
+        String payload = "{\"event\":\"payment.failed\",\"payload\":{\"payment\":{\"entity\":{\"order_id\":\"order_fail_1\",\"id\":\"pay_fail_1\",\"notes\":{\"user_uuid\":\"" + userUuid + "\",\"payment_type\":\"MEMBERSHIP\"}}}}}";
+        when(razorpayClientService.verifyWebhookSignature(anyString(), anyString())).thenReturn(true);
+        when(paymentRepository.findByRazorpayOrderId("order_fail_1")).thenReturn(Optional.empty());
+
+        paymentService.handleWebhook(payload, "good_sig");
+
+        verify(paymentRepository).save(argThat(p -> p.getStatus() == PaymentStatus.FAILED && "order_fail_1".equals(p.getRazorpayOrderId())));
     }
 
     @Test
@@ -515,7 +509,7 @@ class PaymentServiceImplTest {
                 .uuid(origPaymentUuid)
                 .userUuid(userUuid)
                 .amount(50000L)
-                .status(PaymentStatus.PARTIALLY_REFUNDED)
+                .status(PaymentStatus.SUCCESS)
                 .build();
 
         Payment refund = Payment.builder()
@@ -524,21 +518,17 @@ class PaymentServiceImplTest {
                 .paymentUuid(origPaymentUuid)
                 .razorpayRefundId("rfnd_failed_1")
                 .transactionType(TransactionType.REFUND)
-                .status(PaymentStatus.PENDING)
+                .status(PaymentStatus.SUCCESS)
                 .amount(50000L)
                 .build();
 
         when(paymentRepository.findByRazorpayRefundId("rfnd_failed_1")).thenReturn(Optional.of(refund));
-        when(paymentRepository.findByUuid(origPaymentUuid)).thenReturn(Optional.of(origPayment));
-        when(paymentRepository.findByPaymentUuidAndTransactionType(origPaymentUuid, TransactionType.REFUND))
-                .thenReturn(List.of());
 
         paymentService.handleWebhook(payload, "sig");
 
         assertEquals(PaymentStatus.FAILED, refund.getStatus());
-        assertEquals(PaymentStatus.SUCCESS, origPayment.getStatus());
         verify(paymentRepository).save(refund);
-        verify(paymentRepository).save(origPayment);
+        verify(paymentRepository, never()).save(origPayment);
     }
 
     @Test
@@ -858,6 +848,8 @@ class PaymentServiceImplTest {
     void testVerifyPayment_orderNotFound_throwsNotFound() {
         VerifyPaymentRequest request = new VerifyPaymentRequest("order_unknown", "pay_x", "sig_x");
         when(paymentRepository.findByRazorpayOrderId("order_unknown")).thenReturn(Optional.empty());
+        when(razorpayClientService.fetchOrder("order_unknown"))
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
 
         assertThrows(ResponseStatusException.class, () -> paymentService.verifyPayment(request, userEmail));
     }
@@ -868,7 +860,7 @@ class PaymentServiceImplTest {
         Payment payment = Payment.builder()
                 .uuid(UUID.randomUUID().toString())
                 .userUuid("different-user")
-                .status(PaymentStatus.PENDING)
+                .status(PaymentStatus.SUCCESS)
                 .build();
 
         when(paymentRepository.findByRazorpayOrderId("order_diff")).thenReturn(Optional.of(payment));
@@ -883,19 +875,11 @@ class PaymentServiceImplTest {
         String sig = "valid_sig";
         VerifyPaymentRequest request = new VerifyPaymentRequest(orderId, payId, sig);
 
-        Payment payment = Payment.builder()
-                .uuid(UUID.randomUUID().toString())
-                .userUuid(userUuid)
-                .paymentType(PaymentType.FINE)
-                .transactionType(TransactionType.PAYMENT)
-                .razorpayOrderId(orderId)
-                .referenceId("106")
-                .amount(2500L)
-                .status(PaymentStatus.PENDING)
-                .build();
-
-        when(paymentRepository.findByRazorpayOrderId(orderId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.findByRazorpayOrderId(orderId)).thenReturn(Optional.empty());
         when(razorpayClientService.verifyPaymentSignature(orderId, payId, sig)).thenReturn(true);
+        when(razorpayClientService.fetchOrder(orderId)).thenReturn(
+                new RazorpayOrderDetails(orderId, 2500L, Map.of("user_uuid", userUuid, "payment_type", "FINE", "reference_id", "106"))
+        );
         when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
 
         when(fineRepository.findById(106L)).thenThrow(new RuntimeException("Simulated fine settlement error"));
@@ -915,7 +899,7 @@ class PaymentServiceImplTest {
                 .userUuid(userUuid)
                 .razorpayRefundId("rfnd_hook_1")
                 .transactionType(TransactionType.REFUND)
-                .status(PaymentStatus.PENDING)
+                .status(PaymentStatus.FAILED)
                 .build();
 
         when(paymentRepository.findByRazorpayRefundId("rfnd_hook_1")).thenReturn(Optional.of(refund));
@@ -937,7 +921,7 @@ class PaymentServiceImplTest {
                 .paymentType(PaymentType.FINE)
                 .referenceId("107")
                 .razorpayOrderId("order_web_fine")
-                .status(PaymentStatus.PENDING)
+                .status(PaymentStatus.FAILED)
                 .build();
 
         when(paymentRepository.findByRazorpayOrderId("order_web_fine")).thenReturn(Optional.of(payment));
@@ -968,7 +952,7 @@ class PaymentServiceImplTest {
                 .paymentType(PaymentType.FINE)
                 .referenceId("108")
                 .razorpayOrderId("order_web_fine_err")
-                .status(PaymentStatus.PENDING)
+                .status(PaymentStatus.FAILED)
                 .build();
 
         when(paymentRepository.findByRazorpayOrderId("order_web_fine_err")).thenReturn(Optional.of(payment));
@@ -1017,5 +1001,131 @@ class PaymentServiceImplTest {
         assertNull(response.razorpayRefundId());
         assertEquals(MembershipStatus.CANCELLED, activeMem.getStatus());
         verify(membershipRepository).save(activeMem);
+    }
+
+    // ==========================================
+    // 6. Payment History & Receipt Tests
+    // ==========================================
+
+    @Test
+    void testGetPaymentHistory_success_withSummaryAndRefundDetails() {
+        Payment origPayment = Payment.builder()
+                .uuid("p-1")
+                .userUuid(userUuid)
+                .transactionType(TransactionType.PAYMENT)
+                .paymentType(PaymentType.MEMBERSHIP)
+                .amount(50000L)
+                .status(PaymentStatus.SUCCESS)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        Payment refundPayment = Payment.builder()
+                .uuid("r-1")
+                .userUuid(userUuid)
+                .transactionType(TransactionType.REFUND)
+                .paymentType(PaymentType.MEMBERSHIP)
+                .paymentUuid("p-1")
+                .amount(20000L)
+                .status(PaymentStatus.SUCCESS)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        when(paymentRepository.findByUserUuidOrderByCreatedAtDesc(userUuid))
+                .thenReturn(List.of(origPayment, refundPayment));
+
+        Page<Payment> page = new PageImpl<>(List.of(origPayment), Pageable.unpaged(), 1);
+        when(paymentRepository.findPaymentHistory(eq(userUuid), any(), any(), any(), any()))
+                .thenReturn(page);
+        when(paymentRepository.findByPaymentUuidAndTransactionType("p-1", TransactionType.REFUND))
+                .thenReturn(List.of(refundPayment));
+
+        PaymentHistoryResponseDto response = paymentService.getPaymentHistory(
+                userEmail, PaymentType.MEMBERSHIP, PaymentStatus.SUCCESS, null, 0, 10
+        );
+
+        assertNotNull(response);
+        assertEquals(50000L, response.totalPaid());
+        assertEquals(20000L, response.totalRefunded());
+        assertEquals(30000L, response.netPaid());
+        assertEquals(2L, response.successfulTransactionCount());
+        assertEquals(1, response.content().size());
+        assertEquals("p-1", response.content().get(0).uuid());
+        assertEquals(1, response.content().get(0).refunds().size());
+        assertEquals("r-1", response.content().get(0).refunds().get(0).uuid());
+    }
+
+
+    @Test
+    void testHandleWebhook_refundProcessed_updatesOriginalPaymentAccurately() {
+        String payload = "{\"event\":\"refund.processed\",\"payload\":{\"refund\":{\"entity\":{\"id\":\"rfnd_123\",\"payment_id\":\"pay_orig_1\",\"amount\":25000}}}}";
+        when(razorpayClientService.verifyWebhookSignature(anyString(), anyString())).thenReturn(true);
+
+        Payment origPayment = Payment.builder()
+                .uuid("orig-uuid-1")
+                .userUuid(userUuid)
+                .paymentType(PaymentType.MEMBERSHIP)
+                .transactionType(TransactionType.PAYMENT)
+                .razorpayPaymentId("pay_orig_1")
+                .amount(50000L)
+                .status(PaymentStatus.SUCCESS)
+                .build();
+
+        Payment refundPayment = Payment.builder()
+                .uuid("rfnd-uuid-1")
+                .userUuid(userUuid)
+                .paymentType(PaymentType.MEMBERSHIP)
+                .transactionType(TransactionType.REFUND)
+                .razorpayRefundId("rfnd_123")
+                .paymentUuid("orig-uuid-1")
+                .amount(25000L)
+                .status(PaymentStatus.FAILED)
+                .build();
+
+        when(paymentRepository.findByRazorpayRefundId("rfnd_123")).thenReturn(Optional.of(refundPayment));
+
+        paymentService.handleWebhook(payload, "good_sig");
+
+        assertEquals(PaymentStatus.SUCCESS, refundPayment.getStatus());
+        assertEquals(PaymentStatus.SUCCESS, origPayment.getStatus());
+        verify(paymentRepository).save(refundPayment);
+        verify(paymentRepository, never()).save(origPayment);
+    }
+
+    @Test
+    void testHandleWebhook_refundProcessed_fullRefund_setsStatusRefunded() {
+        String payload = "{\"event\":\"refund.processed\",\"payload\":{\"refund\":{\"entity\":{\"id\":\"rfnd_full\",\"payment_id\":\"pay_orig_2\",\"amount\":50000}}}}";
+        when(razorpayClientService.verifyWebhookSignature(anyString(), anyString())).thenReturn(true);
+
+        Payment origPayment = Payment.builder()
+                .uuid("orig-uuid-2")
+                .userUuid(userUuid)
+                .paymentType(PaymentType.MEMBERSHIP)
+                .transactionType(TransactionType.PAYMENT)
+                .razorpayPaymentId("pay_orig_2")
+                .amount(50000L)
+                .status(PaymentStatus.SUCCESS)
+                .build();
+
+        Payment refundPayment = Payment.builder()
+                .uuid("rfnd-uuid-2")
+                .userUuid(userUuid)
+                .paymentType(PaymentType.MEMBERSHIP)
+                .transactionType(TransactionType.REFUND)
+                .razorpayRefundId("rfnd_full")
+                .paymentUuid("orig-uuid-2")
+                .amount(50000L)
+                .status(PaymentStatus.FAILED)
+                .build();
+
+        when(paymentRepository.findByRazorpayRefundId("rfnd_full")).thenReturn(Optional.of(refundPayment));
+
+        paymentService.handleWebhook(payload, "good_sig");
+
+        assertEquals(PaymentStatus.SUCCESS, refundPayment.getStatus());
+        assertEquals(PaymentStatus.SUCCESS, origPayment.getStatus());
+        verify(paymentRepository).save(refundPayment);
+        verify(paymentRepository, never()).save(origPayment);
     }
 }

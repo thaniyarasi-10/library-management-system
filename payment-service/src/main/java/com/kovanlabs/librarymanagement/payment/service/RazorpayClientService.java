@@ -11,10 +11,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.kovanlabs.librarymanagement.payment.dto.RazorpayOrderDetails;
+
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -73,6 +76,38 @@ public class RazorpayClientService {
         } catch (Exception e) {
             log.error("Failed to create Razorpay order: {}", e.getMessage(), e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to initialize payment gateway order: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Fetches details of a previously created order from Razorpay.
+     *
+     * @param orderId Razorpay Order ID
+     * @return RazorpayOrderDetails containing ID, amount in paise, and metadata notes
+     */
+    public RazorpayOrderDetails fetchOrder(String orderId) {
+        log.info("Fetching Razorpay order details for orderId: {}", orderId);
+        try {
+            String responseBody = getClient().get()
+                    .uri("/orders/{id}", orderId)
+                    .retrieve()
+                    .body(String.class);
+
+            JsonNode root = objectMapper.readTree(responseBody);
+            String id = root.path("id").asText(orderId);
+            long amount = root.path("amount").asLong(0L);
+
+            Map<String, String> notes = new HashMap<>();
+            JsonNode notesNode = root.path("notes");
+            if (notesNode != null && notesNode.isObject()) {
+                notesNode.fieldNames().forEachRemaining(field -> notes.put(field, notesNode.path(field).asText("")));
+            }
+            return new RazorpayOrderDetails(id, amount, notes);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to fetch Razorpay order {}: {}", orderId, e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to retrieve order from payment gateway: " + e.getMessage());
         }
     }
 

@@ -2,6 +2,7 @@ package com.kovanlabs.librarymanagement.payment.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kovanlabs.librarymanagement.payment.config.RazorpayProperties;
+import com.kovanlabs.librarymanagement.payment.dto.RazorpayOrderDetails;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +35,9 @@ class RazorpayClientServiceTest {
 
     @Mock
     private RestClient.RequestBodySpec requestBodySpec;
+
+    @Mock
+    private RestClient.RequestHeadersUriSpec requestHeadersUriSpec;
 
     @Mock
     private RestClient.ResponseSpec responseSpec;
@@ -235,5 +239,31 @@ class RazorpayClientServiceTest {
 
         assertThrows(ResponseStatusException.class,
                 () -> razorpayClientService.refundPayment("pay_123", 50000L));
+    }
+
+    @Test
+    void testFetchOrder_success() {
+        when(restClient.get()).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.uri(eq("/orders/{id}"), eq("order_fetch_1"))).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.body(String.class)).thenReturn("{\"id\":\"order_fetch_1\",\"amount\":50000,\"notes\":{\"user_uuid\":\"u-1\",\"payment_type\":\"MEMBERSHIP\"}}");
+
+        RazorpayOrderDetails details = razorpayClientService.fetchOrder("order_fetch_1");
+
+        assertNotNull(details);
+        assertEquals("order_fetch_1", details.id());
+        assertEquals(50000L, details.amount());
+        assertEquals("u-1", details.notes().get("user_uuid"));
+        assertEquals("MEMBERSHIP", details.notes().get("payment_type"));
+    }
+
+    @Test
+    void testFetchOrder_networkError_throwsException() {
+        when(restClient.get()).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.uri(eq("/orders/{id}"), eq("order_err"))).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.retrieve()).thenThrow(new RuntimeException("Connection error"));
+
+        assertThrows(ResponseStatusException.class,
+                () -> razorpayClientService.fetchOrder("order_err"));
     }
 }

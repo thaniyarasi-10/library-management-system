@@ -10,12 +10,18 @@ import com.kovanlabs.librarymanagement.database.enums.*;
 import com.kovanlabs.librarymanagement.database.repository.*;
 import com.kovanlabs.librarymanagement.payment.config.RazorpayProperties;
 import com.kovanlabs.librarymanagement.payment.dto.MembershipCancellationRefundResponse;
+import com.kovanlabs.librarymanagement.payment.dto.PaymentHistoryResponseDto;
 import com.kovanlabs.librarymanagement.payment.dto.PaymentOrderResponse;
 import com.kovanlabs.librarymanagement.payment.dto.PaymentResponseDto;
+import com.kovanlabs.librarymanagement.payment.dto.RazorpayOrderDetails;
 import com.kovanlabs.librarymanagement.payment.dto.VerifyPaymentRequest;
 import com.kovanlabs.librarymanagement.payment.mapping.PaymentMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +33,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -85,20 +92,13 @@ public class PaymentServiceImpl implements PaymentService {
         String orderId = razorpayClientService.createOrder(
                 MEMBERSHIP_FEE_PAISE,
                 receipt,
-                Map.of("user_uuid", user.getUuid(), "payment_type", PaymentType.MEMBERSHIP.name())
+                Map.of(
+                        "user_uuid", user.getUuid(),
+                        "payment_type", PaymentType.MEMBERSHIP.name(),
+                        "reference_id", membership.getUuid()
+                )
         );
 
-        Payment payment = Payment.builder()
-                .userUuid(user.getUuid())
-                .transactionType(TransactionType.PAYMENT)
-                .paymentType(PaymentType.MEMBERSHIP)
-                .razorpayOrderId(orderId)
-                .referenceId(membership.getUuid())
-                .amount(MEMBERSHIP_FEE_PAISE)
-                .status(PaymentStatus.PENDING)
-                .build();
-
-        paymentRepository.save(payment);
         log.info("Created membership payment order: {} for user: {}", orderId, email);
 
         return new PaymentOrderResponse(
@@ -137,20 +137,14 @@ public class PaymentServiceImpl implements PaymentService {
         String orderId = razorpayClientService.createOrder(
                 amountInPaise,
                 receipt,
-                Map.of("user_uuid", fine.getUserUuid(), "payment_type", PaymentType.FINE.name(), "fine_id", fineId.toString())
+                Map.of(
+                        "user_uuid", fine.getUserUuid(),
+                        "payment_type", PaymentType.FINE.name(),
+                        "fine_id", fineId.toString(),
+                        "reference_id", fineId.toString()
+                )
         );
 
-        Payment payment = Payment.builder()
-                .userUuid(fine.getUserUuid())
-                .transactionType(TransactionType.PAYMENT)
-                .paymentType(PaymentType.FINE)
-                .razorpayOrderId(orderId)
-                .referenceId(fineId.toString())
-                .amount(amountInPaise)
-                .status(PaymentStatus.PENDING)
-                .build();
-
-        paymentRepository.save(payment);
         log.info("Created fine payment order: {} for fineId: {} amount: {} paise", orderId, fineId, amountInPaise);
 
         return new PaymentOrderResponse(
@@ -167,19 +161,17 @@ public class PaymentServiceImpl implements PaymentService {
     public PaymentResponseDto verifyPayment(VerifyPaymentRequest request, String email) {
         User user = findUserByIdentifier(email);
 
-        Payment payment = paymentRepository.findByRazorpayOrderId(request.razorpayOrderId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "Payment order not found: " + request.razorpayOrderId()));
-
-        if (user.getRole() != RoleEnum.ADMIN && !payment.getUserUuid().equals(user.getUuid())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Access Denied: Payment transaction does not belong to you");
-        }
-
-        // Idempotency: If already verified and marked SUCCESS, return without re-processing
-        if (payment.getStatus() == PaymentStatus.SUCCESS) {
-            log.info("Payment order {} already successfully verified", request.razorpayOrderId());
-            return PaymentMapper.INSTANCE.mapToResponse(payment);
+        Optional<Payment> existingPaymentOpt = paymentRepository.findByRazorpayOrderId(request.razorpayOrderId());
+        if (existingPaymentOpt.isPresent()) {
+            Payment existing = existingPaymentOpt.get();
+            if (user.getRole() != RoleEnum.ADMIN && !existing.getUserUuid().equals(user.getUuid())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Access Denied: Payment transaction does not belong to you");
+            }
+            if (existing.getStatus() == PaymentStatus.SUCCESS) {
+                log.info("Payment order {} already successfully verified", request.razorpayOrderId());
+                return PaymentMapper.INSTANCE.mapToResponse(existing);
+            }
         }
 
         boolean isValid = razorpayClientService.verifyPaymentSignature(
@@ -188,13 +180,35 @@ public class PaymentServiceImpl implements PaymentService {
                 request.razorpaySignature()
         );
 
+        RazorpayOrderDetails orderDetails = razorpayClientService.fetchOrder(request.razorpayOrderId());
+        Map<String, String> notes = orderDetails.notes() != null ? orderDetails.notes() : Map.of();
+        String orderUserUuid = notes.getOrDefault("user_uuid", user.getUuid());
+        String paymentTypeStr = notes.getOrDefault("payment_type", PaymentType.MEMBERSHIP.name());
+        PaymentType paymentType = PaymentType.valueOf(paymentTypeStr);
+        String referenceId = notes.getOrDefault("reference_id", notes.get("fine_id"));
+        long amount = orderDetails.amount() > 0 ? orderDetails.amount() : (paymentType == PaymentType.MEMBERSHIP ? MEMBERSHIP_FEE_PAISE : 0L);
+
+        if (user.getRole() != RoleEnum.ADMIN && !orderUserUuid.equals(user.getUuid())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Access Denied: Payment transaction does not belong to you");
+        }
+
         if (!isValid) {
-            payment.setStatus(PaymentStatus.FAILED);
-            payment.setRazorpayPaymentId(request.razorpayPaymentId());
-            paymentRepository.save(payment);
             log.warn("Payment signature verification failed for order: {}", request.razorpayOrderId());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid payment signature verification");
         }
+
+        Payment payment = existingPaymentOpt.orElseGet(() ->
+                PaymentMapper.INSTANCE.createPaymentEntity(
+                        orderUserUuid,
+                        paymentType,
+                        request.razorpayOrderId(),
+                        request.razorpayPaymentId(),
+                        referenceId,
+                        amount,
+                        PaymentStatus.SUCCESS
+                )
+        );
 
         payment.setStatus(PaymentStatus.SUCCESS);
         payment.setRazorpayPaymentId(request.razorpayPaymentId());
@@ -244,9 +258,12 @@ public class PaymentServiceImpl implements PaymentService {
                 JsonNode paymentEntity = root.path("payload").path("payment").path("entity");
                 String orderId = paymentEntity.path("order_id").asText(null);
                 String paymentId = paymentEntity.path("id").asText(null);
+                long amount = paymentEntity.path("amount").asLong(0L);
 
                 if (Objects.nonNull(orderId) && !orderId.isBlank()) {
-                    paymentRepository.findByRazorpayOrderId(orderId).ifPresent(payment -> {
+                    Optional<Payment> existingOpt = paymentRepository.findByRazorpayOrderId(orderId);
+                    if (existingOpt.isPresent()) {
+                        Payment payment = existingOpt.get();
                         if (payment.getStatus() == PaymentStatus.SUCCESS) {
                             log.info("Webhook duplicate event: payment order {} is already SUCCESS. Skipping.", orderId);
                             return;
@@ -264,19 +281,56 @@ public class PaymentServiceImpl implements PaymentService {
                         } else if (payment.getPaymentType() == PaymentType.FINE) {
                             settleFineInternal(payment.getReferenceId());
                         }
-                    });
+                    } else {
+                        JsonNode notesNode = paymentEntity.path("notes");
+                        String userUuid = notesNode.path("user_uuid").asText(null);
+                        String paymentTypeStr = notesNode.path("payment_type").asText(null);
+                        String referenceId = notesNode.path("reference_id").asText(notesNode.path("fine_id").asText(null));
+
+                        if (userUuid == null || paymentTypeStr == null) {
+                            try {
+                                RazorpayOrderDetails details = razorpayClientService.fetchOrder(orderId);
+                                if (userUuid == null) userUuid = details.notes().get("user_uuid");
+                                if (paymentTypeStr == null) paymentTypeStr = details.notes().get("payment_type");
+                                if (referenceId == null) referenceId = details.notes().getOrDefault("reference_id", details.notes().get("fine_id"));
+                                if (amount == 0L) amount = details.amount();
+                            } catch (Exception e) {
+                                log.warn("Unable to fetch order notes in webhook: {}", e.getMessage());
+                            }
+                        }
+
+                        if (userUuid != null && paymentTypeStr != null) {
+                            Payment payment = PaymentMapper.INSTANCE.createPaymentEntity(
+                                    userUuid,
+                                    PaymentType.valueOf(paymentTypeStr),
+                                    orderId,
+                                    paymentId,
+                                    referenceId,
+                                    amount,
+                                    PaymentStatus.SUCCESS
+                            );
+                            Payment saved = paymentRepository.save(payment);
+                            log.info("Webhook created and confirmed payment order {} as SUCCESS (paymentId: {})", orderId, paymentId);
+
+                            if (saved.getPaymentType() == PaymentType.MEMBERSHIP) {
+                                activateMembershipInternal(saved.getUserUuid());
+                            } else if (saved.getPaymentType() == PaymentType.FINE) {
+                                settleFineInternal(saved.getReferenceId());
+                            }
+                        }
+                    }
                 }
             } else if ("payment.failed".equalsIgnoreCase(event)) {
                 JsonNode paymentEntity = root.path("payload").path("payment").path("entity");
                 String orderId = paymentEntity.path("order_id").asText(null);
                 String paymentId = paymentEntity.path("id").asText(null);
+                long amount = paymentEntity.path("amount").asLong(0L);
 
                 if (Objects.nonNull(orderId) && !orderId.isBlank()) {
-                    paymentRepository.findByRazorpayOrderId(orderId).ifPresent(payment -> {
-                        if (payment.getStatus() == PaymentStatus.FAILED) {
-                            return;
-                        }
-                        if (payment.getStatus() == PaymentStatus.SUCCESS) {
+                    Optional<Payment> existingOpt = paymentRepository.findByRazorpayOrderId(orderId);
+                    if (existingOpt.isPresent()) {
+                        Payment payment = existingOpt.get();
+                        if (payment.getStatus() == PaymentStatus.FAILED || payment.getStatus() == PaymentStatus.SUCCESS) {
                             return;
                         }
                         payment.setStatus(PaymentStatus.FAILED);
@@ -285,20 +339,58 @@ public class PaymentServiceImpl implements PaymentService {
                         }
                         paymentRepository.save(payment);
                         log.info("Webhook marked payment order {} as FAILED", orderId);
-                    });
+                    } else {
+                        JsonNode notesNode = paymentEntity.path("notes");
+                        String userUuid = notesNode.path("user_uuid").asText(null);
+                        String paymentTypeStr = notesNode.path("payment_type").asText(null);
+                        String referenceId = notesNode.path("reference_id").asText(notesNode.path("fine_id").asText(null));
+
+                        if (userUuid != null && paymentTypeStr != null) {
+                            Payment failedPayment = PaymentMapper.INSTANCE.createPaymentEntity(
+                                    userUuid,
+                                    PaymentType.valueOf(paymentTypeStr),
+                                    orderId,
+                                    paymentId,
+                                    referenceId,
+                                    amount,
+                                    PaymentStatus.FAILED
+                            );
+                            paymentRepository.save(failedPayment);
+                            log.info("Webhook created failed payment order {}", orderId);
+                        }
+                    }
                 }
             } else if ("refund.processed".equalsIgnoreCase(event)) {
                 JsonNode refundEntity = root.path("payload").path("refund").path("entity");
                 String refundId = refundEntity.path("id").asText(null);
+                String paymentId = refundEntity.path("payment_id").asText(null);
+                long refundAmount = refundEntity.path("amount").asLong(0L);
+
                 if (Objects.nonNull(refundId) && !refundId.isBlank()) {
-                    paymentRepository.findByRazorpayRefundId(refundId).ifPresent(refundPayment -> {
-                        if (refundPayment.getStatus() == PaymentStatus.SUCCESS) {
-                            return;
+                    Payment refundPayment = paymentRepository.findByRazorpayRefundId(refundId)
+                            .orElseGet(() -> {
+                                if (Objects.nonNull(paymentId) && !paymentId.isBlank()) {
+                                    return paymentRepository.findByRazorpayPaymentId(paymentId)
+                                            .map(orig -> PaymentMapper.INSTANCE.createRefundEntity(
+                                                    orig,
+                                                    refundId,
+                                                    paymentId,
+                                                    refundAmount > 0 ? refundAmount : orig.getAmount(),
+                                                    PaymentStatus.SUCCESS
+                                            ))
+                                            .map(paymentRepository::save)
+                                            .orElse(null);
+                                }
+                                return null;
+                            });
+
+                    if (Objects.nonNull(refundPayment)) {
+                        if (refundPayment.getStatus() != PaymentStatus.SUCCESS) {
+                            refundPayment.setStatus(PaymentStatus.SUCCESS);
+                            paymentRepository.save(refundPayment);
+                            log.info("Webhook marked refund {} as SUCCESS", refundId);
                         }
-                        refundPayment.setStatus(PaymentStatus.SUCCESS);
-                        paymentRepository.save(refundPayment);
-                        log.info("Webhook marked refund {} as SUCCESS", refundId);
-                    });
+                    }
                 }
             } else if ("refund.failed".equalsIgnoreCase(event)) {
                 JsonNode refundEntity = root.path("payload").path("refund").path("entity");
@@ -311,24 +403,6 @@ public class PaymentServiceImpl implements PaymentService {
                         refundPayment.setStatus(PaymentStatus.FAILED);
                         paymentRepository.save(refundPayment);
                         log.info("Webhook marked refund {} as FAILED", refundId);
-
-                        if (Objects.nonNull(refundPayment.getPaymentUuid())) {
-                            paymentRepository.findByUuid(refundPayment.getPaymentUuid()).ifPresent(orig -> {
-                                long successfulRefunds = paymentRepository.findByPaymentUuidAndTransactionType(
-                                        orig.getUuid(), TransactionType.REFUND
-                                ).stream()
-                                        .filter(r -> r.getStatus() == PaymentStatus.SUCCESS)
-                                        .mapToLong(Payment::getAmount)
-                                        .sum();
-
-                                if (successfulRefunds == 0) {
-                                    orig.setStatus(PaymentStatus.SUCCESS);
-                                } else if (successfulRefunds < orig.getAmount()) {
-                                    orig.setStatus(PaymentStatus.PARTIALLY_REFUNDED);
-                                }
-                                paymentRepository.save(orig);
-                            });
-                        }
                     });
                 }
             }
@@ -374,7 +448,7 @@ public class PaymentServiceImpl implements PaymentService {
                     originalPayment.getUuid(),
                     TransactionType.REFUND
             ).stream()
-                    .filter(p -> p.getStatus() == PaymentStatus.SUCCESS || p.getStatus() == PaymentStatus.PENDING)
+                    .filter(p -> p.getStatus() == PaymentStatus.SUCCESS)
                     .mapToLong(Payment::getAmount)
                     .sum();
 
@@ -385,25 +459,15 @@ public class PaymentServiceImpl implements PaymentService {
                 refundId = razorpayClientService.refundPayment(originalPayment.getRazorpayPaymentId(), refundToIssue);
             }
 
-            Payment refundRecord = Payment.builder()
-                    .userUuid(user.getUuid())
-                    .transactionType(TransactionType.REFUND)
-                    .paymentType(PaymentType.MEMBERSHIP)
-                    .razorpayRefundId(refundId)
-                    .paymentUuid(originalPayment.getUuid())
-                    .referenceId(originalPayment.getRazorpayPaymentId())
-                    .amount(refundToIssue)
-                    .status(PaymentStatus.SUCCESS)
-                    .build();
+            Payment refundRecord = PaymentMapper.INSTANCE.createRefundEntity(
+                    originalPayment,
+                    refundId,
+                    originalPayment.getRazorpayPaymentId(),
+                    refundToIssue,
+                    PaymentStatus.SUCCESS
+            );
 
             paymentRepository.save(refundRecord);
-
-            if (alreadyRefunded + refundToIssue >= originalPayment.getAmount()) {
-                originalPayment.setStatus(PaymentStatus.REFUNDED);
-            } else if (refundToIssue > 0) {
-                originalPayment.setStatus(PaymentStatus.PARTIALLY_REFUNDED);
-            }
-            paymentRepository.save(originalPayment);
             eligibleRefundPaise = refundToIssue;
         }
 
@@ -443,7 +507,7 @@ public class PaymentServiceImpl implements PaymentService {
                 originalPayment.getUuid(),
                 TransactionType.REFUND
         ).stream()
-                .filter(p -> p.getStatus() == PaymentStatus.SUCCESS || p.getStatus() == PaymentStatus.PENDING)
+                .filter(p -> p.getStatus() == PaymentStatus.SUCCESS)
                 .mapToLong(Payment::getAmount)
                 .sum();
 
@@ -464,25 +528,15 @@ public class PaymentServiceImpl implements PaymentService {
             refundId = razorpayClientService.refundPayment(originalPayment.getRazorpayPaymentId(), refundToIssue);
         }
 
-        Payment refundRecord = Payment.builder()
-                .userUuid(userUuid)
-                .transactionType(TransactionType.REFUND)
-                .paymentType(PaymentType.MEMBERSHIP)
-                .razorpayRefundId(refundId)
-                .paymentUuid(originalPayment.getUuid())
-                .referenceId(originalPayment.getRazorpayPaymentId())
-                .amount(refundToIssue)
-                .status(PaymentStatus.SUCCESS)
-                .build();
+        Payment refundRecord = PaymentMapper.INSTANCE.createRefundEntity(
+                originalPayment,
+                refundId,
+                originalPayment.getRazorpayPaymentId(),
+                refundToIssue,
+                PaymentStatus.SUCCESS
+        );
 
         Payment saved = paymentRepository.save(refundRecord);
-
-        if (alreadyRefunded + refundToIssue >= originalPayment.getAmount()) {
-            originalPayment.setStatus(PaymentStatus.REFUNDED);
-        } else if (refundToIssue > 0) {
-            originalPayment.setStatus(PaymentStatus.PARTIALLY_REFUNDED);
-        }
-        paymentRepository.save(originalPayment);
 
         return PaymentMapper.INSTANCE.mapToResponse(saved);
     }
@@ -494,6 +548,78 @@ public class PaymentServiceImpl implements PaymentService {
         List<Payment> list = paymentRepository.findByUserUuidOrderByCreatedAtDesc(user.getUuid());
         return PaymentMapper.INSTANCE.mapToResponseList(list);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PaymentHistoryResponseDto getPaymentHistory(
+            String userIdentifier,
+            PaymentType paymentType,
+            PaymentStatus status,
+            String search,
+            int page,
+            int size
+    ) {
+        User user = findUserByIdentifier(userIdentifier);
+
+        List<Payment> allUserPayments = paymentRepository.findByUserUuidOrderByCreatedAtDesc(user.getUuid());
+
+        long totalPaid = allUserPayments.stream()
+                .filter(p -> p.getTransactionType() == TransactionType.PAYMENT
+                        && p.getStatus() == PaymentStatus.SUCCESS)
+                .mapToLong(Payment::getAmount)
+                .sum();
+
+        long totalRefunded = allUserPayments.stream()
+                .filter(p -> p.getTransactionType() == TransactionType.REFUND
+                        && p.getStatus() == PaymentStatus.SUCCESS)
+                .mapToLong(Payment::getAmount)
+                .sum();
+
+        long netPaid = Math.max(0L, totalPaid - totalRefunded);
+
+        long successfulTransactionCount = allUserPayments.stream()
+                .filter(p -> p.getStatus() == PaymentStatus.SUCCESS)
+                .count();
+
+        int pageIndex = Math.max(0, page);
+        int pageSize = (size <= 0) ? 10 : Math.min(size, 100);
+        Pageable pageable = PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        String sanitizedSearch = (search != null && !search.trim().isEmpty()) ? search.trim() : null;
+
+        Page<Payment> pageResult = paymentRepository.findPaymentHistory(
+                user.getUuid(),
+                paymentType,
+                status,
+                sanitizedSearch,
+                pageable
+        );
+
+        List<PaymentResponseDto> content = pageResult.getContent().stream()
+                .map(p -> {
+                    if (p.getTransactionType() == TransactionType.PAYMENT) {
+                        List<Payment> associatedRefunds = paymentRepository.findByPaymentUuidAndTransactionType(
+                                p.getUuid(),
+                                TransactionType.REFUND
+                        );
+                        List<PaymentResponseDto> refundDtos = PaymentMapper.INSTANCE.mapToResponseList(associatedRefunds);
+                        return PaymentMapper.INSTANCE.mapToResponse(p, refundDtos);
+                    } else {
+                        return PaymentMapper.INSTANCE.mapToResponse(p);
+                    }
+                })
+                .toList();
+
+        return PaymentMapper.INSTANCE.mapToHistoryResponse(
+                totalPaid,
+                totalRefunded,
+                netPaid,
+                successfulTransactionCount,
+                content,
+                pageResult
+        );
+    }
+
 
     private void activateMembershipInternal(String userUuid) {
         membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(

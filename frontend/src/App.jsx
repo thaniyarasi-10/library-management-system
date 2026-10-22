@@ -145,6 +145,7 @@ export default function App() {
 
   // Bank Account Details State
   const [paymentProfile, setPaymentProfile] = useState(null);
+  const [isLoadingPaymentProfile, setIsLoadingPaymentProfile] = useState(false);
   const [isSavingPaymentProfile, setIsSavingPaymentProfile] = useState(false);
   const [isEditingPaymentProfile, setIsEditingPaymentProfile] = useState(false);
   const [paymentProfileForm, setPaymentProfileForm] = useState({
@@ -154,6 +155,29 @@ export default function App() {
     ifscCode: '',
     formError: ''
   });
+
+  // Payment History State
+  const [paymentHistory, setPaymentHistory] = useState({
+    totalPaid: 0,
+    totalRefunded: 0,
+    netPaid: 0,
+    successfulTransactionCount: 0,
+    content: [],
+    currentPage: 0,
+    pageSize: 10,
+    totalElements: 0,
+    totalPages: 1,
+    isFirst: true,
+    isLast: true,
+    hasNext: false,
+    hasPrevious: false
+  });
+  const [isLoadingPaymentHistory, setIsLoadingPaymentHistory] = useState(false);
+  const [paymentHistoryPage, setPaymentHistoryPage] = useState(0);
+  const [paymentHistoryType, setPaymentHistoryType] = useState('');
+  const [paymentHistoryStatus, setPaymentHistoryStatus] = useState('');
+  const [paymentHistorySearch, setPaymentHistorySearch] = useState('');
+  const [expandedPaymentUuid, setExpandedPaymentUuid] = useState(null);
 
   // Membership
   const [membership, setMembership] = useState(null);
@@ -304,6 +328,49 @@ export default function App() {
     }
   }, [isAuthenticated, auth0User, fetchApi]);
 
+  const loadPaymentProfile = useCallback(async () => {
+    if (!isAuthenticated) return null;
+    setIsLoadingPaymentProfile(true);
+    try {
+      const res = await fetchApi('/user/payment-profile');
+      if (res.ok && res.data) {
+        setPaymentProfile(res.data);
+        return res.data;
+      } else {
+        setPaymentProfile(null);
+        return null;
+      }
+    } catch (err) {
+      console.warn('Error loading payment profile:', err);
+      setPaymentProfile(null);
+      return null;
+    } finally {
+      setIsLoadingPaymentProfile(false);
+    }
+  }, [isAuthenticated, fetchApi]);
+
+  const loadPaymentHistory = useCallback(async (page = 0, type = '', status = '', search = '') => {
+    if (!isAuthenticated) return;
+    setIsLoadingPaymentHistory(true);
+    try {
+      const params = new URLSearchParams();
+      params.append('page', page);
+      params.append('size', '10');
+      if (type) params.append('paymentType', type);
+      if (status) params.append('status', status);
+      if (search && search.trim()) params.append('search', search.trim());
+
+      const res = await fetchApi(`/user/me/payment-history?${params.toString()}`);
+      if (res.ok && res.data) {
+        setPaymentHistory(res.data);
+      }
+    } catch (err) {
+      console.warn('Error loading payment history:', err);
+    } finally {
+      setIsLoadingPaymentHistory(false);
+    }
+  }, [isAuthenticated, fetchApi]);
+
   // Auth Initialization and User Sync
   useEffect(() => {
     if (!isAuthenticated) {
@@ -428,10 +495,12 @@ export default function App() {
     } else if (currentPage === 'membership') {
       loadMembership(true);
       loadPaymentProfile();
+    } else if (currentPage === 'payments') {
+      loadPaymentHistory(paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch);
     } else if (currentPage === 'donations') {
       loadDonations();
     }
-  }, [currentPage, isAuthenticated, currentUser, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
+  }, [currentPage, isAuthenticated, currentUser, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir, paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch]);
 
   // Load fines for deactivated user so pending fines can be reviewed and paid
   useEffect(() => {
@@ -1510,27 +1579,6 @@ export default function App() {
     return (val || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 11).toUpperCase();
   };
 
-  const loadPaymentProfile = useCallback(async () => {
-    if (!isAuthenticated) return null;
-    setIsLoadingPaymentProfile(true);
-    try {
-      const res = await fetchApi('/user/payment-profile');
-      if (res.ok && res.data) {
-        setPaymentProfile(res.data);
-        return res.data;
-      } else {
-        setPaymentProfile(null);
-        return null;
-      }
-    } catch (err) {
-      console.warn('Error loading payment profile:', err);
-      setPaymentProfile(null);
-      return null;
-    } finally {
-      setIsLoadingPaymentProfile(false);
-    }
-  }, [isAuthenticated, fetchApi]);
-
   const openPaymentProfileModal = (forceEdit = false) => {
     if (paymentProfile && !forceEdit) {
       setIsEditingPaymentProfile(false);
@@ -2213,6 +2261,13 @@ export default function App() {
           </button>
 
           <button
+            className={`nav-link ${currentPage === 'payments' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('payments')}>
+            <Clock className="nav-icon" size={18} />
+            <span>Payment History</span>
+          </button>
+
+          <button
             className={`nav-link ${currentPage === 'donations' ? 'active' : ''}`}
             onClick={() => setCurrentPage('donations')}
           >
@@ -2233,7 +2288,7 @@ export default function App() {
             <Edit2 size={16} />
           </button>
           <button className="btn-signout-icon" onClick={handleSignOut} title="Sign Out">
-            <LogOut size={18} />
+            <LogOut size={16} />
           </button>
         </div>
       </aside>
@@ -2249,15 +2304,9 @@ export default function App() {
               {currentPage === 'borrow' && (userRole === 'ADMIN' ? 'Circulation Log' : 'My Loans')}
               {currentPage === 'fines' && (userRole === 'ADMIN' ? 'Fine Settlement' : 'Fines & Dues')}
               {currentPage === 'membership' && 'Digital Membership'}
+              {currentPage === 'payments' && 'Payment & Refund History'}
               {currentPage === 'donations' && (userRole === 'ADMIN' ? 'Donation Management' : 'Book Donations')}
             </h1>
-            <p className="header-page-subtitle">
-              {currentPage === 'members' && (membersTab === 'reactivation'
-                ? 'Review, approve, or reject account reactivation requests from deactivated members'
-                : 'Manage library patrons, membership statuses, and sync to CRM')}
-              {currentPage === 'donations' && (userRole === 'ADMIN' ? 'Review, approve, or reject user book donation requests' : 'Donate books to expand the library collection and view your donation history')}
-              {currentPage !== 'members' && currentPage !== 'donations' && 'Overview of library holdings and staff operations'}
-            </p>
           </div>
 
           <div className="header-actions">
@@ -2299,6 +2348,17 @@ export default function App() {
                   >
                     <Award size={14} />
                     <span>{userRole === 'ADMIN' ? 'Membership' : 'Digital Membership'}</span>
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setCurrentPage('payments');
+                      setShowUserDropdown(false);
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <Clock size={14} />
+                    <span>Payment History</span>
                   </button>
                   <button
                     className="dropdown-item"
@@ -3698,13 +3758,408 @@ export default function App() {
                         Download Signed PDF (Agreement)
                       </button>
 
+                      <button className="btn btn-secondary btn-block mt-3" onClick={() => setCurrentPage('payments')}>
+                        <Clock size={16} style={{ marginRight: '8px' }} />
+                        View Payment History
+                      </button>
+
                       <button className="btn btn-danger btn-block mt-3" onClick={handleCancelMembership}>
                         Cancel Membership
                       </button>
+
+                      {/* Saved Bank Details Card */}
+                      {paymentProfile ? (
+                        <div className="amazon-payment-box mt-4" style={{ textAlign: 'left' }}>
+                          <div className="amazon-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Landmark size={18} color="var(--accent-primary)" />
+                              <span>Linked Refund Bank Account</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-link btn-sm"
+                              style={{ fontSize: '12px', padding: 0, color: 'var(--accent-primary)', textDecoration: 'underline' }}
+                              onClick={() => openPaymentProfileModal(true)}
+                            >
+                              Edit Details
+                            </button>
+                          </div>
+                          <div className="saved-profile-card" style={{ marginBottom: 0 }}>
+                            <div className="saved-profile-info">
+                              <div className="saved-profile-icon">
+                                <Landmark size={20} />
+                              </div>
+                              <div className="saved-profile-details">
+                                <strong className="saved-profile-title">
+                                  {paymentProfile.bankName}
+                                </strong>
+                                <span className="saved-profile-sub">
+                                  {paymentProfile.accountHolderName} • A/C: {paymentProfile.maskedAccountNumber || '••••••••'} • IFSC: {paymentProfile.ifscCode}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="amazon-payment-box mt-4" style={{ textAlign: 'left' }}>
+                          <div className="amazon-section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Landmark size={18} color="var(--accent-primary)" />
+                            <span>Linked Refund Bank Account</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => openPaymentProfileModal(true)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            <Plus size={14} />
+                            <span>Add Bank Details</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* PAGE: PAYMENT & REFUND HISTORY */}
+          {currentPage === 'payments' && (
+            <div className="page-pane active">
+              {/* Summary Metrics Cards */}
+              <div className="metrics-grid mb-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                <div className="metric-card">
+                  <div className="metric-icon" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e' }}>
+                    <CreditCard size={24} />
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Paid</span>
+                    <h3 style={{ fontSize: '24px', fontWeight: 700, margin: '2px 0 0 0' }}>
+                      ₹{((paymentHistory.totalPaid || 0) / 100).toFixed(2)}
+                    </h3>
+                    <small className="text-muted" style={{ fontSize: '11px' }}>All successful transactions</small>
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-icon" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316' }}>
+                    <RefreshCw size={24} />
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Refunded</span>
+                    <h3 style={{ fontSize: '24px', fontWeight: 700, margin: '2px 0 0 0' }}>
+                      ₹{((paymentHistory.totalRefunded || 0) / 100).toFixed(2)}
+                    </h3>
+                    <small className="text-muted" style={{ fontSize: '11px' }}>Deposits & dues returned</small>
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-icon" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#6366f1' }}>
+                    <Landmark size={24} />
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>Net Paid</span>
+                    <h3 style={{ fontSize: '24px', fontWeight: 700, margin: '2px 0 0 0' }}>
+                      ₹{((paymentHistory.netPaid || 0) / 100).toFixed(2)}
+                    </h3>
+                    <small className="text-muted" style={{ fontSize: '11px' }}>Total Paid minus Refunded</small>
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+                    <Check size={24} />
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>Successful Count</span>
+                    <h3 style={{ fontSize: '24px', fontWeight: 700, margin: '2px 0 0 0' }}>
+                      {paymentHistory.successfulTransactionCount || 0}
+                    </h3>
+                    <small className="text-muted" style={{ fontSize: '11px' }}>Settled payments & refunds</small>
+                  </div>
+                </div>
+              </div>
+
+              {/* Transactions Section Card */}
+              <div className="section-card">
+                <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h3>Transactions & Invoices</h3>
+                    <p className="section-desc">Paginated history of membership fees, fine settlements, and refunds</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => loadPaymentHistory(paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch)}
+                    disabled={isLoadingPaymentHistory}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <RefreshCw size={14} className={isLoadingPaymentHistory ? 'animate-spin' : ''} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                {/* Filter and Search Row */}
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', margin: '20px 0' }}>
+                  <div style={{ flex: '1 1 240px', position: 'relative' }}>
+                    <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Search by Payment ID, Order ID, or Ref..."
+                      value={paymentHistorySearch}
+                      onChange={e => {
+                        setPaymentHistorySearch(e.target.value);
+                        setPaymentHistoryPage(0);
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          loadPaymentHistory(0, paymentHistoryType, paymentHistoryStatus, e.target.value);
+                        }
+                      }}
+                      style={{ paddingLeft: '36px' }}
+                    />
+                  </div>
+
+                  <div style={{ width: '180px' }}>
+                    <select
+                      className="form-input"
+                      value={paymentHistoryType}
+                      onChange={e => {
+                        setPaymentHistoryType(e.target.value);
+                        setPaymentHistoryPage(0);
+                        loadPaymentHistory(0, e.target.value, paymentHistoryStatus, paymentHistorySearch);
+                      }}
+                    >
+                      <option value="">All Payment Types</option>
+                      <option value="MEMBERSHIP">Membership Fee</option>
+                      <option value="FINE">Overdue Fine</option>
+                    </select>
+                  </div>
+
+                  <div style={{ width: '190px' }}>
+                    <select
+                      className="form-input"
+                      value={paymentHistoryStatus}
+                      onChange={e => {
+                        setPaymentHistoryStatus(e.target.value);
+                        setPaymentHistoryPage(0);
+                        loadPaymentHistory(0, paymentHistoryType, e.target.value, paymentHistorySearch);
+                      }}
+                    >
+                      <option value="">All Statuses</option>
+                      <option value="SUCCESS">Success</option>
+                      <option value="FAILED">Failed</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div className="table-responsive">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Date & Time</th>
+                        <th>Type</th>
+                        <th>Reference / Razorpay ID</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Refund Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {isLoadingPaymentHistory ? (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: 'center', padding: '36px' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)' }}>
+                              <RefreshCw size={18} className="animate-spin" />
+                              <span>Loading payment history...</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : !paymentHistory.content || paymentHistory.content.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: 'center', padding: '48px 24px' }}>
+                            <Clock size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
+                            <h4 style={{ margin: '0 0 4px', fontSize: '15px' }}>No Payment Records Found</h4>
+                            <p className="text-muted" style={{ fontSize: '13px', margin: 0 }}>
+                              {paymentHistorySearch || paymentHistoryType || paymentHistoryStatus
+                                ? 'No transactions match the selected filters.'
+                                : 'You have not made any payments or refund transactions yet.'}
+                            </p>
+                          </td>
+                        </tr>
+                      ) : (
+                        paymentHistory.content.map((item) => {
+                          const isExpanded = expandedPaymentUuid === item.uuid;
+                          const hasRefunds = item.refunds && item.refunds.length > 0;
+                          return (
+                            <React.Fragment key={item.uuid || item.id}>
+                              <tr>
+                                <td>
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <strong style={{ fontSize: '13px' }}>
+                                      {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
+                                    </strong>
+                                    <span className="text-muted" style={{ fontSize: '11px' }}>
+                                      {item.createdAt ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                <td>
+                                  {item.transactionType === 'REFUND' ? (
+                                    <span className="badge" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316' }}>
+                                      Refund
+                                    </span>
+                                  ) : item.paymentType === 'MEMBERSHIP' ? (
+                                    <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
+                                      Membership Fee
+                                    </span>
+                                  ) : (
+                                    <span className="badge" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#eab308' }}>
+                                      Overdue Fine
+                                    </span>
+                                  )}
+                                </td>
+
+                                <td>
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span style={{ fontFamily: 'monospace', fontSize: '12px', fontWeight: 600 }}>
+                                      {item.razorpayPaymentId || item.razorpayRefundId || item.razorpayOrderId || item.uuid?.slice(0, 16)}
+                                    </span>
+                                    {item.razorpayOrderId && item.razorpayPaymentId && (
+                                      <small className="text-muted" style={{ fontSize: '11px', fontFamily: 'monospace' }}>
+                                        Order: {item.razorpayOrderId}
+                                      </small>
+                                    )}
+                                  </div>
+                                </td>
+
+                                <td>
+                                  <strong style={{
+                                    fontSize: '14px',
+                                    color: item.transactionType === 'REFUND' ? '#f97316' : '#22c55e'
+                                  }}>
+                                    {item.transactionType === 'REFUND' ? '-' : '+'}₹{((item.amount || 0) / 100).toFixed(2)}
+                                  </strong>
+                                </td>
+
+                                <td>
+                                  {item.status === 'SUCCESS' && (
+                                    <span className="badge badge-success">Success</span>
+                                  )}
+                                  {item.status === 'FAILED' && (
+                                    <span className="badge badge-danger">Failed</span>
+                                  )}
+                                </td>
+
+                                <td>
+                                  {hasRefunds ? (
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-sm"
+                                      onClick={() => setExpandedPaymentUuid(isExpanded ? null : item.uuid)}
+                                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--accent-primary)' }}
+                                    >
+                                      <span>{item.refunds.length} Refund{item.refunds.length > 1 ? 's' : ''}</span>
+                                      <ChevronDown size={14} style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                                    </button>
+                                  ) : (
+                                    <span className="text-muted" style={{ fontSize: '12px' }}>—</span>
+                                  )}
+                                </td>
+                              </tr>
+
+                              {/* Expandable Refund Details Row */}
+                              {isExpanded && hasRefunds && (
+                                <tr style={{ background: 'var(--bg-surface-elevated)' }}>
+                                  <td colSpan="6" style={{ padding: '12px 20px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                      <strong style={{ fontSize: '12px', color: 'var(--accent-primary)' }}>
+                                        Associated Refunds ({item.refunds.length}):
+                                      </strong>
+                                      {item.refunds.map(rf => (
+                                        <div
+                                          key={rf.uuid || rf.id}
+                                          style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            padding: '8px 12px',
+                                            background: 'var(--bg-input)',
+                                            borderRadius: '6px',
+                                            border: '1px solid var(--border-subtle)',
+                                            fontSize: '12px'
+                                          }}
+                                        >
+                                          <div>
+                                            <span style={{ fontWeight: 600 }}>Refund ID: </span>
+                                            <span style={{ fontFamily: 'monospace' }}>{rf.razorpayRefundId || rf.uuid}</span>
+                                            <span className="text-muted" style={{ marginLeft: '12px' }}>
+                                              {rf.createdAt ? new Date(rf.createdAt).toLocaleDateString() : ''}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span style={{ color: '#f97316', fontWeight: 700, marginRight: '12px' }}>
+                                              -₹{((rf.amount || 0) / 100).toFixed(2)}
+                                            </span>
+                                            <span className="badge badge-success" style={{ fontSize: '10px' }}>
+                                              {rf.status}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                {paymentHistory.totalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' }}>
+                    <span className="text-muted" style={{ fontSize: '12px' }}>
+                      Showing page {paymentHistory.currentPage + 1} of {paymentHistory.totalPages} ({paymentHistory.totalElements} records)
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={paymentHistory.isFirst}
+                        onClick={() => {
+                          const prev = Math.max(0, paymentHistory.currentPage - 1);
+                          setPaymentHistoryPage(prev);
+                          loadPaymentHistory(prev, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch);
+                        }}
+                      >
+                        Previous
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={paymentHistory.isLast || !paymentHistory.hasNext}
+                        onClick={() => {
+                          const next = paymentHistory.currentPage + 1;
+                          setPaymentHistoryPage(next);
+                          loadPaymentHistory(next, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch);
+                        }}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

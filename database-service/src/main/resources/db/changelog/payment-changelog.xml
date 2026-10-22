@@ -68,4 +68,14 @@
         </createTable>
     </changeSet>
 
+    <changeSet id="2-normalize-payment-statuses" author="thani">
+        <update tableName="payment">
+            <column name="status" value="SUCCESS"/>
+            <where>status IN ('REFUNDED', 'PARTIALLY_REFUNDED')</where>
+        </update>
+        <delete tableName="payment">
+            <where>status = 'PENDING'</where>
+        </delete>
+    </changeSet>
+
 </databaseChangeLog>

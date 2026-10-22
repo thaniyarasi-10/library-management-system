@@ -93,7 +93,10 @@ class PaymentControllerTest {
                 null,
                 "mem-uuid-1",
                 50000L,
-                "SUCCESS"
+                "SUCCESS",
+                null,
+                null,
+                List.of()
         );
 
         when(paymentService.verifyPayment(request, email)).thenReturn(response);
@@ -139,7 +142,10 @@ class PaymentControllerTest {
                 null,
                 "mem-uuid-1",
                 50000L,
-                "SUCCESS"
+                "SUCCESS",
+                null,
+                null,
+                List.of()
         );
 
         when(paymentService.getUserPayments(email)).thenReturn(List.of(dto));

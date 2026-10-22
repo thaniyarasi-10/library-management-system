@@ -125,6 +125,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/user/me/request-reactivation", "/user/me/request-reactivation")
                         .authenticated()
 
+                        // Payment History (Authenticated User/Admin)
+                        .requestMatchers(HttpMethod.GET, "/api/user/me/payment-history", "/user/me/payment-history",
+                                "/api/user/me/payment-history/**", "/user/me/payment-history/**")
+                        .authenticated()
+
                         // User Payment Profile / Bank Account Details (Authenticated User/Admin)
                         .requestMatchers("/api/user/payment-profile", "/user/payment-profile",
                                 "/api/user/payment-profile/**", "/user/payment-profile/**")
