@@ -54,6 +54,8 @@ public interface PaymentMapper {
     @Mapping(target = "razorpayRefundId", source = "refundId")
     @Mapping(target = "paymentUuid", source = "original.uuid")
     @Mapping(target = "referenceId", source = "referenceId")
+    @Mapping(target = "amount", source = "amount")
+    @Mapping(target = "status", source = "status")
     @Mapping(target = "createdAt", expression = "java(LocalDateTime.now())")
     @Mapping(target = "updatedAt", expression = "java(LocalDateTime.now())")
     Payment createRefundEntity(Payment original, String refundId, String referenceId, Long amount, PaymentStatus status);

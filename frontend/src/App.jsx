@@ -1266,13 +1266,33 @@ export default function App() {
       };
 
       const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', function (response) {
+      rzp.on('payment.failed', async function (response) {
         setIsProcessingPayment(false);
+        const err = response?.error || {};
+        const meta = err.metadata || {};
+        const failureMsg = err.description || err.reason || 'Your payment was declined. The fine remains unpaid.';
         setPaymentResult({
           type: 'error',
           title: 'Fine Payment Failed',
-          message: response.error?.description || 'Your payment was declined. The fine remains unpaid.'
+          message: failureMsg
         });
+        showToast(failureMsg, 'error');
+
+        try {
+          await fetchApi('/payments/verify', {
+            method: 'POST',
+            body: JSON.stringify({
+              razorpayOrderId: meta.order_id || orderData.orderId,
+              razorpayPaymentId: meta.payment_id || null,
+              razorpaySignature: null
+            })
+          });
+          loadPaymentHistory(paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch);
+          loadFines();
+          loadUserFinesTotal();
+        } catch (failErr) {
+          console.error('Error reporting fine payment failure:', failErr);
+        }
       });
       rzp.open();
     } catch (err) {
@@ -1415,14 +1435,32 @@ export default function App() {
       };
 
       const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', function (response) {
+      rzp.on('payment.failed', async function (response) {
         setIsProcessingPayment(false);
+        const err = response?.error || {};
+        const meta = err.metadata || {};
+        const failureMsg = err.description || err.reason || 'Payment was declined by gateway. You can retry paying without re-signing the agreement.';
         setPaymentResult({
           type: 'error',
           title: 'Payment Declined',
-          message: response.error?.description || 'Payment was declined by gateway. You can retry paying without re-signing the agreement.'
+          message: failureMsg
         });
         showToast('Payment failed. You can retry anytime.', 'error');
+
+        try {
+          await fetchApi('/payments/verify', {
+            method: 'POST',
+            body: JSON.stringify({
+              razorpayOrderId: meta.order_id || orderData.orderId,
+              razorpayPaymentId: meta.payment_id || null,
+              razorpaySignature: null
+            })
+          });
+          loadPaymentHistory(paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch);
+          loadMembership(false);
+        } catch (failErr) {
+          console.error('Error reporting membership payment failure:', failErr);
+        }
       });
       rzp.open();
     } catch (err) {

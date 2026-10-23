@@ -161,7 +161,14 @@ public class PaymentServiceImpl implements PaymentService {
     public PaymentResponseDto verifyPayment(VerifyPaymentRequest request, String email) {
         User user = findUserByIdentifier(email);
 
-        Optional<Payment> existingPaymentOpt = paymentRepository.findByRazorpayOrderId(request.razorpayOrderId());
+        Optional<Payment> existingPaymentOpt = Optional.empty();
+        if (request.razorpayPaymentId() != null && !request.razorpayPaymentId().isBlank()) {
+            existingPaymentOpt = paymentRepository.findByRazorpayPaymentId(request.razorpayPaymentId());
+        }
+        if (existingPaymentOpt.isEmpty() && request.razorpayOrderId() != null && !request.razorpayOrderId().isBlank()) {
+            existingPaymentOpt = paymentRepository.findByRazorpayOrderId(request.razorpayOrderId());
+        }
+
         if (existingPaymentOpt.isPresent()) {
             Payment existing = existingPaymentOpt.get();
             if (user.getRole() != RoleEnum.ADMIN && !existing.getUserUuid().equals(user.getUuid())) {
@@ -169,16 +176,20 @@ public class PaymentServiceImpl implements PaymentService {
                         "Access Denied: Payment transaction does not belong to you");
             }
             if (existing.getStatus() == PaymentStatus.SUCCESS) {
-                log.info("Payment order {} already successfully verified", request.razorpayOrderId());
+                log.info("Payment order {} already successfully verified as SUCCESS", request.razorpayOrderId());
                 return PaymentMapper.INSTANCE.mapToResponse(existing);
             }
         }
 
-        boolean isValid = razorpayClientService.verifyPaymentSignature(
-                request.razorpayOrderId(),
-                request.razorpayPaymentId(),
-                request.razorpaySignature()
-        );
+        boolean isValid = false;
+        if (request.razorpayPaymentId() != null && !request.razorpayPaymentId().isBlank()
+                && request.razorpaySignature() != null && !request.razorpaySignature().isBlank()) {
+            isValid = razorpayClientService.verifyPaymentSignature(
+                    request.razorpayOrderId(),
+                    request.razorpayPaymentId(),
+                    request.razorpaySignature()
+            );
+        }
 
         RazorpayOrderDetails orderDetails = razorpayClientService.fetchOrder(request.razorpayOrderId());
         Map<String, String> notes = orderDetails.notes() != null ? orderDetails.notes() : Map.of();
@@ -193,10 +204,7 @@ public class PaymentServiceImpl implements PaymentService {
                     "Access Denied: Payment transaction does not belong to you");
         }
 
-        if (!isValid) {
-            log.warn("Payment signature verification failed for order: {}", request.razorpayOrderId());
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid payment signature verification");
-        }
+        PaymentStatus status = isValid ? PaymentStatus.SUCCESS : PaymentStatus.FAILED;
 
         Payment payment = existingPaymentOpt.orElseGet(() ->
                 PaymentMapper.INSTANCE.createPaymentEntity(
@@ -206,19 +214,23 @@ public class PaymentServiceImpl implements PaymentService {
                         request.razorpayPaymentId(),
                         referenceId,
                         amount,
-                        PaymentStatus.SUCCESS
+                        status
                 )
         );
 
-        payment.setStatus(PaymentStatus.SUCCESS);
-        payment.setRazorpayPaymentId(request.razorpayPaymentId());
+        payment.setStatus(status);
+        if (request.razorpayPaymentId() != null && !request.razorpayPaymentId().isBlank()) {
+            payment.setRazorpayPaymentId(request.razorpayPaymentId());
+        }
         Payment savedPayment = paymentRepository.save(payment);
-        log.info("Payment verified successfully for order: {}, paymentId: {}", request.razorpayOrderId(), request.razorpayPaymentId());
+        log.info("Payment updated as {} for order: {}, paymentId: {}", status, request.razorpayOrderId(), request.razorpayPaymentId());
 
-        if (payment.getPaymentType() == PaymentType.MEMBERSHIP) {
-            activateMembershipInternal(payment.getUserUuid());
-        } else if (payment.getPaymentType() == PaymentType.FINE) {
-            settleFineInternal(payment.getReferenceId());
+        if (status == PaymentStatus.SUCCESS) {
+            if (payment.getPaymentType() == PaymentType.MEMBERSHIP) {
+                activateMembershipInternal(payment.getUserUuid());
+            } else if (payment.getPaymentType() == PaymentType.FINE) {
+                settleFineInternal(payment.getReferenceId());
+            }
         }
 
         return PaymentMapper.INSTANCE.mapToResponse(savedPayment);
@@ -326,38 +338,56 @@ public class PaymentServiceImpl implements PaymentService {
                 String paymentId = paymentEntity.path("id").asText(null);
                 long amount = paymentEntity.path("amount").asLong(0L);
 
-                if (Objects.nonNull(orderId) && !orderId.isBlank()) {
-                    Optional<Payment> existingOpt = paymentRepository.findByRazorpayOrderId(orderId);
-                    if (existingOpt.isPresent()) {
-                        Payment payment = existingOpt.get();
-                        if (payment.getStatus() == PaymentStatus.FAILED || payment.getStatus() == PaymentStatus.SUCCESS) {
-                            return;
-                        }
-                        payment.setStatus(PaymentStatus.FAILED);
-                        if (Objects.nonNull(paymentId) && !paymentId.isBlank()) {
-                            payment.setRazorpayPaymentId(paymentId);
-                        }
-                        paymentRepository.save(payment);
-                        log.info("Webhook marked payment order {} as FAILED", orderId);
-                    } else {
-                        JsonNode notesNode = paymentEntity.path("notes");
-                        String userUuid = notesNode.path("user_uuid").asText(null);
-                        String paymentTypeStr = notesNode.path("payment_type").asText(null);
-                        String referenceId = notesNode.path("reference_id").asText(notesNode.path("fine_id").asText(null));
+                Optional<Payment> existingOpt = Optional.empty();
+                if (Objects.nonNull(paymentId) && !paymentId.isBlank()) {
+                    existingOpt = paymentRepository.findByRazorpayPaymentId(paymentId);
+                }
+                if (existingOpt.isEmpty() && Objects.nonNull(orderId) && !orderId.isBlank()) {
+                    existingOpt = paymentRepository.findByRazorpayOrderId(orderId);
+                }
 
-                        if (userUuid != null && paymentTypeStr != null) {
-                            Payment failedPayment = PaymentMapper.INSTANCE.createPaymentEntity(
-                                    userUuid,
-                                    PaymentType.valueOf(paymentTypeStr),
-                                    orderId,
-                                    paymentId,
-                                    referenceId,
-                                    amount,
-                                    PaymentStatus.FAILED
-                            );
-                            paymentRepository.save(failedPayment);
-                            log.info("Webhook created failed payment order {}", orderId);
+                if (existingOpt.isPresent()) {
+                    Payment payment = existingOpt.get();
+                    if (payment.getStatus() == PaymentStatus.FAILED || payment.getStatus() == PaymentStatus.SUCCESS) {
+                        log.info("Webhook duplicate event: payment order {} is already {}. Skipping.", orderId, payment.getStatus());
+                        return;
+                    }
+                    payment.setStatus(PaymentStatus.FAILED);
+                    if (Objects.nonNull(paymentId) && !paymentId.isBlank()) {
+                        payment.setRazorpayPaymentId(paymentId);
+                    }
+                    paymentRepository.save(payment);
+                    log.info("Webhook marked payment order {} as FAILED (paymentId: {})", orderId, paymentId);
+                } else if (Objects.nonNull(orderId) && !orderId.isBlank()) {
+                    JsonNode notesNode = paymentEntity.path("notes");
+                    String userUuid = notesNode.path("user_uuid").asText(null);
+                    String paymentTypeStr = notesNode.path("payment_type").asText(null);
+                    String referenceId = notesNode.path("reference_id").asText(notesNode.path("fine_id").asText(null));
+
+                    if (userUuid == null || paymentTypeStr == null) {
+                        try {
+                            RazorpayOrderDetails details = razorpayClientService.fetchOrder(orderId);
+                            if (userUuid == null) userUuid = details.notes().get("user_uuid");
+                            if (paymentTypeStr == null) paymentTypeStr = details.notes().get("payment_type");
+                            if (referenceId == null) referenceId = details.notes().getOrDefault("reference_id", details.notes().get("fine_id"));
+                            if (amount == 0L) amount = details.amount();
+                        } catch (Exception e) {
+                            log.warn("Unable to fetch order notes in webhook payment.failed: {}", e.getMessage());
                         }
+                    }
+
+                    if (userUuid != null && paymentTypeStr != null) {
+                        Payment failedPayment = PaymentMapper.INSTANCE.createPaymentEntity(
+                                userUuid,
+                                PaymentType.valueOf(paymentTypeStr),
+                                orderId,
+                                paymentId,
+                                referenceId,
+                                amount,
+                                PaymentStatus.FAILED
+                        );
+                        paymentRepository.save(failedPayment);
+                        log.info("Webhook created failed payment order {} (paymentId: {})", orderId, paymentId);
                     }
                 }
             } else if ("refund.processed".equalsIgnoreCase(event)) {

@@ -157,4 +157,35 @@ class PaymentControllerTest {
         assertEquals(1, result.getBody().size());
         verify(paymentService).getUserPayments(email);
     }
+
+    @Test
+    void testVerifyPayment_failed() {
+        VerifyPaymentRequest request = new VerifyPaymentRequest("order_fail_1", "pay_fail_1", null);
+        PaymentResponseDto response = new PaymentResponseDto(
+                UUID.randomUUID().toString(),
+                1L,
+                "user-uuid-1",
+                "PAYMENT",
+                "FINE",
+                "order_fail_1",
+                "pay_fail_1",
+                null,
+                null,
+                "55",
+                2500L,
+                "FAILED",
+                null,
+                null,
+                List.of()
+        );
+
+        when(paymentService.verifyPayment(request, email)).thenReturn(response);
+
+        ResponseEntity<PaymentResponseDto> result = paymentController.verifyPayment(request, principal);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertEquals(response, result.getBody());
+        assertEquals("FAILED", result.getBody().status());
+        verify(paymentService).verifyPayment(request, email);
+    }
 }

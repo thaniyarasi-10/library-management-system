@@ -25,12 +25,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -278,23 +280,24 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void testVerifyPayment_invalidSignature_throwsBadRequestWithoutSaving() {
+    void testVerifyPayment_invalidSignature_recordsAsFailed() {
         String orderId = "order_m_2";
         String payId = "pay_m_2";
         String sig = "invalid_sig";
         VerifyPaymentRequest request = new VerifyPaymentRequest(orderId, payId, sig);
 
+        when(paymentRepository.findByRazorpayPaymentId(payId)).thenReturn(Optional.empty());
         when(paymentRepository.findByRazorpayOrderId(orderId)).thenReturn(Optional.empty());
         when(razorpayClientService.verifyPaymentSignature(orderId, payId, sig)).thenReturn(false);
         when(razorpayClientService.fetchOrder(orderId)).thenReturn(
                 new RazorpayOrderDetails(orderId, 50000L, Map.of("user_uuid", userUuid, "payment_type", "MEMBERSHIP"))
         );
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> paymentService.verifyPayment(request, userEmail));
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        PaymentResponseDto response = paymentService.verifyPayment(request, userEmail);
 
-        verify(paymentRepository, never()).save(any());
+        assertEquals("FAILED", response.status());
+        verify(paymentRepository).save(argThat(p -> p.getStatus() == PaymentStatus.FAILED));
         verify(membershipRepository, never()).save(any());
     }
 
@@ -1127,5 +1130,134 @@ class PaymentServiceImplTest {
         assertEquals(PaymentStatus.SUCCESS, origPayment.getStatus());
         verify(paymentRepository).save(refundPayment);
         verify(paymentRepository, never()).save(origPayment);
+    }
+
+    @Test
+    void testHandleWebhook_paymentFailed_fetchesOrderNotesWhenNotesMissing() {
+        String payload = "{\"event\":\"payment.failed\",\"payload\":{\"payment\":{\"entity\":{\"order_id\":\"order_fail_fetch\",\"id\":\"pay_fail_fetch\",\"notes\":{}}}}}";
+        when(razorpayClientService.verifyWebhookSignature(anyString(), anyString())).thenReturn(true);
+        when(paymentRepository.findByRazorpayPaymentId("pay_fail_fetch")).thenReturn(Optional.empty());
+        when(paymentRepository.findByRazorpayOrderId("order_fail_fetch")).thenReturn(Optional.empty());
+        when(razorpayClientService.fetchOrder("order_fail_fetch")).thenReturn(
+                new RazorpayOrderDetails("order_fail_fetch", 33500L, Map.of("user_uuid", userUuid, "payment_type", "FINE", "reference_id", "99"))
+        );
+
+        paymentService.handleWebhook(payload, "good_sig");
+
+        verify(paymentRepository).save(argThat(p ->
+                p.getStatus() == PaymentStatus.FAILED &&
+                "order_fail_fetch".equals(p.getRazorpayOrderId()) &&
+                "pay_fail_fetch".equals(p.getRazorpayPaymentId()) &&
+                p.getAmount() == 33500L &&
+                p.getPaymentType() == PaymentType.FINE
+        ));
+    }
+
+    @Test
+    void testVerifyPayment_failureSignatureNull_recordsAsFailed() {
+        VerifyPaymentRequest request = new VerifyPaymentRequest(
+                "order_fail_rf_1",
+                "pay_fail_rf_1",
+                null
+        );
+
+        when(paymentRepository.findByRazorpayPaymentId("pay_fail_rf_1")).thenReturn(Optional.empty());
+        when(paymentRepository.findByRazorpayOrderId("order_fail_rf_1")).thenReturn(Optional.empty());
+        when(razorpayClientService.fetchOrder("order_fail_rf_1")).thenReturn(
+                new RazorpayOrderDetails("order_fail_rf_1", 33500L, Map.of("user_uuid", userUuid, "payment_type", "FINE", "reference_id", "88"))
+        );
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PaymentResponseDto response = paymentService.verifyPayment(request, userEmail);
+
+        assertNotNull(response);
+        assertEquals("FAILED", response.status());
+        assertEquals("order_fail_rf_1", response.razorpayOrderId());
+        assertEquals("pay_fail_rf_1", response.razorpayPaymentId());
+        assertEquals(33500L, response.amount());
+        verify(paymentRepository).save(argThat(p -> p.getStatus() == PaymentStatus.FAILED));
+        verify(membershipRepository, never()).save(any());
+    }
+
+    @Test
+    void testVerifyPayment_failureInvalidSignature_recordsAsFailed() {
+        VerifyPaymentRequest request = new VerifyPaymentRequest(
+                "order_fail_rf_2",
+                "pay_fail_rf_2",
+                "invalid_sig"
+        );
+
+        when(razorpayClientService.verifyPaymentSignature("order_fail_rf_2", "pay_fail_rf_2", "invalid_sig")).thenReturn(false);
+        when(paymentRepository.findByRazorpayPaymentId("pay_fail_rf_2")).thenReturn(Optional.empty());
+        when(paymentRepository.findByRazorpayOrderId("order_fail_rf_2")).thenReturn(Optional.empty());
+        when(razorpayClientService.fetchOrder("order_fail_rf_2")).thenReturn(
+                new RazorpayOrderDetails("order_fail_rf_2", 33500L, Map.of("user_uuid", userUuid, "payment_type", "FINE", "reference_id", "88"))
+        );
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PaymentResponseDto response = paymentService.verifyPayment(request, userEmail);
+
+        assertNotNull(response);
+        assertEquals("FAILED", response.status());
+        verify(paymentRepository).save(argThat(p -> p.getStatus() == PaymentStatus.FAILED));
+    }
+
+    @Test
+    void testVerifyPayment_existingPaymentUpdatedToFailed() {
+        Payment existing = Payment.builder()
+                .uuid("pay-uuid-existing")
+                .userUuid(userUuid)
+                .paymentType(PaymentType.FINE)
+                .razorpayOrderId("order_fail_exist")
+                .status(PaymentStatus.FAILED)
+                .amount(33500L)
+                .build();
+
+        VerifyPaymentRequest request = new VerifyPaymentRequest(
+                "order_fail_exist",
+                "pay_fail_new_id",
+                null
+        );
+
+        when(paymentRepository.findByRazorpayPaymentId("pay_fail_new_id")).thenReturn(Optional.empty());
+        when(paymentRepository.findByRazorpayOrderId("order_fail_exist")).thenReturn(Optional.of(existing));
+        when(razorpayClientService.fetchOrder("order_fail_exist")).thenReturn(
+                new RazorpayOrderDetails("order_fail_exist", 33500L, Map.of("user_uuid", userUuid, "payment_type", "FINE", "reference_id", "88"))
+        );
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        PaymentResponseDto response = paymentService.verifyPayment(request, userEmail);
+
+        assertNotNull(response);
+        assertEquals("FAILED", response.status());
+        assertEquals("pay_fail_new_id", existing.getRazorpayPaymentId());
+        verify(paymentRepository).save(existing);
+    }
+
+    @Test
+    void testVerifyPayment_alreadySuccess_doesNotOverwriteWithFailure() {
+        Payment existing = Payment.builder()
+                .uuid("pay-uuid-success")
+                .userUuid(userUuid)
+                .paymentType(PaymentType.MEMBERSHIP)
+                .razorpayOrderId("order_success_1")
+                .status(PaymentStatus.SUCCESS)
+                .amount(50000L)
+                .build();
+
+        VerifyPaymentRequest request = new VerifyPaymentRequest(
+                "order_success_1",
+                "pay_late_fail",
+                null
+        );
+
+        when(paymentRepository.findByRazorpayPaymentId("pay_late_fail")).thenReturn(Optional.empty());
+        when(paymentRepository.findByRazorpayOrderId("order_success_1")).thenReturn(Optional.of(existing));
+
+        PaymentResponseDto response = paymentService.verifyPayment(request, userEmail);
+
+        assertNotNull(response);
+        assertEquals("SUCCESS", response.status());
+        verify(paymentRepository, never()).save(any());
     }
 }
