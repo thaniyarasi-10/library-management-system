@@ -1,6 +1,5 @@
 package com.kovanlabs.librarymanagement.payment.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kovanlabs.librarymanagement.database.entity.Fine;
 import com.kovanlabs.librarymanagement.database.entity.Membership;
 import com.kovanlabs.librarymanagement.database.entity.Payment;
@@ -67,8 +66,14 @@ class PaymentServiceImplTest {
     @Mock
     private RazorpayProperties razorpayProperties;
 
+    @Mock
+    private com.kovanlabs.librarymanagement.aws.s3.service.S3Service s3Service;
+
+    @Mock
+    private PaymentDocumentGenerator paymentDocumentGenerator;
+
     @Spy
-    private ObjectMapper objectMapper = new ObjectMapper();
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
 
     @InjectMocks
     private PaymentServiceImpl paymentService;
@@ -1259,5 +1264,154 @@ class PaymentServiceImplTest {
         assertNotNull(response);
         assertEquals("SUCCESS", response.status());
         verify(paymentRepository, never()).save(any());
+    }
+
+    @Test
+    void testDownloadInvoice_existingS3Document() {
+        Payment payment = Payment.builder()
+                .uuid("pay-uuid-doc-1")
+                .userUuid(userUuid)
+                .documentNumber("REC-202610-001")
+                .pdfUrl("https://invoice-lms.s3.ap-south-1.amazonaws.com/invoices/pay-uuid-doc-1/REC-202610-001.pdf")
+                .status(PaymentStatus.SUCCESS)
+                .transactionType(TransactionType.PAYMENT)
+                .paymentType(PaymentType.MEMBERSHIP)
+                .amount(50000L)
+                .build();
+
+        byte[] expectedBytes = "SAMPLE_S3_PDF".getBytes();
+
+        when(userProviderRepository.findByProviderId(userEmail)).thenReturn(Optional.empty());
+        when(userRepository.findByEmail(userEmail)).thenReturn(Optional.of(user));
+        when(paymentRepository.findByUuid("pay-uuid-doc-1")).thenReturn(Optional.of(payment));
+        when(paymentDocumentGenerator.generateDocumentNumber(payment)).thenReturn("REC-202610-001");
+        when(s3Service.downloadFile(any(), any(), eq("invoices/Test_Member/REC-202610-001.pdf"))).thenReturn(expectedBytes);
+
+        byte[] result = paymentService.downloadInvoice("pay-uuid-doc-1", userEmail);
+
+        assertNotNull(result);
+        assertArrayEquals(expectedBytes, result);
+    }
+
+    @Test
+    void testDownloadInvoice_missingS3Document_generatesAndUploads() throws Exception {
+        Payment payment = Payment.builder()
+                .uuid("pay-uuid-doc-2")
+                .userUuid(userUuid)
+                .status(PaymentStatus.SUCCESS)
+                .transactionType(TransactionType.PAYMENT)
+                .paymentType(PaymentType.MEMBERSHIP)
+                .amount(50000L)
+                .build();
+
+        byte[] generatedBytes = "GENERATED_PDF".getBytes();
+
+        when(userProviderRepository.findByProviderId(userEmail)).thenReturn(Optional.empty());
+        when(userRepository.findByEmail(userEmail)).thenReturn(Optional.of(user));
+        when(paymentRepository.findByUuid("pay-uuid-doc-2")).thenReturn(Optional.of(payment));
+        when(userRepository.findByUuid(userUuid)).thenReturn(Optional.of(user));
+        when(paymentRepository.findByPaymentUuidAndTransactionType("pay-uuid-doc-2", TransactionType.REFUND)).thenReturn(List.of());
+        when(paymentDocumentGenerator.generateDocumentNumber(payment)).thenReturn("REC-202610-002");
+        when(paymentDocumentGenerator.generatePdf(eq(payment), eq(user), anyList(), eq("REC-202610-002"))).thenReturn(generatedBytes);
+        when(paymentRepository.save(payment)).thenReturn(payment);
+
+        byte[] result = paymentService.downloadInvoice("pay-uuid-doc-2", userEmail);
+
+        assertNotNull(result);
+        assertArrayEquals(generatedBytes, result);
+        verify(s3Service).uploadFileBytes(any(), any(), eq("invoices/Test_Member/REC-202610-002.pdf"), eq(generatedBytes), eq("application/pdf"));
+        verify(paymentRepository).save(payment);
+        assertNotNull(payment.getPdfUrl());
+        assertEquals("REC-202610-002", payment.getDocumentNumber());
+    }
+
+    @Test
+    void testDownloadInvoice_unauthorizedUser_throwsForbidden() {
+        Payment payment = Payment.builder()
+                .uuid("pay-uuid-doc-3")
+                .userUuid("other-user-uuid")
+                .build();
+
+        when(userProviderRepository.findByProviderId(userEmail)).thenReturn(Optional.empty());
+        when(userRepository.findByEmail(userEmail)).thenReturn(Optional.of(user));
+        when(paymentRepository.findByUuid("pay-uuid-doc-3")).thenReturn(Optional.of(payment));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> paymentService.downloadInvoice("pay-uuid-doc-3", userEmail));
+
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+    }
+
+    @Test
+    void testDownloadInvoice_adminAccessOtherUserPayment_success() throws Exception {
+        User adminUser = User.builder()
+                .uuid("admin-uuid")
+                .email("admin@example.com")
+                .role(RoleEnum.ADMIN)
+                .build();
+
+        Payment payment = Payment.builder()
+                .uuid("pay-uuid-doc-4")
+                .userUuid("other-user-uuid")
+                .status(PaymentStatus.FAILED)
+                .transactionType(TransactionType.PAYMENT)
+                .paymentType(PaymentType.FINE)
+                .amount(2500L)
+                .build();
+
+        byte[] generatedBytes = "FAILED_STMT_PDF".getBytes();
+
+        when(userProviderRepository.findByProviderId("admin@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.of(adminUser));
+        when(paymentRepository.findByUuid("pay-uuid-doc-4")).thenReturn(Optional.of(payment));
+        when(userRepository.findByUuid("other-user-uuid")).thenReturn(Optional.empty());
+        when(paymentDocumentGenerator.generateDocumentNumber(payment)).thenReturn("STMT-202610-004");
+        when(paymentDocumentGenerator.generatePdf(eq(payment), any(), anyList(), eq("STMT-202610-004"))).thenReturn(generatedBytes);
+        when(paymentRepository.save(payment)).thenReturn(payment);
+
+        byte[] result = paymentService.downloadInvoice("pay-uuid-doc-4", "admin@example.com");
+
+        assertNotNull(result);
+        assertArrayEquals(generatedBytes, result);
+    }
+
+    @Test
+    void testDownloadInvoice_paymentNotFound_throwsNotFound() {
+        when(userProviderRepository.findByProviderId(userEmail)).thenReturn(Optional.empty());
+        when(userRepository.findByEmail(userEmail)).thenReturn(Optional.of(user));
+        when(paymentRepository.findByUuid("non-existent")).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> paymentService.downloadInvoice("non-existent", userEmail));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
+
+    @Test
+    void testDownloadInvoice_lookupByNumericId() throws Exception {
+        Payment payment = Payment.builder()
+                .uuid("pay-uuid-numeric-8")
+                .userUuid(userUuid)
+                .status(PaymentStatus.SUCCESS)
+                .transactionType(TransactionType.PAYMENT)
+                .paymentType(PaymentType.MEMBERSHIP)
+                .amount(50000L)
+                .build();
+
+        byte[] generatedBytes = "NUMERIC_ID_PDF".getBytes();
+
+        when(userProviderRepository.findByProviderId(userEmail)).thenReturn(Optional.empty());
+        when(userRepository.findByEmail(userEmail)).thenReturn(Optional.of(user));
+        when(paymentRepository.findById(8L)).thenReturn(Optional.of(payment));
+        when(userRepository.findByUuid(userUuid)).thenReturn(Optional.of(user));
+        when(paymentRepository.findByPaymentUuidAndTransactionType("pay-uuid-numeric-8", TransactionType.REFUND)).thenReturn(List.of());
+        when(paymentDocumentGenerator.generateDocumentNumber(payment)).thenReturn("REC-202610-008");
+        when(paymentDocumentGenerator.generatePdf(eq(payment), eq(user), anyList(), eq("REC-202610-008"))).thenReturn(generatedBytes);
+        when(paymentRepository.save(payment)).thenReturn(payment);
+
+        byte[] result = paymentService.downloadInvoice("8", userEmail);
+
+        assertNotNull(result);
+        assertArrayEquals(generatedBytes, result);
     }
 }

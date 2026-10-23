@@ -188,4 +188,18 @@ class PaymentControllerTest {
         assertEquals("FAILED", result.getBody().status());
         verify(paymentService).verifyPayment(request, email);
     }
+
+    @Test
+    void testDownloadInvoice() {
+        String paymentId = "pay_test_123";
+        byte[] pdfBytes = "SAMPLE_PDF_BYTES".getBytes();
+        when(paymentService.downloadInvoice(paymentId, email)).thenReturn(pdfBytes);
+
+        ResponseEntity<byte[]> result = paymentController.downloadInvoice(paymentId, principal);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertEquals("application/pdf", result.getHeaders().getContentType().toString());
+        assertEquals(pdfBytes, result.getBody());
+        verify(paymentService).downloadInvoice(paymentId, email);
+    }
 }

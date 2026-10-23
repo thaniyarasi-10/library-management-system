@@ -4,7 +4,7 @@ import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
-  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock, Clock, Landmark, ShieldCheck
+  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock, Clock, Landmark, ShieldCheck, Download
 } from 'lucide-react';
 import './styles.css';
 
@@ -79,7 +79,7 @@ const parsePhoneNumber = (fullPhone) => {
 
 export default function App() {
   // Theme state
-  const [theme, setTheme] = useState(localStorage.getItem('athenaeum_theme') || 'dark');
+  const [theme, setTheme] = useState(localStorage.getItem('padips_theme') || 'dark');
 
   // Auth0 state
   const {
@@ -178,6 +178,7 @@ export default function App() {
   const [paymentHistoryStatus, setPaymentHistoryStatus] = useState('');
   const [paymentHistorySearch, setPaymentHistorySearch] = useState('');
   const [expandedPaymentUuid, setExpandedPaymentUuid] = useState(null);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState(null);
 
   // Membership
   const [membership, setMembership] = useState(null);
@@ -302,7 +303,7 @@ export default function App() {
   // Theme Sync
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('athenaeum_theme', theme);
+    localStorage.setItem('padips_theme', theme);
   }, [theme]);
 
   // Reusable profile refresh to keep reward points and user metadata up-to-date
@@ -1204,7 +1205,7 @@ export default function App() {
         key: orderData.keyId,
         amount: orderData.amount,
         currency: 'INR',
-        name: 'Padips Athenaeum',
+        name: 'Padips',
         description: orderData.description || `Overdue Book Fine Payment #${fineId}`,
         order_id: orderData.orderId,
         prefill: {
@@ -1311,7 +1312,7 @@ export default function App() {
       if (loadAgreement && memUuid && memUuid !== 'null' && res.data.status === 'PENDING') {
         const resTerms = await fetchApi(`/memberships/${memUuid}/agreement`);
         if (resTerms.ok && resTerms.data) {
-          setAgreementText(typeof resTerms.data === 'string' ? resTerms.data : resTerms.data.terms || resTerms.data.agreementHtml || 'Athenaeum Library Membership Agreement...');
+          setAgreementText(typeof resTerms.data === 'string' ? resTerms.data : resTerms.data.terms || resTerms.data.agreementHtml || 'Padips Library Membership Agreement...');
         }
       }
     } else {
@@ -1378,7 +1379,7 @@ export default function App() {
         key: orderData.keyId,
         amount: orderData.amount,
         currency: 'INR',
-        name: 'Padips Athenaeum',
+        name: 'Padips',
         description: orderData.description || '1-Year Library Membership Security Deposit',
         order_id: orderData.orderId,
         prefill: {
@@ -1488,6 +1489,40 @@ export default function App() {
       URL.revokeObjectURL(blobUrl);
     } else {
       showToast(res.data?.message || 'Failed to download PDF agreement', 'error');
+    }
+  };
+
+  const handleDownloadInvoice = async (item) => {
+    const paymentId = item.uuid || item.id;
+    if (!paymentId) {
+      showToast('Payment identifier not found', 'error');
+      return;
+    }
+    setDownloadingInvoiceId(paymentId);
+    try {
+      const res = await fetchApi(`/payments/${paymentId}/invoice`);
+      if (res.ok && res.data instanceof Blob) {
+        const blobUrl = URL.createObjectURL(res.data);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        const rawName = currentUser?.name || currentUser?.email || 'User';
+        const namePart = rawName.includes('@') ? rawName.split('@')[0] : rawName;
+        const cleanUsername = namePart.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const filename = item.status === 'SUCCESS' ? `Padips-Receipt-${cleanUsername}.pdf` : `Padips-Statement-${cleanUsername}.pdf`;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+        showToast('Payment document downloaded successfully', 'success');
+      } else {
+        showToast(res.data?.message || 'Failed to download payment document', 'error');
+      }
+    } catch (err) {
+      console.error('Failed to download payment document:', err);
+      showToast('Error downloading payment document', 'error');
+    } finally {
+      setDownloadingInvoiceId(null);
     }
   };
 
@@ -2493,7 +2528,7 @@ export default function App() {
                   <div className="user-welcome-banner mb-6" style={{ background: 'linear-gradient(135deg, rgba(224, 122, 73, 0.12) 0%, rgba(224, 122, 73, 0.02) 100%)', border: '10px solid #121214', borderRadius: 'var(--radius-lg)', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                     <div>
                       <span className="badge badge-primary mb-2" style={{ background: 'var(--accent-subtle)', color: 'var(--accent-primary)', fontWeight: 600, fontSize: '11px', padding: '4px 10px', borderRadius: '999px' }}>LIBRARY MEMBER PORTAL</span>
-                      <h2 style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', marginBottom: '4px' }}>Welcome to Athenaeum</h2>
+                      <h2 style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', marginBottom: '4px' }}>Welcome to Padips</h2>
                       <p className="text-muted" style={{ fontSize: '14px' }}>Browse books, borrow titles with your digital membership, and manage loan returns.</p>
                     </div>
                     <div>
@@ -3748,7 +3783,7 @@ export default function App() {
                     <div className="membership-card-badge" style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', border: '1px solid #334155', borderRadius: '16px', padding: '24px', color: '#ffffff', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
                       <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
-                          <h4 style={{ fontSize: '18px', fontWeight: 'bold', letterSpacing: '0.05em', color: '#38bdf8', margin: 0 }}>ATHENAEUM</h4>
+                          <h4 style={{ fontSize: '18px', fontWeight: 'bold', letterSpacing: '0.05em', color: '#38bdf8', margin: 0 }}>PADIPS</h4>
                           <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Library System</span>
                         </div>
                         <span style={{ color: '#4ade80', fontWeight: 700, fontSize: '12px', letterSpacing: '0.05em' }}>ACTIVE</span>
@@ -3925,7 +3960,6 @@ export default function App() {
                 <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                   <div>
                     <h3>Transactions & Invoices</h3>
-                    <p className="section-desc">Paginated history of membership fees, fine settlements, and refunds</p>
                   </div>
 
                   <button
@@ -4006,12 +4040,13 @@ export default function App() {
                         <th>Amount</th>
                         <th>Status</th>
                         <th>Refund Details</th>
+                        <th>Receipt / Document</th>
                       </tr>
                     </thead>
                     <tbody>
                       {isLoadingPaymentHistory ? (
                         <tr>
-                          <td colSpan="6" style={{ textAlign: 'center', padding: '36px' }}>
+                          <td colSpan="7" style={{ textAlign: 'center', padding: '36px' }}>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)' }}>
                               <RefreshCw size={18} className="animate-spin" />
                               <span>Loading payment history...</span>
@@ -4020,7 +4055,7 @@ export default function App() {
                         </tr>
                       ) : !paymentHistory.content || paymentHistory.content.length === 0 ? (
                         <tr>
-                          <td colSpan="6" style={{ textAlign: 'center', padding: '48px 24px' }}>
+                          <td colSpan="7" style={{ textAlign: 'center', padding: '48px 24px' }}>
                             <Clock size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
                             <h4 style={{ margin: '0 0 4px', fontSize: '15px' }}>No Payment Records Found</h4>
                             <p className="text-muted" style={{ fontSize: '13px', margin: 0 }}>
@@ -4110,12 +4145,35 @@ export default function App() {
                                     <span className="text-muted" style={{ fontSize: '12px' }}>—</span>
                                   )}
                                 </td>
+
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => handleDownloadInvoice(item)}
+                                    disabled={downloadingInvoiceId === (item.uuid || item.id)}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                                    title={item.status === 'SUCCESS' ? 'Download Paid Receipt' : 'Download Payment Statement'}
+                                  >
+                                    {downloadingInvoiceId === (item.uuid || item.id) ? (
+                                      <>
+                                        <RefreshCw size={13} className="animate-spin" />
+                                        <span>Loading...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Download size={13} />
+                                        <span>{item.status === 'SUCCESS' ? 'Download Receipt' : 'Download Statement'}</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </td>
                               </tr>
 
                               {/* Expandable Refund Details Row */}
                               {isExpanded && hasRefunds && (
                                 <tr style={{ background: 'var(--bg-surface-elevated)' }}>
-                                  <td colSpan="6" style={{ padding: '12px 20px' }}>
+                                  <td colSpan="7" style={{ padding: '12px 20px' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                       <strong style={{ fontSize: '12px', color: 'var(--accent-primary)' }}>
                                         Associated Refunds ({item.refunds.length}):

@@ -34,4 +34,6 @@ public interface PaymentService {
             int page,
             int size
     );
+
+    byte[] downloadInvoice(String paymentId, String email);
 }

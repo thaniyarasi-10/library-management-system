@@ -7,7 +7,9 @@ import com.kovanlabs.librarymanagement.payment.dto.VerifyPaymentRequest;
 import com.kovanlabs.librarymanagement.payment.service.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -53,5 +55,24 @@ public class PaymentController {
     public ResponseEntity<List<PaymentResponseDto>> getUserPayments(Principal principal) {
         List<PaymentResponseDto> payments = paymentService.getUserPayments(principal.getName());
         return ResponseEntity.ok(payments);
+    }
+
+    @GetMapping("/{paymentId}/invoice")
+    public ResponseEntity<byte[]> downloadInvoice(
+            @PathVariable("paymentId") String paymentId,
+            Principal principal) {
+        byte[] pdfBytes = paymentService.downloadInvoice(paymentId, principal.getName());
+        String rawUsername = principal.getName();
+        if (rawUsername != null && rawUsername.contains("@")) {
+            rawUsername = rawUsername.substring(0, rawUsername.indexOf("@"));
+        }
+        String cleanUsername = (rawUsername != null && !rawUsername.isBlank())
+                ? rawUsername.replaceAll("[^a-zA-Z0-9_-]", "_")
+                : "user";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Padips-Document-" + cleanUsername + ".pdf\"")
+                .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(pdfBytes.length))
+                .body(pdfBytes);
     }
 }

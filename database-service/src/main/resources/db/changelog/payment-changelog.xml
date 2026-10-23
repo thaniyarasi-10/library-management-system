@@ -78,4 +78,11 @@
         </delete>
     </changeSet>
 
+    <changeSet id="3-add-pdf-url-to-payment" author="thani">
+        <addColumn tableName="payment">
+            <column name="pdf_url" type="varchar(500)"/>
+            <column name="document_number" type="varchar(64)"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

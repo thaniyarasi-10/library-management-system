@@ -68,6 +68,7 @@ public interface PaymentMapper {
     @Mapping(target = "isLast", expression = "java(page.isLast())")
     @Mapping(target = "hasNext", expression = "java(page.hasNext())")
     @Mapping(target = "hasPrevious", expression = "java(page.hasPrevious())")
+    @Mapping(target = "content", source = "content")
     PaymentHistoryResponseDto mapToHistoryResponse(
             Long totalPaid,
             Long totalRefunded,

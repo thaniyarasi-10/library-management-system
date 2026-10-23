@@ -18,6 +18,8 @@ import com.kovanlabs.librarymanagement.payment.dto.VerifyPaymentRequest;
 import com.kovanlabs.librarymanagement.payment.mapping.PaymentMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -52,6 +54,14 @@ public class PaymentServiceImpl implements PaymentService {
     private final RazorpayClientService razorpayClientService;
     private final RazorpayProperties razorpayProperties;
     private final ObjectMapper objectMapper;
+    private final S3Service s3Service;
+    private final PaymentDocumentGenerator paymentDocumentGenerator;
+
+    @Value("${aws.s3.invoice.bucket-name:invoice-lms}")
+    private String invoiceBucket;
+
+    @Value("${aws.s3.invoice.region:ap-south-1}")
+    private String invoiceRegion;
 
     private User findUserByIdentifier(String identifier) {
         if (identifier == null || identifier.isBlank()) {
@@ -285,7 +295,7 @@ public class PaymentServiceImpl implements PaymentService {
                         if (Objects.nonNull(paymentId) && !paymentId.isBlank()) {
                             payment.setRazorpayPaymentId(paymentId);
                         }
-                        paymentRepository.save(payment);
+                        Payment saved = paymentRepository.save(payment);
                         log.info("Webhook confirmed payment order {} as SUCCESS (paymentId: {})", orderId, paymentId);
 
                         if (payment.getPaymentType() == PaymentType.MEMBERSHIP) {
@@ -356,7 +366,7 @@ public class PaymentServiceImpl implements PaymentService {
                     if (Objects.nonNull(paymentId) && !paymentId.isBlank()) {
                         payment.setRazorpayPaymentId(paymentId);
                     }
-                    paymentRepository.save(payment);
+                    Payment saved = paymentRepository.save(payment);
                     log.info("Webhook marked payment order {} as FAILED (paymentId: {})", orderId, paymentId);
                 } else if (Objects.nonNull(orderId) && !orderId.isBlank()) {
                     JsonNode notesNode = paymentEntity.path("notes");
@@ -386,7 +396,7 @@ public class PaymentServiceImpl implements PaymentService {
                                 amount,
                                 PaymentStatus.FAILED
                         );
-                        paymentRepository.save(failedPayment);
+                        Payment saved = paymentRepository.save(failedPayment);
                         log.info("Webhook created failed payment order {} (paymentId: {})", orderId, paymentId);
                     }
                 }
@@ -497,7 +507,7 @@ public class PaymentServiceImpl implements PaymentService {
                     PaymentStatus.SUCCESS
             );
 
-            paymentRepository.save(refundRecord);
+            Payment savedRefund = paymentRepository.save(refundRecord);
             eligibleRefundPaise = refundToIssue;
         }
 
@@ -678,5 +688,88 @@ public class PaymentServiceImpl implements PaymentService {
         } catch (Exception e) {
             log.error("Failed to mark fine as paid after payment: {}", e.getMessage(), e);
         }
+    }
+
+    private Payment findPaymentByIdOrUuid(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment identifier must not be empty");
+        }
+        String cleanId = identifier.trim();
+        try {
+            Long numericId = Long.parseLong(cleanId);
+            Optional<Payment> byId = paymentRepository.findById(numericId);
+            if (byId.isPresent()) {
+                return byId.get();
+            }
+        } catch (NumberFormatException ignored) {
+            // Not numeric ID, lookup by UUID / payment / order ID below
+        }
+        return paymentRepository.findByUuid(cleanId)
+                .or(() -> paymentRepository.findByRazorpayPaymentId(cleanId))
+                .or(() -> paymentRepository.findByRazorpayOrderId(cleanId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment transaction not found for: " + cleanId));
+    }
+
+    @Override
+    @Transactional
+    public byte[] downloadInvoice(String paymentId, String email) {
+        log.info("Request to download invoice for paymentId: {} by user: {}", paymentId, email);
+        User user = findUserByIdentifier(email);
+        Payment payment = findPaymentByIdOrUuid(paymentId);
+
+        if (user.getRole() != RoleEnum.ADMIN && !payment.getUserUuid().equals(user.getUuid())) {
+            log.warn("Access denied: User {} lacks permission to access payment document for {}", email, payment.getUuid());
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access Denied: Payment document does not belong to you");
+        }
+
+        User owner = userRepository.findByUuid(payment.getUserUuid()).orElse(user);
+        String rawUsername = (owner != null && owner.getName() != null && !owner.getName().isBlank())
+                ? owner.getName()
+                : (owner != null && owner.getEmail() != null ? owner.getEmail() : "user");
+        if (rawUsername.contains("@")) {
+            rawUsername = rawUsername.substring(0, rawUsername.indexOf("@"));
+        }
+        String cleanUsername = rawUsername.replaceAll("[^a-zA-Z0-9_-]", "_");
+
+        String documentNumber = paymentDocumentGenerator.generateDocumentNumber(payment);
+        String s3Key = String.format("invoices/%s/%s.pdf", cleanUsername, documentNumber);
+
+        // Try downloading existing PDF from S3 if available
+        if (payment.getPdfUrl() != null && !payment.getPdfUrl().isBlank()) {
+            try {
+                log.info("Retrieving existing document from S3 bucket: {}, key: {}", invoiceBucket, s3Key);
+                byte[] existing = s3Service.downloadFile(invoiceBucket, invoiceRegion, s3Key);
+                if (existing != null && existing.length > 0) {
+                    return existing;
+                }
+            } catch (Exception e) {
+                log.warn("Existing S3 PDF could not be fetched for {}: {}. Generating new copy...", payment.getUuid(), e.getMessage());
+            }
+        }
+
+        List<Payment> refunds = (payment.getTransactionType() == TransactionType.PAYMENT)
+                ? paymentRepository.findByPaymentUuidAndTransactionType(payment.getUuid(), TransactionType.REFUND)
+                : List.of();
+
+        byte[] pdfBytes;
+        try {
+            pdfBytes = paymentDocumentGenerator.generatePdf(payment, owner, refunds, documentNumber);
+        } catch (Exception e) {
+            log.error("Failed to generate PDF for payment {}: {}", payment.getUuid(), e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to generate payment document: " + e.getMessage());
+        }
+
+        try {
+            s3Service.uploadFileBytes(invoiceBucket, invoiceRegion, s3Key, pdfBytes, "application/pdf");
+            String s3Url = String.format("https://%s.s3.%s.amazonaws.com/%s", invoiceBucket, invoiceRegion, s3Key);
+            payment.setPdfUrl(s3Url);
+            payment.setDocumentNumber(documentNumber);
+            paymentRepository.save(payment);
+            log.info("Uploaded generated document to S3: {} (URL: {})", s3Key, s3Url);
+        } catch (Exception e) {
+            log.error("Failed to upload document to S3 for payment {}: {}", payment.getUuid(), e.getMessage(), e);
+        }
+
+        return pdfBytes;
     }
 }

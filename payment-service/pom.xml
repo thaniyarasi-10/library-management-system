@@ -23,6 +23,17 @@
             <groupId>com.kovanlabs</groupId>
             <artifactId>common</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.kovanlabs</groupId>
+            <artifactId>aws-service</artifactId>
+        </dependency>
+
+        <!-- OpenHTMLtoPDF for internal LMS PDF generation -->
+        <dependency>
+            <groupId>com.openhtmltopdf</groupId>
+            <artifactId>openhtmltopdf-pdfbox</artifactId>
+            <version>1.0.10</version>
+        </dependency>
 
         <!-- Spring Boot Starter Web -->
         <dependency>

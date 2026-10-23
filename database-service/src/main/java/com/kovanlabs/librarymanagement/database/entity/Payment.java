@@ -56,4 +56,10 @@ public class Payment extends BaseEntity {
     @Column(name = "status", nullable = false, length = 30)
     private PaymentStatus status;
 
+    @Column(name = "pdf_url", length = 500)
+    private String pdfUrl;
+
+    @Column(name = "document_number", length = 64)
+    private String documentNumber;
+
 }
