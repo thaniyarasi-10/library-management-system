@@ -1,8 +1,8 @@
 package com.kovanlabs.librarymanagement.user.controller;
 
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
-import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
+import com.kovanlabs.librarymanagement.user.dto.CompleteProfileRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import com.kovanlabs.librarymanagement.user.service.UserService;
@@ -13,7 +13,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -54,15 +53,15 @@ class UserControllerTest {
     }
 
     private UserResponse createUserResponse(String uuid, Long id, String name, String email, String role, Integer points) {
-        return new UserResponse(uuid, id, name, email, role, points, null, "ACTIVE", false, false, 0.0, null);
+        return new UserResponse(uuid, id, name, email, role, points, null, "ACTIVE", false, false, 0.0, null, null, null, false);
     }
 
     private UserResponse createUserResponse(String uuid, Long id, String name, String email, String role, Integer points, String phone) {
-        return new UserResponse(uuid, id, name, email, role, points, phone, "ACTIVE", false, false, 0.0, null);
+        return new UserResponse(uuid, id, name, email, role, points, phone, "ACTIVE", false, false, 0.0, null, null, null, false);
     }
 
     private UserResponse createUserResponse(String uuid, Long id, String name, String email, String role, Integer points, String phone, String status, boolean reactivationRequested, String reactivationRequestStatus) {
-        return new UserResponse(uuid, id, name, email, role, points, phone, status, reactivationRequested, false, 0.0, reactivationRequestStatus);
+        return new UserResponse(uuid, id, name, email, role, points, phone, status, reactivationRequested, false, 0.0, reactivationRequestStatus, null, null, false);
     }
 
     @Test
@@ -460,5 +459,58 @@ class UserControllerTest {
                 .andExpect(content().string("5"));
 
         verify(userService, times(1)).processExpiredDeactivations();
+    }
+
+    @Test
+    @DisplayName("POST /user/complete-profile should validate payload and return updated UserResponse")
+    void completeProfile_ShouldReturnUpdatedUserResponse() throws Exception {
+        Principal mockPrincipal = mock(Principal.class);
+        UserResponse response = new UserResponse(
+                uuid1, id1, "Alice", "alice@example.com", "USER", 0, "+919876543210",
+                "ACTIVE", false, false, 0.0, null, "9012", "sha256-hash-9012", true
+        );
+
+        when(userService.completeProfile(eq(mockPrincipal), any(CompleteProfileRequest.class)))
+                .thenReturn(response);
+
+        String jsonPayload = """
+                {
+                    "username": "Alice",
+                    "aadhaarNumber": "1234 5678 9012",
+                    "phone": "+919876543210"
+                }
+                """;
+
+        mockMvc.perform(post("/user/complete-profile")
+                        .principal(mockPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice"))
+                .andExpect(jsonPath("$.aadhaarLast4").value("9012"))
+                .andExpect(jsonPath("$.hashAadhar").value("sha256-hash-9012"))
+                .andExpect(jsonPath("$.isProfileComplete").value(true));
+
+        verify(userService).completeProfile(eq(mockPrincipal), any(CompleteProfileRequest.class));
+    }
+
+    @Test
+    @DisplayName("POST /api/user/complete-profile with invalid Aadhaar should return 400 Bad Request")
+    void completeProfile_WithInvalidAadhaar_ShouldReturn400() throws Exception {
+        Principal mockPrincipal = mock(Principal.class);
+
+        String jsonPayload = """
+                {
+                    "username": "Alice",
+                    "aadhaarNumber": "12345",
+                    "phone": "+919876543210"
+                }
+                """;
+
+        mockMvc.perform(post("/api/user/complete-profile")
+                        .principal(mockPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isBadRequest());
     }
 }

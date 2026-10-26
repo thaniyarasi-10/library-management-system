@@ -138,7 +138,9 @@ class UserMapperTest {
     @Test
     void testToContactSObject_withUserResponse() {
         String uuid = UUID.randomUUID().toString();
-        UserResponse dto = new UserResponse(uuid, 2L, "Bob", "bob@example.com", "USER", 10, "+15555555555", "DEACTIVATED", true, false, 0.0, "PENDING");
+        UserResponse dto = new UserResponse(
+                uuid, 2L, "Bob", "bob@example.com", "USER", 10, "+15555555555",
+                "DEACTIVATED", true, false, 0.0, "PENDING", null, null, false);
 
         var sObject = userMapper.toContactSObject(dto);
         assertNotNull(sObject);

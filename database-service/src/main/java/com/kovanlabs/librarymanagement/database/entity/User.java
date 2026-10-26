@@ -68,7 +68,17 @@ public class User extends BaseEntity {
     @Column(name = "reactivation_request_status")
     private ReactivationRequestStatus reactivationRequestStatus;
 
+    @Column(name = "aadhaar_last4", length = 4)
+    private String aadhaarLast4;
+
+    @Column(name = "aadhaar_hash", length = 64, unique = true)
+    private String aadhaarHash;
+
     public boolean isReactivationRequested() {
         return reactivationRequestStatus == ReactivationRequestStatus.PENDING;
+    }
+
+    public boolean hasAadhaar() {
+        return aadhaarLast4 != null && !aadhaarLast4.isBlank();
     }
 }

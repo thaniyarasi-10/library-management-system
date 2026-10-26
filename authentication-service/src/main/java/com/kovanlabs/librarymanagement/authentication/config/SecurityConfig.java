@@ -139,6 +139,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/user", "/user")
                         .permitAll()
 
+                        // User Profile Completion (Authenticated)
+                        .requestMatchers(HttpMethod.POST, "/api/user/complete-profile", "/user/complete-profile",
+                                "/api/user/me/complete-profile", "/user/me/complete-profile")
+                        .authenticated()
+
                         // User Reactivation and Deactivation (Admin)
                         .requestMatchers(HttpMethod.POST,
                                 "/api/user/*/deactivate", "/api/user/*/approve-reactivation", "/api/user/*/reject-reactivation",

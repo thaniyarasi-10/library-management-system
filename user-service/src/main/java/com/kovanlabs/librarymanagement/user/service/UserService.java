@@ -2,8 +2,8 @@ package com.kovanlabs.librarymanagement.user.service;
 
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.User;
-import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
+import com.kovanlabs.librarymanagement.user.dto.CompleteProfileRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 
@@ -25,6 +25,7 @@ public interface UserService {
     UserResponse getCurrentUser(Principal principal);
     UserResponse recordLogin(Principal principal);
     UserResponse updateCurrentUser(Principal principal, UserRequest request);
+    UserResponse completeProfile(Principal principal, CompleteProfileRequest request);
     UserResponse reactivateUser(Long id);
     UserResponse deactivateUser(Long id);
     UserResponse requestReactivation(Principal principal);

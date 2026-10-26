@@ -9,7 +9,6 @@ import com.kovanlabs.librarymanagement.database.enums.ReactivationRequestStatus;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.entity.Fine;
-import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.enums.FineStatus;
 import com.kovanlabs.librarymanagement.database.repository.FineRepository;
 import com.kovanlabs.librarymanagement.database.repository.RewardRepository;
@@ -17,6 +16,7 @@ import com.kovanlabs.librarymanagement.database.repository.UserProviderRepositor
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
+import com.kovanlabs.librarymanagement.user.dto.CompleteProfileRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,7 +24,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.*;
@@ -64,6 +63,9 @@ class UserServiceImplTest {
     @Mock
     private FineRepository fineRepository;
 
+    @Mock
+    private AadhaarSecurityService aadhaarSecurityService;
+
     private AccountDeactivationService accountDeactivationService;
 
     private UserServiceImpl userService;
@@ -76,7 +78,15 @@ class UserServiceImplTest {
     @BeforeEach
     void setUp() {
         accountDeactivationService = spy(new AccountDeactivationService(userRepository, salesforceSyncDelegate));
-        userService = new UserServiceImpl(userRepository, userProviderRepository, rewardRepository, fineRepository, salesforceSyncDelegate, accountDeactivationService);
+        userService = new UserServiceImpl(
+                userRepository,
+                userProviderRepository,
+                rewardRepository,
+                fineRepository,
+                salesforceSyncDelegate,
+                accountDeactivationService,
+                aadhaarSecurityService
+        );
 
         uuid1 = UUID.randomUUID().toString();
         uuid2 = UUID.randomUUID().toString();
@@ -822,7 +832,7 @@ class UserServiceImplTest {
     @Test
     void getAllUsers_whenSalesforceReturnsUsers_shouldReturnSalesforceUsers() {
         ContactSObject sfContact = ContactSObject.builder()
-                .externalUserUuid(uuid1.toString())
+                .externalUserUuid(uuid1)
                 .legacyUserId(1L)
                 .lastName("Alice SF")
                 .email("alice@example.com")
@@ -852,7 +862,7 @@ class UserServiceImplTest {
     @Test
     void getAllUsers_paginated_whenSalesforceReturnsUsers_shouldReturnPagedFromSF() {
         ContactSObject sfContact = ContactSObject.builder()
-                .externalUserUuid(uuid1.toString())
+                .externalUserUuid(uuid1)
                 .legacyUserId(1L)
                 .lastName("Alice SF")
                 .email("alice@example.com")
@@ -1017,7 +1027,8 @@ class UserServiceImplTest {
                 rewardRepository,
                 fineRepository,
                 null,
-                accountDeactivationService);
+                accountDeactivationService,
+                aadhaarSecurityService);
 
         when(userProviderRepository.findByProviderId("auth0|no-sf")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("no-sf@example.com")).thenReturn(Optional.empty());
@@ -2041,7 +2052,7 @@ class UserServiceImplTest {
     @DisplayName("getAllUsers paginated when database returns empty page should return empty content")
     void getAllUsers_paginated_whenDatabaseEmpty_shouldReturnEmptyList() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService, aadhaarSecurityService);
         Page<User> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
         when(userRepository.findAll(any(Pageable.class))).thenReturn(emptyPage);
 
@@ -2073,7 +2084,7 @@ class UserServiceImplTest {
     @DisplayName("getAllUsers without Salesforce delegate should fetch directly from MySQL database")
     void getAllUsers_whenSalesforceDelegateNull_shouldFetchFromMySQL() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService, aadhaarSecurityService);
         when(userRepository.findAll()).thenReturn(List.of(user1));
         when(rewardRepository.findByUserUuidIn(List.of(uuid1))).thenReturn(List.of());
 
@@ -2249,7 +2260,7 @@ class UserServiceImplTest {
     @DisplayName("updateUser when salesforceSyncDelegate is null should update without attempting Salesforce sync")
     void updateUser_whenSalesforceDelegateNull_shouldUpdateWithoutSync() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService, aadhaarSecurityService);
         User existing = User.builder().id(1L).uuid(uuid1).name("Original Name").email("orig@example.com").build();
         when(userRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
@@ -2268,7 +2279,7 @@ class UserServiceImplTest {
     @DisplayName("deleteUser when salesforceSyncDelegate is null should delete from MySQL without throwing")
     void deleteUser_whenSalesforceDelegateNull_shouldDeleteFromMySQL() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService, aadhaarSecurityService);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
 
         assertDoesNotThrow(() -> serviceWithoutSF.deleteUser(1L));
@@ -2333,7 +2344,7 @@ class UserServiceImplTest {
     @DisplayName("updateUserRole when salesforceSyncDelegate is null should update role in MySQL without error")
     void updateUserRole_whenSalesforceDelegateNull_shouldUpdateRoleInMySQL() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService, aadhaarSecurityService);
         User user = User.builder().id(1L).uuid(uuid1).email("test@example.com").role(RoleEnum.USER).build();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
@@ -3010,7 +3021,7 @@ class UserServiceImplTest {
     @DisplayName("getReactivationRequests when salesforceSyncDelegate is null should fetch from MySQL")
     void getReactivationRequests_whenSalesforceDelegateNull_shouldFetchFromMySQL() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService, aadhaarSecurityService);
         User user = User.builder().id(830L).uuid("u-830").email("req-nosf@example.com")
                 .status(AccountStatus.DEACTIVATED).reactivationRequestStatus(ReactivationRequestStatus.PENDING).build();
         when(userRepository.findByReactivationRequestStatusIsNotNull()).thenReturn(List.of(user));
@@ -3197,7 +3208,7 @@ class UserServiceImplTest {
     @DisplayName("deactivateUser when rewardRepository is null should not fail")
     void deactivateUser_whenRewardRepositoryIsNull_shouldNotFail() {
         UserServiceImpl serviceWithoutRewardRepo = new UserServiceImpl(
-                userRepository, userProviderRepository, null, fineRepository, salesforceSyncDelegate, accountDeactivationService);
+                userRepository, userProviderRepository, null, fineRepository, salesforceSyncDelegate, accountDeactivationService, aadhaarSecurityService);
         User user = User.builder().id(851L).uuid("u-851").email("no-reward-repo@example.com").status(AccountStatus.ACTIVE).build();
         when(userRepository.findById(851L)).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
@@ -3213,7 +3224,7 @@ class UserServiceImplTest {
     @DisplayName("reactivateUser when salesforceSyncDelegate is null should update in MySQL without error")
     void reactivateUser_whenSalesforceDelegateNull_shouldUpdateInMySQL() {
         UserServiceImpl serviceWithoutSF = new UserServiceImpl(
-                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService);
+                userRepository, userProviderRepository, rewardRepository, fineRepository, null, accountDeactivationService, aadhaarSecurityService);
         User user = User.builder().id(852L).uuid("u-852").email("react-nosf@example.com")
                 .status(AccountStatus.DEACTIVATED).reactivationRequestStatus(ReactivationRequestStatus.PENDING).build();
         when(userRepository.findById(852L)).thenReturn(Optional.of(user));
@@ -3259,5 +3270,105 @@ class UserServiceImplTest {
         assertEquals("DEACTIVATED", response.status());
         assertEquals(SalesforceSyncStatus.PENDING, user.getSalesforceSyncStatus());
         assertEquals(1, user.getSalesforceRetryCount());
+    }
+
+    @Test
+    @DisplayName("completeProfile should successfully save username, last4, and sha hash")
+    void completeProfile_success() {
+        Principal principal = () -> "alice@example.com";
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user1));
+        when(userRepository.findByAadhaarHash("sha256-hash-1234")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        when(aadhaarSecurityService.validateAndNormalize("1234 5678 9012")).thenReturn("123456789012");
+        when(aadhaarSecurityService.extractLast4("123456789012")).thenReturn("9012");
+        when(aadhaarSecurityService.computeHash("123456789012")).thenReturn("sha256-hash-1234");
+
+        CompleteProfileRequest req =
+                new CompleteProfileRequest("AliceUpdated", "1234 5678 9012", "+919876543210");
+
+        UserResponse res = userService.completeProfile(principal, req);
+
+        assertNotNull(res);
+        assertEquals("AliceUpdated", res.name());
+        assertEquals("9012", res.aadhaarLast4());
+        assertEquals("sha256-hash-1234", res.hashAadhar());
+        assertTrue(res.isProfileComplete());
+        assertEquals("+919876543210", res.phone());
+
+        assertEquals("AliceUpdated", user1.getName());
+        assertEquals("9012", user1.getAadhaarLast4());
+        assertEquals("sha256-hash-1234", user1.getAadhaarHash());
+        assertEquals("+919876543210", user1.getPhone());
+    }
+
+    @Test
+    @DisplayName("completeProfile with duplicate/conflicting Aadhaar hash should throw CONFLICT")
+    void completeProfile_conflictingAadhaar_throwsConflict() {
+        Principal principal = () -> "alice@example.com";
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user1));
+
+        when(aadhaarSecurityService.validateAndNormalize("1234 5678 9012")).thenReturn("123456789012");
+        when(aadhaarSecurityService.extractLast4("123456789012")).thenReturn("9012");
+        when(aadhaarSecurityService.computeHash("123456789012")).thenReturn("sha256-hash-1234");
+        when(userRepository.findByAadhaarHash("sha256-hash-1234")).thenReturn(Optional.of(user2));
+
+        CompleteProfileRequest req =
+                new CompleteProfileRequest("AliceUpdated", "1234 5678 9012", null);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.completeProfile(principal, req));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
+        assertTrue(ex.getReason().contains("already registered"));
+    }
+
+    @Test
+    @DisplayName("completeProfile for deactivated user should throw FORBIDDEN")
+    void completeProfile_deactivatedUser_throwsForbidden() {
+        Principal principal = () -> "alice@example.com";
+        user1.setStatus(AccountStatus.DEACTIVATED);
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user1));
+
+        CompleteProfileRequest req =
+                new CompleteProfileRequest("AliceUpdated", "1234 5678 9012", null);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.completeProfile(principal, req));
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("completeProfile with blank username should throw BAD_REQUEST")
+    void completeProfile_blankUsername_throwsBadRequest() {
+        Principal principal = () -> "alice@example.com";
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user1));
+
+        CompleteProfileRequest req =
+                new CompleteProfileRequest("   ", "1234 5678 9012", null);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.completeProfile(principal, req));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("completeProfile with null principal should throw UNAUTHORIZED")
+    void completeProfile_nullPrincipal_throwsUnauthorized() {
+        CompleteProfileRequest req =
+                new CompleteProfileRequest("Alice", "1234 5678 9012", null);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.completeProfile(null, req));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("completeProfile with null request should throw BAD_REQUEST")
+    void completeProfile_nullRequest_throwsBadRequest() {
+        Principal principal = () -> "alice@example.com";
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> userService.completeProfile(principal, null));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
     }
 }

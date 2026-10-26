@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.user.controller;
 
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.user.dto.CompleteProfileRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import com.kovanlabs.librarymanagement.user.dto.UserRoleUpdateRequest;
@@ -59,6 +60,11 @@ public class UserController {
     @PutMapping("/me")
     public UserResponse updateCurrentUser(Principal principal, @Valid @RequestBody UserRequest request) {
         return userService.updateCurrentUser(principal, request);
+    }
+
+    @PostMapping({"/complete-profile", "/me/complete-profile"})
+    public UserResponse completeProfile(Principal principal, @Valid @RequestBody CompleteProfileRequest request) {
+        return userService.completeProfile(principal, request);
     }
 
     @GetMapping("/{id}")

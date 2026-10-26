@@ -125,6 +125,10 @@ public class PaymentDocumentGenerator {
         String payerEmail = escape(user != null && user.getEmail() != null ? user.getEmail() : "N/A");
         String memberId = escape(user != null && user.getUuid() != null ? user.getUuid() : "N/A");
 
+        String aadhaarNumber = (user != null && user.getAadhaarLast4() != null && !user.getAadhaarLast4().isBlank())
+                ? "XXXX XXXX " + user.getAadhaarLast4().trim()
+                : "N/A";
+
         String formattedDate = payment.getCreatedAt() != null
                 ? payment.getCreatedAt().format(DATE_TIME_FORMATTER)
                 : LocalDate.now().toString();
@@ -255,6 +259,7 @@ public class PaymentDocumentGenerator {
                 .replace("{{PAYER_NAME}}", payerName)
                 .replace("{{PAYER_EMAIL}}", payerEmail)
                 .replace("{{MEMBER_ID}}", memberId)
+                .replace("{{AADHAAR_NUMBER}}", escape(aadhaarNumber))
                 .replace("{{TRANSACTION_DATE}}", formattedDate)
                 .replace("{{ORDER_ID}}", orderId)
                 .replace("{{PAYMENT_ID}}", paymentId)
