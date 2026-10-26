@@ -113,6 +113,13 @@ class UserPaymentProfileServiceImplTest {
     }
 
     @Test
+    @DisplayName("getProfile throws exception when identifier is null")
+    void testGetProfile_nullIdentifier() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> service.getProfile(null));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+    }
+
+    @Test
     @DisplayName("saveOrUpdateProfile throws BAD_REQUEST when request is null")
     void testSaveOrUpdate_nullRequest() {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -275,10 +282,38 @@ class UserPaymentProfileServiceImplTest {
     }
 
     @Test
+    @DisplayName("saveOrUpdateProfile throws BAD_REQUEST when IFSC is blank")
+    void testSaveOrUpdate_blankIfsc() {
+        mockFindUser();
+        UserPaymentProfileRequestDto req = new UserPaymentProfileRequestDto(
+                "HDFC Bank", "123456789012", "   ", "John Doe");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.saveOrUpdateProfile(req, email));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("saveOrUpdateProfile throws BAD_REQUEST when account number is blank")
+    void testSaveOrUpdate_blankAccount() {
+        mockFindUser();
+        UserPaymentProfileRequestDto req = new UserPaymentProfileRequestDto(
+                "HDFC Bank", "   ", "HDFC0001234", "John Doe");
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.saveOrUpdateProfile(req, email));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+    }
+
+    @Test
     @DisplayName("findByUserUuid returns entity or null")
     void testFindByUserUuid() {
         assertNull(service.findByUserUuid(null));
         assertNull(service.findByUserUuid(""));
+        assertNull(service.findByUserUuid("   "));
+
+        when(paymentProfileRepository.findByUserUuid("u-nonexistent")).thenReturn(Optional.empty());
+        assertNull(service.findByUserUuid("u-nonexistent"));
 
         UserPaymentProfile profile = UserPaymentProfile.builder().uuid("prof-1").build();
         when(paymentProfileRepository.findByUserUuid("u-1")).thenReturn(Optional.of(profile));

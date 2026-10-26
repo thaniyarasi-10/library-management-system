@@ -200,6 +200,49 @@ class PaymentControllerTest {
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals("application/pdf", result.getHeaders().getContentType().toString());
         assertEquals(pdfBytes, result.getBody());
+        assertEquals("attachment; filename=\"Padips-Document-user.pdf\"", result.getHeaders().getFirst(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION));
         verify(paymentService).downloadInvoice(paymentId, email);
+    }
+
+    @Test
+    void testDownloadInvoice_usernameWithoutAtSymbol() {
+        String paymentId = "pay_test_456";
+        byte[] pdfBytes = "SAMPLE_PDF_BYTES".getBytes();
+        when(principal.getName()).thenReturn("regularuser");
+        when(paymentService.downloadInvoice(paymentId, "regularuser")).thenReturn(pdfBytes);
+
+        ResponseEntity<byte[]> result = paymentController.downloadInvoice(paymentId, principal);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertEquals("attachment; filename=\"Padips-Document-regularuser.pdf\"", result.getHeaders().getFirst(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION));
+        verify(paymentService).downloadInvoice(paymentId, "regularuser");
+    }
+
+    @Test
+    void testDownloadInvoice_blankUsername() {
+        String paymentId = "pay_test_789";
+        byte[] pdfBytes = "SAMPLE_PDF_BYTES".getBytes();
+        when(principal.getName()).thenReturn("   ");
+        when(paymentService.downloadInvoice(paymentId, "   ")).thenReturn(pdfBytes);
+
+        ResponseEntity<byte[]> result = paymentController.downloadInvoice(paymentId, principal);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertEquals("attachment; filename=\"Padips-Document-user.pdf\"", result.getHeaders().getFirst(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION));
+        verify(paymentService).downloadInvoice(paymentId, "   ");
+    }
+
+    @Test
+    void testDownloadInvoice_nullUsername() {
+        String paymentId = "pay_test_null";
+        byte[] pdfBytes = "SAMPLE_PDF_BYTES".getBytes();
+        when(principal.getName()).thenReturn(null);
+        when(paymentService.downloadInvoice(paymentId, null)).thenReturn(pdfBytes);
+
+        ResponseEntity<byte[]> result = paymentController.downloadInvoice(paymentId, principal);
+
+        assertEquals(HttpStatus.OK, result.getStatusCode());
+        assertEquals("attachment; filename=\"Padips-Document-user.pdf\"", result.getHeaders().getFirst(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION));
+        verify(paymentService).downloadInvoice(paymentId, null);
     }
 }

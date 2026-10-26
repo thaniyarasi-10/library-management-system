@@ -165,4 +165,151 @@ class PaymentDocumentGeneratorTest {
         assertNotNull(pdfBytes);
         assertTrue(pdfBytes.length > 0);
     }
+
+    @Test
+    void testGenerateDocumentNumber_blankNumberAndNullCreatedAtAndShortUuid() {
+        Payment payment = Payment.builder()
+                .documentNumber("   ")
+                .uuid("abc")
+                .createdAt(null)
+                .transactionType(TransactionType.PAYMENT)
+                .status(PaymentStatus.SUCCESS)
+                .build();
+
+        String docNumber = generator.generateDocumentNumber(payment);
+
+        assertNotNull(docNumber);
+        assertTrue(docNumber.startsWith("REC-"));
+        assertTrue(docNumber.endsWith("-ABC"));
+    }
+
+    @Test
+    void testGenerateDocumentNumber_nullUuid() {
+        Payment payment = Payment.builder()
+                .documentNumber(null)
+                .uuid(null)
+                .createdAt(LocalDateTime.now())
+                .transactionType(TransactionType.PAYMENT)
+                .status(PaymentStatus.FAILED)
+                .build();
+
+        String docNumber = generator.generateDocumentNumber(payment);
+
+        assertNotNull(docNumber);
+        assertTrue(docNumber.startsWith("STMT-"));
+    }
+
+    @Test
+    void testGeneratePdf_refundReceiptWithRefundId() throws Exception {
+        Payment refund = Payment.builder()
+                .uuid(UUID.randomUUID().toString())
+                .userUuid(testUser.getUuid())
+                .paymentType(PaymentType.MEMBERSHIP)
+                .transactionType(TransactionType.REFUND)
+                .amount(50000L)
+                .status(PaymentStatus.SUCCESS)
+                .razorpayRefundId("rfnd_test_999")
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        String docNumber = generator.generateDocumentNumber(refund);
+        byte[] pdfBytes = generator.generatePdf(refund, testUser, List.of(), docNumber);
+
+        assertNotNull(pdfBytes);
+        assertTrue(pdfBytes.length > 0);
+    }
+
+    @Test
+    void testGeneratePdf_refundReceiptWithoutRefundId() throws Exception {
+        Payment refund = Payment.builder()
+                .uuid(UUID.randomUUID().toString())
+                .userUuid(testUser.getUuid())
+                .paymentType(PaymentType.MEMBERSHIP)
+                .transactionType(TransactionType.REFUND)
+                .amount(50000L)
+                .status(PaymentStatus.SUCCESS)
+                .razorpayRefundId(null)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        String docNumber = generator.generateDocumentNumber(refund);
+        byte[] pdfBytes = generator.generatePdf(refund, testUser, null, docNumber);
+
+        assertNotNull(pdfBytes);
+        assertTrue(pdfBytes.length > 0);
+    }
+
+    @Test
+    void testGeneratePdf_failedPaymentWithNullPaymentIdAndNullOrderId() throws Exception {
+        Payment payment = Payment.builder()
+                .uuid(UUID.randomUUID().toString())
+                .paymentType(PaymentType.FINE)
+                .referenceId(null)
+                .transactionType(TransactionType.PAYMENT)
+                .amount(null)
+                .status(PaymentStatus.FAILED)
+                .razorpayOrderId(null)
+                .razorpayPaymentId(null)
+                .createdAt(null)
+                .build();
+
+        String docNumber = generator.generateDocumentNumber(payment);
+        byte[] pdfBytes = generator.generatePdf(payment, null, List.of(), docNumber);
+
+        assertNotNull(pdfBytes);
+        assertTrue(pdfBytes.length > 0);
+    }
+
+    @Test
+    void testGeneratePdf_userWithNullOrBlankFields() throws Exception {
+        User blankUser = User.builder()
+                .uuid(null)
+                .name("   ")
+                .email(null)
+                .build();
+
+        Payment payment = Payment.builder()
+                .uuid(UUID.randomUUID().toString())
+                .paymentType(PaymentType.FINE)
+                .referenceId("202")
+                .transactionType(TransactionType.PAYMENT)
+                .amount(1500L)
+                .status(PaymentStatus.SUCCESS)
+                .razorpayOrderId("order_202")
+                .razorpayPaymentId(null)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        String docNumber = generator.generateDocumentNumber(payment);
+        byte[] pdfBytes = generator.generatePdf(payment, blankUser, List.of(), docNumber);
+
+        assertNotNull(pdfBytes);
+        assertTrue(pdfBytes.length > 0);
+    }
+
+    @Test
+    void testGeneratePdf_withRefundItemsHavingNullFieldsAndNonSuccessStatus() throws Exception {
+        Payment original = Payment.builder()
+                .uuid(UUID.randomUUID().toString())
+                .paymentType(PaymentType.MEMBERSHIP)
+                .transactionType(TransactionType.PAYMENT)
+                .amount(50000L)
+                .status(PaymentStatus.SUCCESS)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        Payment failedRefund = Payment.builder()
+                .uuid("rf-failed-uuid")
+                .amount(null)
+                .status(PaymentStatus.FAILED)
+                .createdAt(null)
+                .razorpayRefundId(null)
+                .build();
+
+        String docNumber = generator.generateDocumentNumber(original);
+        byte[] pdfBytes = generator.generatePdf(original, testUser, List.of(failedRefund), docNumber);
+
+        assertNotNull(pdfBytes);
+        assertTrue(pdfBytes.length > 0);
+    }
 }

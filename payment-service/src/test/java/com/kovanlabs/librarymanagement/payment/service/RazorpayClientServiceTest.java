@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -60,7 +61,11 @@ class RazorpayClientServiceTest {
         objectMapper = new ObjectMapper();
 
         lenient().when(restClientBuilder.baseUrl(anyString())).thenReturn(restClientBuilder);
-        lenient().when(restClientBuilder.defaultHeaders(any())).thenReturn(restClientBuilder);
+        lenient().when(restClientBuilder.defaultHeaders(any())).thenAnswer(inv -> {
+            java.util.function.Consumer<org.springframework.http.HttpHeaders> consumer = inv.getArgument(0);
+            consumer.accept(new org.springframework.http.HttpHeaders());
+            return restClientBuilder;
+        });
         lenient().when(restClientBuilder.build()).thenReturn(restClient);
 
         razorpayClientService = new RazorpayClientService(razorpayProperties, restClientBuilder, objectMapper);
@@ -265,5 +270,98 @@ class RazorpayClientServiceTest {
 
         assertThrows(ResponseStatusException.class,
                 () -> razorpayClientService.fetchOrder("order_err"));
+    }
+
+    @Test
+    void testFetchOrder_nullNotesNode() {
+        when(restClient.get()).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.uri(eq("/orders/{id}"), eq("order_no_notes"))).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.body(String.class)).thenReturn("{\"id\":\"order_no_notes\",\"amount\":50000}");
+
+        RazorpayOrderDetails details = razorpayClientService.fetchOrder("order_no_notes");
+
+        assertNotNull(details);
+        assertEquals("order_no_notes", details.id());
+        assertEquals(50000L, details.amount());
+        assertTrue(details.notes().isEmpty());
+    }
+
+    @Test
+    void testFetchOrder_nonObjectNotesNode() {
+        when(restClient.get()).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.uri(eq("/orders/{id}"), eq("order_array_notes"))).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.body(String.class)).thenReturn("{\"id\":\"order_array_notes\",\"amount\":50000,\"notes\":[\"some\",\"values\"]}");
+
+        RazorpayOrderDetails details = razorpayClientService.fetchOrder("order_array_notes");
+
+        assertNotNull(details);
+        assertEquals("order_array_notes", details.id());
+        assertEquals(50000L, details.amount());
+        assertTrue(details.notes().isEmpty());
+    }
+
+    @Test
+    void testCreateOrder_blankId_throwsException() {
+        when(restClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(eq("/orders"))).thenReturn(requestBodySpec);
+        when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
+        when(requestBodySpec.body(any(Map.class))).thenReturn(requestBodySpec);
+        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.body(String.class)).thenReturn("{\"id\":\"   \"}");
+
+        assertThrows(ResponseStatusException.class,
+                () -> razorpayClientService.createOrder(50000L, "rec_blank", Map.of()));
+    }
+
+    @Test
+    void testRefundPayment_blankId_throwsException() {
+        when(restClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(eq("/payments/pay_blank/refund"))).thenReturn(requestBodySpec);
+        when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
+        when(requestBodySpec.body(any(Map.class))).thenReturn(requestBodySpec);
+        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.body(String.class)).thenReturn("{\"id\":\"   \"}");
+
+        assertThrows(ResponseStatusException.class,
+                () -> razorpayClientService.refundPayment("pay_blank", 50000L));
+    }
+
+    @Test
+    void testCreateOrder_rethrowsResponseStatusException() {
+        when(restClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(eq("/orders"))).thenReturn(requestBodySpec);
+        when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
+        when(requestBodySpec.body(any(Map.class))).thenReturn(requestBodySpec);
+        when(requestBodySpec.retrieve()).thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid API key"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> razorpayClientService.createOrder(50000L, "rec_auth_err", Map.of()));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+    }
+
+    @Test
+    void testFetchOrder_rethrowsResponseStatusException() {
+        when(restClient.get()).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.uri(eq("/orders/{id}"), eq("order_auth_err"))).thenReturn(requestHeadersUriSpec);
+        when(requestHeadersUriSpec.retrieve()).thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid API key"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> razorpayClientService.fetchOrder("order_auth_err"));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+    }
+
+    @Test
+    void testRefundPayment_rethrowsResponseStatusException() {
+        when(restClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(eq("/payments/pay_auth_err/refund"))).thenReturn(requestBodySpec);
+        when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
+        when(requestBodySpec.body(any(Map.class))).thenReturn(requestBodySpec);
+        when(requestBodySpec.retrieve()).thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid API key"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> razorpayClientService.refundPayment("pay_auth_err", 50000L));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
     }
 }
