@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.user.service;
 
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.entity.UserProvider;
 import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
@@ -28,9 +29,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.*;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -179,7 +184,7 @@ class UserServiceImplTest {
 
         assertNotNull(response);
         assertEquals(1, response.content().size());
-        assertEquals("Alice Smith", response.content().get(0).name());
+        assertEquals("Alice Smith", response.content().getFirst().name());
     }
 
     @Test
@@ -209,6 +214,23 @@ class UserServiceImplTest {
         assertEquals("updated@example.com", response.email());
         verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
         assertEquals(SalesforceSyncStatus.SUCCESS, user1.getSalesforceSyncStatus());
+        assertEquals(0, user1.getSalesforceRetryCount());
+    }
+
+    @Test
+    void updateUser_whenPriorRetryCountNonZero_shouldResetRetryCountAndSetSuccess() {
+        user1.setSalesforceRetryCount(3);
+        user1.setSalesforceSyncStatus(SalesforceSyncStatus.FAILED);
+        UserRequest request = new UserRequest("updated@example.com", "Alice Smith", null);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.updateUser(1L, request);
+
+        assertEquals("updated@example.com", response.email());
+        verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
+        assertEquals(SalesforceSyncStatus.SUCCESS, user1.getSalesforceSyncStatus());
+        assertEquals(0, user1.getSalesforceRetryCount());
     }
 
     @Test
@@ -223,10 +245,13 @@ class UserServiceImplTest {
         assertEquals("+15555555555", user1.getPhone());
         verify(salesforceSyncDelegate).syncContact(any(ContactSObject.class));
         assertEquals(SalesforceSyncStatus.SUCCESS, user1.getSalesforceSyncStatus());
+        assertEquals(0, user1.getSalesforceRetryCount());
     }
 
     @Test
     void updateUser_whenSalesforceSyncFails_shouldIncrementRetryAndKeepPending() {
+        user1.setSalesforceRetryCount(3);
+        user1.setSalesforceSyncStatus(SalesforceSyncStatus.FAILED);
         UserRequest request = new UserRequest("updated@example.com", "Alice Smith", null);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user1));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
@@ -537,6 +562,31 @@ class UserServiceImplTest {
         assertEquals(RoleEnum.ADMIN, testUser.getRole());
         verify(userRepository, atLeastOnce()).save(testUser);
         verify(salesforceSyncDelegate, times(1)).syncContact(any(ContactSObject.class));
+        assertEquals(SalesforceSyncStatus.SUCCESS, testUser.getSalesforceSyncStatus());
+        assertEquals(0, testUser.getSalesforceRetryCount());
+    }
+
+    @Test
+    void updateUserRole_whenPriorRetryCountNonZero_shouldResetRetryCountAndSetSuccess() {
+        User testUser = User.builder()
+                .uuid(uuid1)
+                .id(1L)
+                .name("Alice Smith")
+                .email("alice@example.com")
+                .role(RoleEnum.USER)
+                .salesforceRetryCount(3)
+                .salesforceSyncStatus(SalesforceSyncStatus.FAILED)
+                .build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse response = userService.updateUserRole(1L, RoleEnum.ADMIN);
+
+        assertNotNull(response);
+        assertEquals(RoleEnum.ADMIN, testUser.getRole());
+        verify(salesforceSyncDelegate, times(1)).syncContact(any(ContactSObject.class));
+        assertEquals(SalesforceSyncStatus.SUCCESS, testUser.getSalesforceSyncStatus());
+        assertEquals(0, testUser.getSalesforceRetryCount());
     }
 
     @Test
@@ -559,7 +609,8 @@ class UserServiceImplTest {
                 .name("Alice Smith")
                 .email("alice@example.com")
                 .role(RoleEnum.USER)
-                .salesforceRetryCount(0)
+                .salesforceRetryCount(3)
+                .salesforceSyncStatus(SalesforceSyncStatus.FAILED)
                 .build();
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
@@ -843,7 +894,7 @@ class UserServiceImplTest {
         List<UserResponse> result = userService.getAllUsers();
 
         assertEquals(1, result.size());
-        assertEquals("Alice SF", result.get(0).name());
+        assertEquals("Alice SF", result.getFirst().name());
         verify(userRepository, never()).findAll();
     }
 
@@ -855,7 +906,7 @@ class UserServiceImplTest {
         List<UserResponse> result = userService.getAllUsers();
 
         assertEquals(1, result.size());
-        assertEquals("Alice Smith", result.get(0).name());
+        assertEquals("Alice Smith", result.getFirst().name());
         verify(userRepository).findAll();
     }
 
@@ -874,7 +925,7 @@ class UserServiceImplTest {
 
         assertNotNull(result);
         assertEquals(1, result.content().size());
-        assertEquals("Alice SF", result.content().get(0).name());
+        assertEquals("Alice SF", result.content().getFirst().name());
         verify(userRepository, never()).findAll(any(Pageable.class));
     }
 
@@ -888,7 +939,7 @@ class UserServiceImplTest {
 
         assertNotNull(result);
         assertEquals(1, result.content().size());
-        assertEquals("Alice Smith", result.content().get(0).name());
+        assertEquals("Alice Smith", result.content().getFirst().name());
         verify(userRepository).findAll(any(Pageable.class));
     }
 
@@ -897,18 +948,17 @@ class UserServiceImplTest {
     @Test
     @DisplayName("getHeaderFromRequestContext should read X-User-Username and X-User-Name from RequestContextHolder when present")
     void getHeaderFromRequestContext_shouldExtractHeaderWhenPresent() {
-        org.springframework.mock.web.MockHttpServletRequest mockRequest = new org.springframework.mock.web.MockHttpServletRequest();
+        MockHttpServletRequest mockRequest = new MockHttpServletRequest();
         mockRequest.addHeader("X-User-Username", "CustomHeaderUser");
-        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
-                new org.springframework.web.context.request.ServletRequestAttributes(mockRequest));
+        RequestContextHolder.setRequestAttributes(
+                new ServletRequestAttributes(mockRequest));
 
         try {
             Jwt jwt = mock(Jwt.class);
             when(jwt.getSubject()).thenReturn("auth0|header-test");
             when(jwt.getClaimAsString("email")).thenReturn("header-user@example.com");
 
-            org.springframework.security.core.Authentication auth = mock(
-                    org.springframework.security.core.Authentication.class);
+            Authentication auth = mock(Authentication.class);
             when(auth.getPrincipal()).thenReturn(jwt);
 
             when(userProviderRepository.findByProviderId("auth0|header-test")).thenReturn(Optional.empty());
@@ -921,25 +971,24 @@ class UserServiceImplTest {
             assertNotNull(response);
             assertEquals("CustomHeaderUser", response.name());
         } finally {
-            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+            RequestContextHolder.resetRequestAttributes();
         }
     }
 
     @Test
     @DisplayName("getHeaderFromRequestContext should fallback to X-User-Name if X-User-Username is missing")
     void getHeaderFromRequestContext_shouldFallbackToXUserName() {
-        org.springframework.mock.web.MockHttpServletRequest mockRequest = new org.springframework.mock.web.MockHttpServletRequest();
+        MockHttpServletRequest mockRequest = new MockHttpServletRequest();
         mockRequest.addHeader("X-User-Name", "FallbackHeaderName");
-        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
-                new org.springframework.web.context.request.ServletRequestAttributes(mockRequest));
+        RequestContextHolder.setRequestAttributes(
+                new ServletRequestAttributes(mockRequest));
 
         try {
             Jwt jwt = mock(Jwt.class);
             when(jwt.getSubject()).thenReturn("auth0|header-fallback");
             when(jwt.getClaimAsString("email")).thenReturn("header-fallback@example.com");
 
-            org.springframework.security.core.Authentication auth = mock(
-                    org.springframework.security.core.Authentication.class);
+            Authentication auth = mock(Authentication.class);
             when(auth.getPrincipal()).thenReturn(jwt);
 
             when(userProviderRepository.findByProviderId("auth0|header-fallback")).thenReturn(Optional.empty());
@@ -952,22 +1001,21 @@ class UserServiceImplTest {
             assertNotNull(response);
             assertEquals("FallbackHeaderName", response.name());
         } finally {
-            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+            RequestContextHolder.resetRequestAttributes();
         }
     }
 
     @Test
     @DisplayName("getHeaderFromRequestContext should return null safely when RequestContextHolder has no attributes")
     void getHeaderFromRequestContext_whenNoRequestContext_shouldSafelyReturnNull() {
-        org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        RequestContextHolder.resetRequestAttributes();
 
         Jwt jwt = mock(Jwt.class);
         when(jwt.getSubject()).thenReturn("auth0|no-ctx");
         when(jwt.getClaimAsString("email")).thenReturn("no-ctx@example.com");
         when(jwt.getClaimAsString("name")).thenReturn("JwtName");
 
-        org.springframework.security.core.Authentication auth = mock(
-                org.springframework.security.core.Authentication.class);
+        Authentication auth = mock(Authentication.class);
         when(auth.getPrincipal()).thenReturn(jwt);
 
         when(userProviderRepository.findByProviderId("auth0|no-ctx")).thenReturn(Optional.empty());
@@ -1119,12 +1167,12 @@ class UserServiceImplTest {
     void getAllUsers_withDuplicateRewardRecords_shouldMergePoints() {
         when(salesforceSyncDelegate.fetchContactsFromSalesforce()).thenThrow(new RuntimeException("SF down"));
 
-        com.kovanlabs.librarymanagement.database.entity.Reward r1 = com.kovanlabs.librarymanagement.database.entity.Reward
+        Reward r1 = Reward
                 .builder()
                 .userUuid(user1.getUuid())
                 .points(10)
                 .build();
-        com.kovanlabs.librarymanagement.database.entity.Reward r2 = com.kovanlabs.librarymanagement.database.entity.Reward
+        Reward r2 = Reward
                 .builder()
                 .userUuid(user1.getUuid())
                 .points(20)
@@ -1139,7 +1187,7 @@ class UserServiceImplTest {
 
         assertNotNull(result);
         assertEquals(1, result.content().size());
-        assertEquals(10, result.content().get(0).rewardPoints());
+        assertEquals(10, result.content().getFirst().rewardPoints());
     }
 
     @Test
@@ -1427,9 +1475,9 @@ class UserServiceImplTest {
         List<UserResponse> list = userService.getReactivationRequests();
 
         assertEquals(1, list.size());
-        assertEquals("sf@example.com", list.get(0).email());
-        assertEquals("PENDING", list.get(0).reactivationRequestStatus());
-        assertTrue(list.get(0).reactivationRequested());
+        assertEquals("sf@example.com", list.getFirst().email());
+        assertEquals("PENDING", list.getFirst().reactivationRequestStatus());
+        assertTrue(list.getFirst().reactivationRequested());
     }
 
     @Test
@@ -1451,8 +1499,8 @@ class UserServiceImplTest {
         List<UserResponse> list = userService.getReactivationRequests();
 
         assertEquals(1, list.size());
-        assertEquals("req@example.com", list.get(0).email());
-        assertTrue(list.get(0).reactivationRequested());
+        assertEquals("req@example.com", list.getFirst().email());
+        assertTrue(list.getFirst().reactivationRequested());
     }
 
     @Test
@@ -2163,7 +2211,7 @@ class UserServiceImplTest {
 
         assertNotNull(response);
         assertEquals(1, response.content().size());
-        assertEquals("User 3", response.content().get(0).name());
+        assertEquals("User 3", response.content().getFirst().name());
         assertEquals(3, response.totalElements());
         assertEquals(2, response.totalPages());
         assertTrue(response.last());
@@ -3029,7 +3077,7 @@ class UserServiceImplTest {
         List<UserResponse> list = serviceWithoutSF.getReactivationRequests();
 
         assertEquals(1, list.size());
-        assertEquals("req-nosf@example.com", list.get(0).email());
+        assertEquals("req-nosf@example.com", list.getFirst().email());
         verify(userRepository).findByReactivationRequestStatusIsNotNull();
     }
 
@@ -3044,7 +3092,7 @@ class UserServiceImplTest {
         List<UserResponse> list = userService.getReactivationRequests();
 
         assertEquals(1, list.size());
-        assertEquals("pending@sf.com", list.get(0).email());
+        assertEquals("pending@sf.com", list.getFirst().email());
         verify(userRepository, never()).findByReactivationRequestStatusIsNotNull();
     }
 
@@ -3059,7 +3107,7 @@ class UserServiceImplTest {
         List<UserResponse> list = userService.getReactivationRequests();
 
         assertEquals(1, list.size());
-        assertEquals("req-error@example.com", list.get(0).email());
+        assertEquals("req-error@example.com", list.getFirst().email());
         verify(userRepository).findByReactivationRequestStatusIsNotNull();
     }
 

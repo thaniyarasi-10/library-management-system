@@ -6,6 +6,7 @@ import com.kovanlabs.librarymanagement.dto.BookRequest;
 import com.kovanlabs.librarymanagement.dto.BookResponse;
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.Book;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl;
@@ -277,7 +278,24 @@ class BookServiceImplTest {
         assertEquals(12, book1.getTotalBookCount());
         assertEquals(12, response.totalBookCount());
         verify(salesforceSyncService).syncBook(any());
-        assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.SUCCESS, book1.getSalesforceSyncStatus());
+        assertEquals(SalesforceSyncStatus.SUCCESS, book1.getSalesforceSyncStatus());
+        assertEquals(0, book1.getSalesforceRetryCount());
+    }
+
+    @Test
+    @DisplayName("updateBook when prior retry count > 0 should reset retry count to 0 and set SUCCESS")
+    void updateBook_whenPriorRetryCountNonZero_shouldResetRetryCountAndSetSuccess() {
+        book1.setSalesforceRetryCount(3);
+        book1.setSalesforceSyncStatus(SalesforceSyncStatus.FAILED);
+        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 12);
+        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        BookResponse response = bookService.updateBook(1L, updateRequest);
+
+        assertNotNull(response);
+        assertEquals(SalesforceSyncStatus.SUCCESS, book1.getSalesforceSyncStatus());
+        assertEquals(0, book1.getSalesforceRetryCount());
     }
 
     @Test
@@ -318,8 +336,10 @@ class BookServiceImplTest {
     }
 
     @Test
-    @DisplayName("updateBook when Salesforce fails should still return response and mark pending")
+    @DisplayName("updateBook when Salesforce fails should still return response and mark pending with retry count 1")
     void updateBook_whenSalesforceFails_shouldStillReturnResponseAndMarkPending() {
+        book1.setSalesforceRetryCount(3);
+        book1.setSalesforceSyncStatus(SalesforceSyncStatus.FAILED);
         BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 10);
         when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
         when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -328,7 +348,7 @@ class BookServiceImplTest {
         BookResponse response = bookService.updateBook(1L, updateRequest);
 
         assertEquals("Clean Architecture", response.title());
-        assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.PENDING, book1.getSalesforceSyncStatus());
+        assertEquals(SalesforceSyncStatus.PENDING, book1.getSalesforceSyncStatus());
         assertEquals(1, book1.getSalesforceRetryCount());
     }
 

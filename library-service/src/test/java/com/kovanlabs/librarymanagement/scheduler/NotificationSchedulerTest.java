@@ -111,7 +111,7 @@ class NotificationSchedulerTest {
         assertEquals("John Doe", request.userName());
         assertNotNull(request.overdueBooks());
         assertEquals(1, request.overdueBooks().size());
-        assertEquals("Clean Code", request.overdueBooks().get(0).title());
+        assertEquals("Clean Code", request.overdueBooks().getFirst().title());
         assertEquals(30.0, request.totalFine());
     }
 

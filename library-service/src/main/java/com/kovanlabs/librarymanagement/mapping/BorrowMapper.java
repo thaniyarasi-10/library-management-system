@@ -120,6 +120,9 @@ public interface BorrowMapper {
     @Mapping(target = "legacyUserId", source = "userNumericId")
     @Mapping(target = "lastName", source = "userName")
     @Mapping(target = "email", source = "userEmail")
+    @Mapping(target = "deactivatedAt", ignore = true)
+    @Mapping(target = "aadharHash", ignore = true)
+    @Mapping(target = "aadharLast4", ignore = true)
     ContactSObject toContactSObject(BorrowResponseDto dto);
 
     /**
@@ -139,6 +142,9 @@ public interface BorrowMapper {
     @Mapping(target = "lastLoginAt", expression = "java(Objects.nonNull(user.getLastLoginAt()) ? user.getLastLoginAt().toString() : null)")
     @Mapping(target = "reactivationRequestStatus", expression = "java(Objects.nonNull(user.getReactivationRequestStatus()) ? user.getReactivationRequestStatus().name() : null)")
     @Mapping(target = "inactivityWarningSentAt", expression = "java(Objects.nonNull(user.getInactivityWarningSentAt()) ? user.getInactivityWarningSentAt().toString() : null)")
+    @Mapping(target = "deactivatedAt", expression = "java(Objects.nonNull(user.getDeactivatedAt()) ? user.getDeactivatedAt().toString() : null)")
+    @Mapping(target = "aadharHash", source = "aadhaarHash")
+    @Mapping(target = "aadharLast4", source = "aadhaarLast4")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     ContactSObject toContactSObject(User user);

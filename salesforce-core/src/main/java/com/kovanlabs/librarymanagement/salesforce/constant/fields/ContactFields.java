@@ -17,4 +17,7 @@ public final class ContactFields {
     public static final String REACTIVATION_REQUEST_STATUS = "Reactivation_Request_Status__c";
     public static final String INACTIVITY_WARNING_SENT_AT = "Inactivity_Warning_Sent_At__c";
     public static final String REWARD = "Reward__c";
+    public static final String DEACTIVATED_AT = "Deactivated_At__c";
+    public static final String AADHAR_HASH = "Aadhar_Hash__c";
+    public static final String AADHAR_LAST4 = "Aadhar_Last4__c";
 }

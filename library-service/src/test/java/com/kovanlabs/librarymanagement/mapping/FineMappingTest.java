@@ -68,8 +68,8 @@ class FineMappingTest {
 
         assertNotNull(responses);
         assertEquals(2, responses.size());
-        assertEquals(1L, responses.get(0).id());
-        assertEquals(FineStatus.PENDING, responses.get(0).status());
+        assertEquals(1L, responses.getFirst().id());
+        assertEquals(FineStatus.PENDING, responses.getFirst().status());
         assertEquals(2L, responses.get(1).id());
         assertEquals(FineStatus.PAID, responses.get(1).status());
     }

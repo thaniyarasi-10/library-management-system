@@ -250,16 +250,18 @@ class AccountDeactivationServiceTest {
         serviceWithoutSF.syncUserToSalesforce(User.builder().build());
 
         // Successful sync
+        user.setSalesforceRetryCount(3);
         deactivationService.syncUserToSalesforce(user);
         assertEquals(SalesforceSyncStatus.SUCCESS, user.getSalesforceSyncStatus());
+        assertEquals(0, user.getSalesforceRetryCount());
         verify(salesforceSyncDelegate).syncContact(any());
         verify(userRepository, atLeastOnce()).save(user);
 
         // Failed sync
         doThrow(new RuntimeException("SF timeout")).when(salesforceSyncDelegate).syncContact(any());
-        user.setSalesforceRetryCount(1);
+        user.setSalesforceRetryCount(3);
         deactivationService.syncUserToSalesforce(user);
         assertEquals(SalesforceSyncStatus.PENDING, user.getSalesforceSyncStatus());
-        assertEquals(2, user.getSalesforceRetryCount());
+        assertEquals(1, user.getSalesforceRetryCount());
     }
 }

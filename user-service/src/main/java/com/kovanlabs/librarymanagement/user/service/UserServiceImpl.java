@@ -59,8 +59,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
-
-    public static final int REACTIVATION_RESTRICTION_DAYS = 10;
     public static final String AUTH0_CLAIM_NAMESPACE = "https://library-management.com";
     public static final String CLAIM_ROLES = AUTH0_CLAIM_NAMESPACE + "/roles";
     public static final String CLAIM_ROLE = AUTH0_CLAIM_NAMESPACE + "/role";
@@ -214,7 +212,7 @@ public class UserServiceImpl implements UserService {
                             pageContent,
                             page,
                             size,
-                            (long) sfUsers.size(),
+                            sfUsers.size(),
                             totalPages,
                             page >= totalPages - 1);
                 }
@@ -306,6 +304,9 @@ public class UserServiceImpl implements UserService {
             user.setPhone(request.phone().isBlank() ? null : request.phone().trim());
         }
 
+        user.setSalesforceRetryCount(0);
+        user.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+
         User updatedUser = userRepository.save(user);
         UserResponse response = toUserResponse(updatedUser);
 
@@ -313,6 +314,7 @@ public class UserServiceImpl implements UserService {
             try {
                 salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(updatedUser));
                 updatedUser.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                updatedUser.setSalesforceRetryCount(0);
                 userRepository.save(updatedUser);
             } catch (Exception e) {
                 int retryCount = updatedUser.getSalesforceRetryCount() + 1;
@@ -411,6 +413,8 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + id));
 
         user.setRole(newRole);
+        user.setSalesforceRetryCount(0);
+        user.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
         User updatedUser = userRepository.save(user);
         UserResponse response = toUserResponse(updatedUser);
 
@@ -418,6 +422,7 @@ public class UserServiceImpl implements UserService {
             try {
                 salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(updatedUser));
                 updatedUser.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                updatedUser.setSalesforceRetryCount(0);
                 userRepository.save(updatedUser);
             } catch (Exception e) {
                 int retryCount = updatedUser.getSalesforceRetryCount() + 1;
@@ -538,7 +543,7 @@ public class UserServiceImpl implements UserService {
                 .name(effectiveName)
                 .role(initialRole)
                 .status(AccountStatus.ACTIVE)
-                .lastLoginAt(java.time.LocalDateTime.now())
+                .lastLoginAt(LocalDateTime.now())
                 .build();
 
         User savedUser = userRepository.save(newUser);
@@ -878,9 +883,12 @@ public class UserServiceImpl implements UserService {
 
     private void syncUserToSalesforce(User user) {
         if (Objects.nonNull(salesforceSyncDelegate) && Objects.nonNull(user) && Objects.nonNull(user.getUuid())) {
+            user.setSalesforceRetryCount(0);
+            user.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
             try {
                 salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(user));
                 user.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                user.setSalesforceRetryCount(0);
                 userRepository.save(user);
             } catch (Exception e) {
                 int retryCount = user.getSalesforceRetryCount() + 1;

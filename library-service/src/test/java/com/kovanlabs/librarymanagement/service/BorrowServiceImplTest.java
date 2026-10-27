@@ -6,7 +6,9 @@ import com.kovanlabs.librarymanagement.dto.BorrowResponseDto;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.entity.Borrow;
 import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.entity.UserProvider;
 import com.kovanlabs.librarymanagement.database.enums.BorrowStatus;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
@@ -191,7 +193,7 @@ class BorrowServiceImplTest {
         verify(salesforceSyncService).syncBook(any());
         verify(userFineChecker, times(1)).hasPendingFines(1L);
         verify(borrowRepository, times(2)).save(borrow);
-        assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.SUCCESS, borrow.getSalesforceSyncStatus());
+        assertEquals(SalesforceSyncStatus.SUCCESS, borrow.getSalesforceSyncStatus());
     }
 
     @Test
@@ -252,7 +254,48 @@ class BorrowServiceImplTest {
 
         assertNotNull(response);
         assertEquals(BorrowStatus.RETURNED, response.status());
-        assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.PENDING, borrow.getSalesforceSyncStatus());
+        assertEquals(SalesforceSyncStatus.PENDING, borrow.getSalesforceSyncStatus());
+        assertEquals(1, borrow.getSalesforceRetryCount());
+    }
+
+    @Test
+    @DisplayName("returnBook when prior retry count > 0 should reset retry count to 0 and set SUCCESS")
+    void returnBook_whenPriorRetryCountNonZero_shouldResetRetryCountAndSetSuccess() {
+        borrow.setSalesforceRetryCount(3);
+        borrow.setSalesforceSyncStatus(SalesforceSyncStatus.FAILED);
+        book.setSalesforceRetryCount(2);
+        book.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+
+        when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BorrowResponseDto response = borrowService.returnBook(100L);
+
+        assertNotNull(response);
+        assertEquals(BorrowStatus.RETURNED, response.status());
+        assertEquals(SalesforceSyncStatus.SUCCESS, borrow.getSalesforceSyncStatus());
+        assertEquals(0, borrow.getSalesforceRetryCount());
+        assertEquals(SalesforceSyncStatus.SUCCESS, book.getSalesforceSyncStatus());
+        assertEquals(0, book.getSalesforceRetryCount());
+    }
+
+    @Test
+    @DisplayName("returnBook when prior retry count > 0 and SF sync fails should reset to 0 then increment to 1 and keep PENDING")
+    void returnBook_whenPriorRetryCountNonZeroAndSyncFails_shouldResetToZeroThenIncrementToOneAndKeepPending() {
+        borrow.setSalesforceRetryCount(3);
+        borrow.setSalesforceSyncStatus(SalesforceSyncStatus.FAILED);
+
+        when(borrowRepository.findById(100L)).thenReturn(Optional.of(borrow));
+        when(userFineChecker.hasPendingFines(1L)).thenReturn(false);
+        when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> inv.getArgument(0));
+        doThrow(new RuntimeException("SF Return Error")).when(salesforceSyncService).syncBorrow(any());
+
+        BorrowResponseDto response = borrowService.returnBook(100L);
+
+        assertNotNull(response);
+        assertEquals(BorrowStatus.RETURNED, response.status());
+        assertEquals(SalesforceSyncStatus.PENDING, borrow.getSalesforceSyncStatus());
         assertEquals(1, borrow.getSalesforceRetryCount());
     }
 
@@ -326,7 +369,7 @@ class BorrowServiceImplTest {
         BorrowRequestDto request = req(10L, null);
         String providerId = "auth0|provider123";
 
-        com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
+        UserProvider up = UserProvider.builder()
                 .userUuid(user.getUuid())
                 .build();
         when(userProviderRepository.findByProviderId(providerId)).thenReturn(Optional.of(up));
@@ -524,7 +567,7 @@ class BorrowServiceImplTest {
         assertTrue(borrowService.getBorrowsByUserEmail(null).isEmpty());
 
         String email = "john@example.com";
-        com.kovanlabs.librarymanagement.database.entity.UserProvider up = com.kovanlabs.librarymanagement.database.entity.UserProvider.builder()
+        UserProvider up = UserProvider.builder()
                 .userUuid(user.getUuid())
                 .build();
         when(userProviderRepository.findByProviderId(email)).thenReturn(Optional.of(up));
@@ -536,7 +579,7 @@ class BorrowServiceImplTest {
         // provider match with user.id == null
         String providerEmail = "provider-only@example.com";
         User userNullId = User.builder().id(null).uuid("null-id-uuid").build();
-        when(userProviderRepository.findByProviderId(providerEmail)).thenReturn(Optional.of(com.kovanlabs.librarymanagement.database.entity.UserProvider.builder().userUuid("null-id-uuid").build()));
+        when(userProviderRepository.findByProviderId(providerEmail)).thenReturn(Optional.of(UserProvider.builder().userUuid("null-id-uuid").build()));
         when(userRepository.findByUuid("null-id-uuid")).thenReturn(Optional.of(userNullId));
         assertTrue(borrowService.getBorrowsByUserEmail(providerEmail).isEmpty());
 

@@ -4000,66 +4000,6 @@ export default function App() {
                         </span>
                       </div>
                     </div>
-
-                    {/* Saved Bank Details Card */}
-                    {paymentProfile ? (
-                      <div className="amazon-payment-box mt-4">
-                        <div className="amazon-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Landmark size={18} color="var(--accent-primary)" />
-                            <span>Linked Refund Bank Account</span>
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-link btn-sm"
-                            style={{ fontSize: '12px', padding: 0, color: 'var(--accent-primary)', textDecoration: 'underline' }}
-                            onClick={() => openPaymentProfileModal(true)}
-                          >
-                            Edit Bank Details
-                          </button>
-                        </div>
-
-                        <div className="saved-profile-card" style={{ marginBottom: 0 }}>
-                          <div className="saved-profile-info">
-                            <div className="saved-profile-icon">
-                              <Landmark size={20} />
-                            </div>
-                            <div className="saved-profile-details">
-                              <strong className="saved-profile-title">
-                                {paymentProfile.bankName}
-                              </strong>
-                              <span className="saved-profile-sub">
-                                {paymentProfile.accountHolderName} • A/C: {paymentProfile.maskedAccountNumber || '••••••••'} • IFSC: {paymentProfile.ifscCode}
-                              </span>
-                              <div className="bank-detail-badge">
-                                <ShieldCheck size={12} />
-                                <span>Security deposit & dues refunds routed directly to this verified bank account</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="amazon-payment-box mt-4" style={{ textAlign: 'left' }}>
-                        <div className="amazon-section-title">
-                          <Landmark size={18} color="var(--accent-primary)" />
-                          <span>Bank Refund Account</span>
-                        </div>
-                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                          Add your bank account details for direct security deposit refunds and automated settlements.
-                        </p>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => openPaymentProfileModal(true)}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                        >
-                          <Plus size={14} />
-                          <span>Add Bank Account Details</span>
-                        </button>
-                      </div>
-                    )}
-
                     <button
                       className="btn btn-primary btn-block mt-6"
                       disabled={isProcessingPayment}

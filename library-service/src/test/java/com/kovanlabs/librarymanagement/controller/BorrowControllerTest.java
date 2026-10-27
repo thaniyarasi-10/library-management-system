@@ -54,7 +54,7 @@ class BorrowControllerTest {
 
         assertNotNull(result);
         assertEquals(1, result.size());
-        assertEquals(borrowUuid, result.get(0).borrowUuid());
+        assertEquals(borrowUuid, result.getFirst().borrowUuid());
         verify(borrowService).getAllBorrows();
     }
 

@@ -339,7 +339,7 @@ class BookDonationServiceImplTest {
 
         assertNotNull(result);
         assertEquals(1, result.size());
-        assertEquals(sampleDonation.getId(), result.get(0).id());
+        assertEquals(sampleDonation.getId(), result.getFirst().id());
         verify(bookDonationRepository).findByUser_UuidOrderByCreatedAtDesc(standardUser.getUuid());
     }
 
@@ -470,7 +470,7 @@ class BookDonationServiceImplTest {
 
         assertNotNull(result);
         assertEquals(1, result.size());
-        assertEquals(sampleDonation.getId(), result.get(0).id());
+        assertEquals(sampleDonation.getId(), result.getFirst().id());
         verify(bookDonationRepository).findAllByOrderByCreatedAtDesc();
     }
 
@@ -504,6 +504,7 @@ class BookDonationServiceImplTest {
         assertEquals("cover-key-123", existingBook.getCoverImageKey());
         verify(salesforceSyncService).syncBook(any());
         assertEquals(SalesforceSyncStatus.SUCCESS, existingBook.getSalesforceSyncStatus());
+        assertEquals(0, existingBook.getSalesforceRetryCount());
     }
 
     @Test
@@ -531,6 +532,8 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("approveDonation - Success when book already exists and Salesforce sync fails (retry scheduled)")
     void approveDonation_success_existingBook_sfFails() {
+        existingBook.setSalesforceRetryCount(3);
+        existingBook.setSalesforceSyncStatus(SalesforceSyncStatus.FAILED);
         when(userProviderRepository.findByProviderId("admin@example.com")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.of(adminUser));
         when(bookDonationRepository.findByUuid(sampleDonation.getUuid())).thenReturn(Optional.of(sampleDonation));

@@ -365,6 +365,8 @@ public class BookDonationServiceImpl implements BookDonationService {
             if (Objects.isNull(targetBook.getCoverImageKey()) && Objects.nonNull(donation.getCoverImageKey())) {
                 targetBook.setCoverImageKey(donation.getCoverImageKey());
             }
+            targetBook.setSalesforceRetryCount(0);
+            targetBook.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
             targetBook = bookRepository.save(targetBook);
             log.info("Incremented total book count for existing book '{}' [ISBN: {}] by {} to {}",
                     targetBook.getTitle(), targetBook.getIsbn(), count, targetBook.getTotalBookCount());
@@ -550,6 +552,7 @@ public class BookDonationServiceImpl implements BookDonationService {
             try {
                 salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(book));
                 book.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                book.setSalesforceRetryCount(0);
                 bookRepository.save(book);
             } catch (Exception e) {
                 int retryCount = book.getSalesforceRetryCount() + 1;

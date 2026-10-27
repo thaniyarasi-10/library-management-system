@@ -165,6 +165,9 @@ public interface UserMapper {
     @Mapping(target = "reward", source = "rewardPoints")
     @Mapping(target = "lastLoginAt", ignore = true)
     @Mapping(target = "inactivityWarningSentAt", ignore = true)
+    @Mapping(target = "deactivatedAt", ignore = true)
+    @Mapping(target = "aadharHash", source = "hashAadhar")
+    @Mapping(target = "aadharLast4", source = "aadhaarLast4")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     ContactSObject toContactSObject(UserResponse user);
@@ -185,6 +188,9 @@ public interface UserMapper {
     @Mapping(target = "reactivationRequestStatus", expression = "java(Objects.nonNull(user.getReactivationRequestStatus()) ? user.getReactivationRequestStatus().name() : null)")
     @Mapping(target = "inactivityWarningSentAt", expression = "java(Objects.nonNull(user.getInactivityWarningSentAt()) ? user.getInactivityWarningSentAt().toString() : null)")
     @Mapping(target = "reward", expression = "java((AccountStatus.DEACTIVATED.equals(user.getStatus()) || AccountStatus.PERMANENTLY_DEACTIVATED.equals(user.getStatus())) ? Integer.valueOf(0) : null)")
+    @Mapping(target = "deactivatedAt", expression = "java(Objects.nonNull(user.getDeactivatedAt()) ? user.getDeactivatedAt().toString() : null)")
+    @Mapping(target = "aadharHash", source = "aadhaarHash")
+    @Mapping(target = "aadharLast4", source = "aadhaarLast4")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     ContactSObject toContactSObject(User user);
@@ -204,8 +210,8 @@ public interface UserMapper {
     @Mapping(target = "reactivationRequested", expression = "java(\"PENDING\".equalsIgnoreCase(contact.getReactivationRequestStatus()))")
     @Mapping(target = "hasPendingFines", constant = "false")
     @Mapping(target = "pendingFineAmount", expression = "java(0.0)")
-    @Mapping(target = "aadhaarLast4", ignore = true)
-    @Mapping(target = "hashAadhar", ignore = true)
+    @Mapping(target = "aadhaarLast4", source = "aadharLast4")
+    @Mapping(target = "hashAadhar", source = "aadharHash")
     @Mapping(target = "isProfileComplete", constant = "true")
     UserResponse toUserResponse(ContactSObject contact);
 

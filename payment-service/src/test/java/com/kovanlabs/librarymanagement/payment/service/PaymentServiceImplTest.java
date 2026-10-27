@@ -768,7 +768,7 @@ class PaymentServiceImplTest {
 
         assertNotNull(list);
         assertEquals(1, list.size());
-        assertEquals(50000L, list.get(0).amount());
+        assertEquals(50000L, list.getFirst().amount());
     }
 
     // ==========================================
@@ -1059,9 +1059,9 @@ class PaymentServiceImplTest {
         assertEquals(30000L, response.netPaid());
         assertEquals(2L, response.successfulTransactionCount());
         assertEquals(1, response.content().size());
-        assertEquals("p-1", response.content().get(0).uuid());
-        assertEquals(1, response.content().get(0).refunds().size());
-        assertEquals("r-1", response.content().get(0).refunds().get(0).uuid());
+        assertEquals("p-1", response.content().getFirst().uuid());
+        assertEquals(1, response.content().getFirst().refunds().size());
+        assertEquals("r-1", response.content().getFirst().refunds().getFirst().uuid());
     }
 
 

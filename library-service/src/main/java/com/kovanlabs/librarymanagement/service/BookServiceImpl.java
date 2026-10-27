@@ -30,7 +30,8 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * Implementation of {@link BookService} with Redis caching, S3 cover image management,
+ * Implementation of {@link BookService} with Redis caching, S3 cover image
+ * management,
  * and dual-write/read operations integrated with Salesforce SObjects.
  */
 @Service
@@ -44,7 +45,8 @@ public class BookServiceImpl implements BookService {
     private final SalesforceSyncImpl salesforceSyncService;
 
     /**
-     * Creates a new book record, saves it to the database, and synchronizes with Salesforce.
+     * Creates a new book record, saves it to the database, and synchronizes with
+     * Salesforce.
      *
      * @param request Book payload
      * @return Created {@link BookResponse}
@@ -67,7 +69,8 @@ public class BookServiceImpl implements BookService {
                 savedBook.setSalesforceRetryCount(retryCount);
                 savedBook.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
                 bookRepository.save(savedBook);
-                log.error("Salesforce dual-write failed for book creation [Book ID: {}, UUID: {}, Operation: CREATE, RetryCount: {}]: {}",
+                log.error(
+                        "Salesforce dual-write failed for book creation [Book ID: {}, UUID: {}, Operation: CREATE, RetryCount: {}]: {}",
                         savedBook.getId(), savedBook.getUuid(), retryCount, e.getMessage());
             }
         }
@@ -76,11 +79,12 @@ public class BookServiceImpl implements BookService {
     }
 
     /**
-     * Retrieves paginated books from Salesforce SOQL if configured, otherwise falls back to MySQL.
+     * Retrieves paginated books from Salesforce SOQL if configured, otherwise falls
+     * back to MySQL.
      *
-     * @param page Zero-based page number
-     * @param size Number of items per page
-     * @param sortBy Field name to sort by
+     * @param page    Zero-based page number
+     * @param size    Number of items per page
+     * @param sortBy  Field name to sort by
      * @param sortDir Sort direction ("asc" or "desc")
      * @return {@link PagedResponse} of {@link BookResponse}
      */
@@ -94,12 +98,15 @@ public class BookServiceImpl implements BookService {
 
                 if (Objects.nonNull(sfBookModels) && !sfBookModels.isEmpty()) {
                     for (var sfBook : sfBookModels) {
-                        if (Objects.nonNull(sfBook) && Objects.nonNull(sfBook.getErrors()) && !sfBook.getErrors().isEmpty()) {
-                            log.warn("Salesforce error for Book [UUID: {}]: {}", sfBook.getExternalBookUuid(), sfBook.getErrors());
+                        if (Objects.nonNull(sfBook) && Objects.nonNull(sfBook.getErrors())
+                                && !sfBook.getErrors().isEmpty()) {
+                            log.warn("Salesforce error for Book [UUID: {}]: {}", sfBook.getExternalBookUuid(),
+                                    sfBook.getErrors());
                         }
                     }
                     List<BookResponse> sfBooks = BookMapper.INSTANCE.toBookResponseList(sfBookModels);
-                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL", sfBooks.size());
+                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL",
+                            sfBooks.size());
                     int totalPages = (int) Math.ceil((double) totalBooks / size);
                     return new PagedResponse<>(
                             sfBooks,
@@ -107,11 +114,11 @@ public class BookServiceImpl implements BookService {
                             size,
                             totalBooks,
                             totalPages,
-                            page >= totalPages - 1
-                    );
+                            page >= totalPages - 1);
                 }
             } catch (Exception e) {
-                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for books, falling back to MySQL: {}", e.getMessage());
+                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for books, falling back to MySQL: {}",
+                        e.getMessage());
             }
         }
 
@@ -130,17 +137,16 @@ public class BookServiceImpl implements BookService {
                 booksPage.getSize(),
                 booksPage.getTotalElements(),
                 booksPage.getTotalPages(),
-                booksPage.isLast()
-        );
+                booksPage.isLast());
     }
 
     /**
      * Searches books matching the search query in MySQL with pagination.
      *
-     * @param query Search query
-     * @param page Page index
-     * @param size Page size
-     * @param sortBy Sort field
+     * @param query   Search query
+     * @param page    Page index
+     * @param size    Page size
+     * @param sortBy  Sort field
      * @param sortDir Sort direction
      * @return {@link PagedResponse} of matching {@link BookResponse} items
      */
@@ -160,8 +166,7 @@ public class BookServiceImpl implements BookService {
                 booksPage.getSize(),
                 booksPage.getTotalElements(),
                 booksPage.getTotalPages(),
-                booksPage.isLast()
-        );
+                booksPage.isLast());
     }
 
     /**
@@ -182,7 +187,7 @@ public class BookServiceImpl implements BookService {
     /**
      * Updates an existing book and triggers synchronization with Salesforce.
      *
-     * @param id The book ID
+     * @param id      The book ID
      * @param request The updated book payload
      * @return Updated {@link BookResponse}
      */
@@ -192,14 +197,15 @@ public class BookServiceImpl implements BookService {
     public BookResponse updateBook(Long id, BookRequest request) {
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
-        
         book.setTitle(request.title());
         book.setAuthor(request.author());
         book.setIsbn(request.isbn());
         if (Objects.nonNull(request.totalBookCount())) {
             book.setTotalBookCount(request.totalBookCount());
         }
-        
+        book.setSalesforceRetryCount(0);
+        book.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+
         Book updatedBook = bookRepository.save(book);
         BookResponse response = BookMapper.INSTANCE.mapToResponse(updatedBook);
 
@@ -207,13 +213,15 @@ public class BookServiceImpl implements BookService {
             try {
                 salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(response));
                 updatedBook.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                updatedBook.setSalesforceRetryCount(0);
                 bookRepository.save(updatedBook);
             } catch (Exception e) {
                 int retryCount = updatedBook.getSalesforceRetryCount() + 1;
                 updatedBook.setSalesforceRetryCount(retryCount);
                 updatedBook.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
                 bookRepository.save(updatedBook);
-                log.error("Salesforce dual-write failed for book update [Book ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
+                log.error(
+                        "Salesforce dual-write failed for book update [Book ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
                         updatedBook.getId(), updatedBook.getUuid(), retryCount, e.getMessage());
             }
         }
@@ -230,7 +238,8 @@ public class BookServiceImpl implements BookService {
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
     public void deleteBook(Long id) {
-        Book book = bookRepository.findById(id)                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
+        Book book = bookRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
         bookRepository.delete(book);
     }
 
@@ -238,15 +247,16 @@ public class BookServiceImpl implements BookService {
      * Uploads a book cover image to AWS S3 and updates the book entity.
      *
      * @param bookId The book ID
-     * @param file The multipart image file
+     * @param file   The multipart image file
      * @return Status message
      */
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
-    public String uploadBookCover(Long bookId, MultipartFile file)  {
+    public String uploadBookCover(Long bookId, MultipartFile file) {
 
         Book book = bookRepository.findById(bookId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
+                .orElseThrow(
+                        () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
 
         try {
             S3UploadResponse response = s3Service.uploadFile(file);
@@ -269,7 +279,7 @@ public class BookServiceImpl implements BookService {
      * @param id The book ID
      * @return The cover image URL
      */
-    public String getImageCoverById(Long id){
+    public String getImageCoverById(Long id) {
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Book not found"));
 

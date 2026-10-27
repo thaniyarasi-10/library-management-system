@@ -80,7 +80,7 @@ class PaymentMapperTest {
         assertEquals("pay-uuid-2", dto.uuid());
         assertEquals("SUCCESS", dto.status());
         assertEquals(1, dto.refunds().size());
-        assertEquals("rfnd-uuid", dto.refunds().get(0).uuid());
+        assertEquals("rfnd-uuid", dto.refunds().getFirst().uuid());
     }
 
     @Test
@@ -92,7 +92,7 @@ class PaymentMapperTest {
 
         assertNotNull(list);
         assertEquals(2, list.size());
-        assertEquals("p-1", list.get(0).uuid());
+        assertEquals("p-1", list.getFirst().uuid());
         assertEquals("p-2", list.get(1).uuid());
     }
 
