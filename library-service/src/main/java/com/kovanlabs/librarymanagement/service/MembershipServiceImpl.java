@@ -3,6 +3,7 @@ package com.kovanlabs.librarymanagement.service;
 import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
 import com.kovanlabs.librarymanagement.database.entity.Membership;
 import com.kovanlabs.librarymanagement.database.entity.User;
+import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
 import com.kovanlabs.librarymanagement.database.enums.MembershipStatus;
 import com.kovanlabs.librarymanagement.database.repository.MembershipRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserProviderRepository;
@@ -84,6 +85,10 @@ public class MembershipServiceImpl implements MembershipService {
     @Transactional
     public MembershipApplicationResponse applyForMembership(String email) {
         User user = findUserByIdentifier(email);
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Account is " + user.getStatus() + ". Only ACTIVE accounts can apply for membership.");
+        }
 
         boolean exists = membershipRepository.existsByUserUuidAndStatusIn(
                 user.getUuid(),
@@ -146,6 +151,10 @@ public class MembershipServiceImpl implements MembershipService {
         }
 
         User user = findUserByIdentifier(email);
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Account is " + user.getStatus() + ". Only ACTIVE accounts can sign agreements.");
+        }
 
         Membership membership = membershipRepository.findByUuid(membershipUuid)
                 .orElseThrow(
@@ -195,17 +204,14 @@ public class MembershipServiceImpl implements MembershipService {
             s3Service.uploadFileBytes(membershipBucketName, membershipBucketRegion, pdfKey, pdfBytes,
                     "application/pdf");
 
-            membership.setStatus(MembershipStatus.ACTIVE);
+            membership.setStatus(MembershipStatus.PENDING);
             membership.setSigned(true);
             membership.setSignedAt(LocalDateTime.now());
-            membership.setActivatedAt(LocalDateTime.now());
-            membership.setExpiryDate(LocalDate.now().plusYears(1));
             membership.setSignedPdfKey(pdfKey);
 
             Membership updated = membershipRepository.save(membership);
-            log.info("Membership activated successfully for user: {} with ID: {}", email, updated.getMembershipId());
-
-            evictActiveMembershipCache(user.getUuid());
+            log.info("Membership agreement signed for user: {} with ID: {}. Pending payment verification.",
+                    email, updated.getMembershipId());
 
             return MembershipMapper.INSTANCE.mapToResponse(updated);
 
@@ -227,6 +233,9 @@ public class MembershipServiceImpl implements MembershipService {
     @Override
     public MembershipResponseDto getMyMembership(String email) {
         User user = findUserByIdentifier(email);
+        if (user.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Account is permanently deactivated");
+        }
 
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
@@ -248,6 +257,9 @@ public class MembershipServiceImpl implements MembershipService {
     @Transactional
     public MembershipResponseDto cancelMembership(String email) {
         User user = findUserByIdentifier(email);
+        if (user.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Account is permanently deactivated");
+        }
 
         Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
                 user.getUuid(),
@@ -387,5 +399,40 @@ public class MembershipServiceImpl implements MembershipService {
             builder.run();
             return os.toByteArray();
         }
+    }
+
+    /**
+     * Activates a pending, signed membership for one year following successful payment verification.
+     *
+     * @param userUuid The user's unique UUID
+     * @return The updated active {@link MembershipResponseDto}
+     */
+    @Override
+    @Transactional
+    public MembershipResponseDto activateMembership(String userUuid) {
+        Membership membership = membershipRepository.findTopByUserUuidAndStatusInOrderByCreatedAtDesc(
+                userUuid,
+                Arrays.asList(MembershipStatus.PENDING, MembershipStatus.ACTIVE))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "No membership application found for user: " + userUuid));
+
+        if (!membership.isSigned()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Membership agreement must be digitally signed before activation");
+        }
+
+        if (membership.getStatus() == MembershipStatus.ACTIVE) {
+            log.info("Membership already active for userUuid: {}", userUuid);
+            return MembershipMapper.INSTANCE.mapToResponse(membership);
+        }
+
+        membership.setStatus(MembershipStatus.ACTIVE);
+        membership.setActivatedAt(LocalDateTime.now());
+        membership.setExpiryDate(LocalDate.now().plusYears(1));
+        Membership saved = membershipRepository.save(membership);
+
+        evictActiveMembershipCache(userUuid);
+        log.info("Membership activated successfully for userUuid: {} with ID: {}", userUuid, saved.getMembershipId());
+        return MembershipMapper.INSTANCE.mapToResponse(saved);
     }
 }

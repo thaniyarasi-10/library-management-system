@@ -2,7 +2,6 @@ package com.kovanlabs.librarymanagement.database.repository;
 
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
-import com.kovanlabs.librarymanagement.database.enums.ReactivationRequestStatus;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -20,10 +19,7 @@ public interface UserRepository extends JpaRepository<User, String> {
     Optional<User> findByEmail(String email);
     Optional<User> findByUuid(String uuid);
     Optional<User> findById(Long id);
-    boolean existsByEmail(String email);
     List<User> findBySalesforceSyncStatus(SalesforceSyncStatus salesforceSyncStatus);
-    List<User> findByStatus(AccountStatus status);
-    Page<User> findByStatus(AccountStatus status, Pageable pageable);
     List<User> findByReactivationRequestStatusIsNotNull();
 
     @Query("SELECT u FROM User u WHERE " +
@@ -65,5 +61,17 @@ public interface UserRepository extends JpaRepository<User, String> {
     List<User> findActiveUsersWithPendingWarningToReset(
             @Param("status") AccountStatus status,
             @Param("warningCutoff") LocalDateTime warningCutoff
+    );
+
+    @Query("""
+        SELECT u FROM User u
+        WHERE u.status = :status
+          AND (u.reactivationRequestStatus IS NULL OR u.reactivationRequestStatus != ReactivationRequestStatus.PENDING)
+          AND ((u.deactivatedAt IS NOT NULL AND u.deactivatedAt <= :cutoff)
+               OR (u.deactivatedAt IS NULL AND u.updatedAt IS NOT NULL AND u.updatedAt <= :cutoff))
+    """)
+    List<User> findUsersEligibleForPermanentDeactivation(
+            @Param("status") AccountStatus status,
+            @Param("cutoff") LocalDateTime cutoff
     );
 }

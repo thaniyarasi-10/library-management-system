@@ -449,4 +449,16 @@ class UserControllerTest {
 
         verify(userService, times(1)).getCurrentUser(mockPrincipal);
     }
+
+    @Test
+    @DisplayName("POST /user/process-expired-deactivations should return processed count")
+    void processExpiredDeactivations_ShouldReturnCount() throws Exception {
+        when(userService.processExpiredDeactivations()).thenReturn(5);
+
+        mockMvc.perform(post("/user/process-expired-deactivations"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("5"));
+
+        verify(userService, times(1)).processExpiredDeactivations();
+    }
 }

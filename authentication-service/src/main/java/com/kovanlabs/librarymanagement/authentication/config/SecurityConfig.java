@@ -125,6 +125,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/user/me/request-reactivation", "/user/me/request-reactivation")
                         .authenticated()
 
+                        // Payment History (Authenticated User/Admin)
+                        .requestMatchers(HttpMethod.GET, "/api/user/me/payment-history", "/user/me/payment-history",
+                                "/api/user/me/payment-history/**", "/user/me/payment-history/**")
+                        .authenticated()
+
+                        // User Payment Profile / Bank Account Details (Authenticated User/Admin)
+                        .requestMatchers("/api/user/payment-profile", "/user/payment-profile",
+                                "/api/user/payment-profile/**", "/user/payment-profile/**")
+                        .authenticated()
+
                         // User Registration (Public)
                         .requestMatchers(HttpMethod.POST, "/api/user", "/user")
                         .permitAll()
@@ -172,6 +182,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/donations/*/approve", "/api/donations/*/reject",
                                 "/donations/*/approve", "/donations/*/reject").hasAnyAuthority("donations:write", "ROLE_ADMIN")
+
+                        // Payment & Razorpay Webhook Endpoints
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/webhook/razorpay", "/webhook/razorpay",
+                                "/api/payments/webhook", "/payments/webhook")
+                        .permitAll()
+                        .requestMatchers("/api/payments", "/api/payments/**", "/payments", "/payments/**").authenticated()
+
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2

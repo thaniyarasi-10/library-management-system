@@ -71,6 +71,16 @@ class SecurityConfigTest {
             return ResponseEntity.ok("callback");
         }
 
+        @GetMapping({"/api/user/payment-profile", "/user/payment-profile"})
+        public ResponseEntity<String> getPaymentProfile() {
+            return ResponseEntity.ok("payment-profile");
+        }
+
+        @GetMapping({"/api/user/me/payment-history", "/user/me/payment-history"})
+        public ResponseEntity<String> getPaymentHistory() {
+            return ResponseEntity.ok("payment-history");
+        }
+
         @GetMapping({"/api/user", "/user"})
         public ResponseEntity<String> getUsers() {
             return ResponseEntity.ok("users");
@@ -180,7 +190,7 @@ class SecurityConfigTest {
     @Test
     void protectedEndpoint_whenValidTokenWithRoleAdmin_shouldBeAllowed() throws Exception {
         Jwt jwt = createJwtWithClaims(Map.of(
-                "https://library.kovanlabs.com/roles", List.of("admin")
+                "https://library-management.com/roles", List.of("admin")
         ));
         when(mockJwtDecoder.decode("admin-token")).thenReturn(jwt);
 
@@ -193,7 +203,7 @@ class SecurityConfigTest {
     void protectedEndpoint_whenValidTokenLacksRequiredPermission_shouldReturn403() throws Exception {
         Jwt jwt = createJwtWithClaims(Map.of(
                 "permissions", List.of("books:read"),
-                "https://library.kovanlabs.com/roles", List.of("user")
+                "https://library-management.com/roles", List.of("user")
         ));
         when(mockJwtDecoder.decode("user-token")).thenReturn(jwt);
 
@@ -222,6 +232,30 @@ class SecurityConfigTest {
         when(mockJwtDecoder.decode("me-token")).thenReturn(jwt);
 
         mockMvc.perform(get("/api/auth/me")
+                        .header("Authorization", "Bearer me-token"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void userPaymentProfileEndpoint_whenValidToken_shouldBeAllowed() throws Exception {
+        Jwt jwt = createJwtWithClaims(Map.of(
+                "sub", "auth0|12345"
+        ));
+        when(mockJwtDecoder.decode("me-token")).thenReturn(jwt);
+
+        mockMvc.perform(get("/api/user/payment-profile")
+                        .header("Authorization", "Bearer me-token"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void userPaymentHistoryEndpoint_whenValidToken_shouldBeAllowed() throws Exception {
+        Jwt jwt = createJwtWithClaims(Map.of(
+                "sub", "auth0|12345"
+        ));
+        when(mockJwtDecoder.decode("me-token")).thenReturn(jwt);
+
+        mockMvc.perform(get("/api/user/me/payment-history")
                         .header("Authorization", "Bearer me-token"))
                 .andExpect(status().isOk());
     }

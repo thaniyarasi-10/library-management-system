@@ -15,5 +15,7 @@
     <include file="/db/changelog/reward-changelog.xml"/>
     <include file="/db/changelog/user-provider-changelog.xml"/>
     <include file="db/changelog/donation-changelog.xml"/>
+    <include file="db/changelog/payment-changelog.xml"/>
+    <include file="db/changelog/payment-profile-changelog.xml"/>
 
 </databaseChangeLog>

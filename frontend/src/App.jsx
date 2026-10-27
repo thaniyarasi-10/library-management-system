@@ -4,7 +4,7 @@ import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
-  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell
+  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock, Clock, Landmark, ShieldCheck, Download
 } from 'lucide-react';
 import './styles.css';
 
@@ -79,7 +79,7 @@ const parsePhoneNumber = (fullPhone) => {
 
 export default function App() {
   // Theme state
-  const [theme, setTheme] = useState(localStorage.getItem('athenaeum_theme') || 'dark');
+  const [theme, setTheme] = useState(localStorage.getItem('padips_theme') || 'dark');
 
   // Auth0 state
   const {
@@ -93,6 +93,7 @@ export default function App() {
   } = useAuth0();
 
   const [currentUser, setCurrentUser] = useState(null);
+  const [isUserSyncing, setIsUserSyncing] = useState(false);
   const [userRole, setUserRole] = useState('');
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [authMode, setAuthMode] = useState('signin');
@@ -102,7 +103,6 @@ export default function App() {
 
   // Navigation
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [globalSearch, setGlobalSearch] = useState('');
 
   // Data states
   const [dashboardStats, setDashboardStats] = useState({ books: 0, members: 0 });
@@ -126,6 +126,7 @@ export default function App() {
   const [reactivationRequests, setReactivationRequests] = useState([]);
   const [reactivationTab, setReactivationTab] = useState('PENDING');
   const [requestingReactivation, setRequestingReactivation] = useState(false);
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
 
   // Borrows
   const [adminBorrows, setAdminBorrows] = useState([]);
@@ -137,6 +138,47 @@ export default function App() {
   const [allMembersForFines, setAllMembersForFines] = useState([]);
   const [selectedFineMemberId, setSelectedFineMemberId] = useState('');
   const [fineTotalBalance, setFineTotalBalance] = useState(0);
+
+  // Payments & Refunds
+  const [paymentResult, setPaymentResult] = useState(null); // { type: 'success' | 'error' | 'warning' | 'info', title: string, message: string }
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
+  // Bank Account Details State
+  const [paymentProfile, setPaymentProfile] = useState(null);
+  const [isLoadingPaymentProfile, setIsLoadingPaymentProfile] = useState(false);
+  const [isSavingPaymentProfile, setIsSavingPaymentProfile] = useState(false);
+  const [isEditingPaymentProfile, setIsEditingPaymentProfile] = useState(false);
+  const [paymentProfileForm, setPaymentProfileForm] = useState({
+    accountHolderName: '',
+    bankName: '',
+    accountNumber: '',
+    ifscCode: '',
+    formError: ''
+  });
+
+  // Payment History State
+  const [paymentHistory, setPaymentHistory] = useState({
+    totalPaid: 0,
+    totalRefunded: 0,
+    netPaid: 0,
+    successfulTransactionCount: 0,
+    content: [],
+    currentPage: 0,
+    pageSize: 10,
+    totalElements: 0,
+    totalPages: 1,
+    isFirst: true,
+    isLast: true,
+    hasNext: false,
+    hasPrevious: false
+  });
+  const [isLoadingPaymentHistory, setIsLoadingPaymentHistory] = useState(false);
+  const [paymentHistoryPage, setPaymentHistoryPage] = useState(0);
+  const [paymentHistoryType, setPaymentHistoryType] = useState('');
+  const [paymentHistoryStatus, setPaymentHistoryStatus] = useState('');
+  const [paymentHistorySearch, setPaymentHistorySearch] = useState('');
+  const [expandedPaymentUuid, setExpandedPaymentUuid] = useState(null);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState(null);
 
   // Membership
   const [membership, setMembership] = useState(null);
@@ -154,7 +196,6 @@ export default function App() {
 
   // Modals & Drawers
   const [activeModal, setActiveModal] = useState(null); // 'createBook', 'editBook', 'createDonation', 'editDonation', 'createUser', 'editUser', 'adminBorrow', 'userBorrow', 'confirm'
-  const [drawerData, setDrawerData] = useState(null); // { type: 'book'|'member', data: obj }
   const [confirmConfig, setConfirmConfig] = useState({ title: '', message: '', actionBtnText: 'Confirm', onConfirm: null });
 
   // Form models
@@ -162,9 +203,6 @@ export default function App() {
   const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [profileForm, setProfileForm] = useState({ name: '', email: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [promptPhoneForm, setPromptPhoneForm] = useState({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
-  const [selectedBookForCover, setSelectedBookForCover] = useState({ id: '', title: '' });
-  const [coverFile, setCoverFile] = useState(null);
-  const [coverPreview, setCoverPreview] = useState('');
   const [adminBorrowSelect, setAdminBorrowSelect] = useState({ memberId: '', bookId: '' });
   const [userBorrowBookId, setUserBorrowBookId] = useState('');
 
@@ -179,6 +217,28 @@ export default function App() {
   const rejectedRequestsCount = reactivationRequests.filter(r => r.reactivationRequestStatus === 'REJECTED').length;
 
   const baseUrl = '/api';
+
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (window.Razorpay) {
+        resolve(true);
+        return;
+      }
+      const existing = document.getElementById('razorpay-checkout-js');
+      if (existing) {
+        existing.onload = () => resolve(true);
+        existing.onerror = () => resolve(false);
+        return;
+      }
+      const script = document.createElement('script');
+      script.id = 'razorpay-checkout-js';
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
 
   const showToast = (message, type = 'info') => {
     const id = Date.now();
@@ -243,7 +303,7 @@ export default function App() {
   // Theme Sync
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('athenaeum_theme', theme);
+    localStorage.setItem('padips_theme', theme);
   }, [theme]);
 
   // Reusable profile refresh to keep reward points and user metadata up-to-date
@@ -251,6 +311,9 @@ export default function App() {
     if (!isAuthenticated) return;
     try {
       let reqHeaders = {};
+      if (auth0User && auth0User.email) {
+        reqHeaders['X-User-Email'] = auth0User.email.trim();
+      }
       const pendingUsername = sessionStorage.getItem('auth0_pending_username');
       if (pendingUsername && pendingUsername.trim()) {
         reqHeaders['X-User-Username'] = pendingUsername.trim();
@@ -264,17 +327,62 @@ export default function App() {
     } catch (err) {
       console.warn('Error refreshing user profile:', err);
     }
+  }, [isAuthenticated, auth0User, fetchApi]);
+
+  const loadPaymentProfile = useCallback(async () => {
+    if (!isAuthenticated) return null;
+    setIsLoadingPaymentProfile(true);
+    try {
+      const res = await fetchApi('/user/payment-profile');
+      if (res.ok && res.data) {
+        setPaymentProfile(res.data);
+        return res.data;
+      } else {
+        setPaymentProfile(null);
+        return null;
+      }
+    } catch (err) {
+      console.warn('Error loading payment profile:', err);
+      setPaymentProfile(null);
+      return null;
+    } finally {
+      setIsLoadingPaymentProfile(false);
+    }
+  }, [isAuthenticated, fetchApi]);
+
+  const loadPaymentHistory = useCallback(async (page = 0, type = '', status = '', search = '') => {
+    if (!isAuthenticated) return;
+    setIsLoadingPaymentHistory(true);
+    try {
+      const params = new URLSearchParams();
+      params.append('page', page);
+      params.append('size', '10');
+      if (type) params.append('paymentType', type);
+      if (status) params.append('status', status);
+      if (search && search.trim()) params.append('search', search.trim());
+
+      const res = await fetchApi(`/user/me/payment-history?${params.toString()}`);
+      if (res.ok && res.data) {
+        setPaymentHistory(res.data);
+      }
+    } catch (err) {
+      console.warn('Error loading payment history:', err);
+    } finally {
+      setIsLoadingPaymentHistory(false);
+    }
   }, [isAuthenticated, fetchApi]);
 
   // Auth Initialization and User Sync
   useEffect(() => {
     if (!isAuthenticated) {
       userFetchedRef.current = false;
+      setIsUserSyncing(false);
       return;
     }
 
     if (userFetchedRef.current) return;
     userFetchedRef.current = true;
+    setIsUserSyncing(true);
 
     // Helper to test if a value indicates ADMIN
     const checkIsAdmin = (claim) => {
@@ -298,8 +406,8 @@ export default function App() {
     const findRoleFromUser = (userObj) => {
       if (!userObj) return false;
       const candidates = [
-        userObj['https://library.kovanlabs.com/roles'],
-        userObj['https://library.kovanlabs.com/role'],
+        userObj['https://library-management.com/roles'],
+        userObj['https://library-management.com/role'],
         userObj['roles'],
         userObj['role'],
         userObj['permissions'],
@@ -316,46 +424,56 @@ export default function App() {
 
     // Also inspect Access Token JWT & sync user profile with backend MySQL via GET /user/me
     const syncUser = async () => {
-      // Check Access Token JWT for roles if ID token didn't have it
-      if (!isAdmin && getAccessTokenSilently) {
-        try {
-          const token = await getAccessTokenSilently();
-          if (token && token.includes('.')) {
-            const decoded = jwtDecode(token);
-            if (findRoleFromUser(decoded)) {
-              isAdmin = true;
-              setUserRole('ADMIN');
+      try {
+        // Check Access Token JWT for roles if ID token didn't have it
+        if (!isAdmin && getAccessTokenSilently) {
+          try {
+            const token = await getAccessTokenSilently();
+            if (token && token.includes('.')) {
+              const decoded = jwtDecode(token);
+              if (findRoleFromUser(decoded)) {
+                isAdmin = true;
+                setUserRole('ADMIN');
+              }
             }
+          } catch (tokErr) {
+            console.warn('Access token decoding error:', tokErr);
           }
-        } catch (tokErr) {
-          console.warn('Access token decoding error:', tokErr);
         }
-      }
 
-      let reqHeaders = {};
-      const pendingUsername = sessionStorage.getItem('auth0_pending_username');
-      if (pendingUsername && pendingUsername.trim()) {
-        reqHeaders['X-User-Username'] = pendingUsername.trim();
-        reqHeaders['X-User-Name'] = pendingUsername.trim();
-      }
-
-      let res = await fetchApi('/user/callback', { method: 'POST', headers: reqHeaders });
-      if (!res.ok) {
-        res = await fetchApi('/user/me', { headers: reqHeaders });
-      }
-      if (res.ok && res.data) {
-        setCurrentUser(res.data);
-        sessionStorage.removeItem('auth0_pending_username');
-        if (!res.data.phone && !sessionStorage.getItem('phone_prompt_dismissed')) {
-          setPromptPhoneForm({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
-          setActiveModal('missingPhonePrompt');
+        let reqHeaders = {};
+        const auth0Email = auth0User?.email || auth0User?.['https://library-management.com/email'];
+        if (auth0Email) {
+          reqHeaders['X-User-Email'] = auth0Email.trim();
         }
-      } else if (auth0User) {
-        setCurrentUser({
-          email: auth0User.email || '',
-          name: auth0User.name || auth0User.nickname || pendingUsername || 'User'
-        });
-        sessionStorage.removeItem('auth0_pending_username');
+        const pendingUsername = sessionStorage.getItem('auth0_pending_username');
+        if (pendingUsername && pendingUsername.trim()) {
+          reqHeaders['X-User-Username'] = pendingUsername.trim();
+          reqHeaders['X-User-Name'] = pendingUsername.trim();
+        }
+
+        let res = await fetchApi('/user/callback', { method: 'POST', headers: reqHeaders });
+        if (!res.ok) {
+          res = await fetchApi('/user/me', { headers: reqHeaders });
+        }
+        if (res.ok && res.data) {
+          setCurrentUser(res.data);
+          sessionStorage.removeItem('auth0_pending_username');
+          loadPaymentProfile();
+          if (!res.data.phone && !sessionStorage.getItem('phone_prompt_dismissed')) {
+            setPromptPhoneForm({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
+            setActiveModal('missingPhonePrompt');
+          }
+        } else {
+          showToast(res.data?.message || 'Failed to synchronize account profile with backend server.', 'error');
+          setCurrentUser(null);
+        }
+      } catch (syncErr) {
+        console.error('Error during user synchronization:', syncErr);
+        showToast('Error synchronizing account profile.', 'error');
+        setCurrentUser(null);
+      } finally {
+        setIsUserSyncing(false);
       }
     };
 
@@ -364,7 +482,7 @@ export default function App() {
 
   // Load Page Data on Change - Only fetch what is required for current page
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !currentUser || currentUser.status === 'DEACTIVATED' || currentUser.status === 'PERMANENTLY_DEACTIVATED') return;
     if (currentPage === 'dashboard') {
       loadDashboard();
     } else if (currentPage === 'books') {
@@ -377,13 +495,24 @@ export default function App() {
       loadFines();
     } else if (currentPage === 'membership') {
       loadMembership(true);
+      loadPaymentProfile();
+    } else if (currentPage === 'payments') {
+      loadPaymentHistory(paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch);
     } else if (currentPage === 'donations') {
       loadDonations();
     }
-  }, [currentPage, isAuthenticated, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir]);
+  }, [currentPage, isAuthenticated, currentUser, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir, paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch]);
+
+  // Load fines for deactivated user so pending fines can be reviewed and paid
+  useEffect(() => {
+    if (isAuthenticated && currentUser && (currentUser.status === 'DEACTIVATED' || currentUser.status === 'PERMANENTLY_DEACTIVATED')) {
+      loadFines();
+    }
+  }, [isAuthenticated, currentUser?.status, currentUser?.hasPendingFines]);
 
   const handleSignOut = () => {
     userFetchedRef.current = false;
+    setIsUserSyncing(false);
     setCurrentUser(null);
     setUserRole('');
     setCurrentPage('dashboard');
@@ -431,7 +560,7 @@ export default function App() {
     const res = await fetchApi('/fines/me');
     if (res.ok && res.data) {
       const fList = Array.isArray(res.data) ? res.data : [];
-      const total = fList.reduce((acc, f) => acc + (f.status === 'UNPAID' ? (f.amount || 0) : 0), 0);
+      const total = fList.reduce((acc, f) => acc + ((f.status !== 'PAID') ? (f.pendingFineAmount || f.amount || 0) : 0), 0);
       setFineTotalBalance(total);
     }
   };
@@ -812,45 +941,44 @@ export default function App() {
     if (res.ok) {
       showToast(`Member "${name}" reactivated successfully`, 'success');
       await loadMembers(membersPage, memberSearchQuery);
+      const reqRes = await fetchApi('/user/reactivation-requests');
+      if (reqRes.ok && Array.isArray(reqRes.data)) {
+        setReactivationRequests(reqRes.data);
+      }
     } else {
       showToast(res.data?.message || 'Failed to reactivate member', 'error');
       await loadMembers(membersPage, memberSearchQuery);
+      const reqRes = await fetchApi('/user/reactivation-requests');
+      if (reqRes.ok && Array.isArray(reqRes.data)) {
+        setReactivationRequests(reqRes.data);
+      }
     }
   };
 
   const handleRejectReactivation = async (userId, name) => {
-    setReactivationRequests(prev => prev.map(r => {
-      if (r.id === userId || r.uuid === userId) {
-        return { ...r, status: 'DEACTIVATED', reactivationRequestStatus: 'REJECTED', reactivationRequested: false };
-      }
-      return r;
-    }));
     const res = await fetchApi(`/user/${userId}/reject-reactivation`, { method: 'POST' });
     if (res.ok) {
+      const updatedStatus = res.data?.status || 'DEACTIVATED';
+      setReactivationRequests(prev => prev.map(r => {
+        if (r.id === userId || r.uuid === userId) {
+          return { ...r, status: updatedStatus, reactivationRequestStatus: 'REJECTED', reactivationRequested: false };
+        }
+        return r;
+      }));
       showToast(`Reactivation request for "${name}" rejected`, 'info');
       await loadMembers(membersPage, memberSearchQuery);
+      const reqRes = await fetchApi('/user/reactivation-requests');
+      if (reqRes.ok && Array.isArray(reqRes.data)) {
+        setReactivationRequests(reqRes.data);
+      }
     } else {
       showToast(res.data?.message || 'Failed to reject reactivation request', 'error');
       await loadMembers(membersPage, memberSearchQuery);
-    }
-  };
-
-  const handleDeactivateMember = async (userId, name) => {
-    setConfirmConfig({
-      title: 'Deactivate Member',
-      message: `Are you sure you want to deactivate member "${name}"?`,
-      actionBtnText: 'Deactivate Account',
-      onConfirm: async () => {
-        const res = await fetchApi(`/user/${userId}/deactivate`, { method: 'POST' });
-        if (res.ok) {
-          showToast(`Member "${name}" deactivated successfully`, 'success');
-          loadMembers(membersPage, memberSearchQuery);
-        } else {
-          showToast(res.data?.message || 'Failed to deactivate member', 'error');
-        }
+      const reqRes = await fetchApi('/user/reactivation-requests');
+      if (reqRes.ok && Array.isArray(reqRes.data)) {
+        setReactivationRequests(reqRes.data);
       }
-    });
-    setActiveModal('confirm');
+    }
   };
 
   // Borrows Loader - Only loads active circulation records for the current view
@@ -1040,7 +1168,7 @@ export default function App() {
       if (res.ok && res.data) {
         const fList = Array.isArray(res.data) ? res.data : [];
         setFines(fList);
-        const total = fList.reduce((acc, f) => acc + (f.status === 'UNPAID' ? (f.amount || 0) : 0), 0);
+        const total = fList.reduce((acc, f) => acc + ((f.status !== 'PAID') ? (f.pendingFineAmount || f.amount || 0) : 0), 0);
         setFineTotalBalance(total);
       }
     } else {
@@ -1048,7 +1176,7 @@ export default function App() {
       if (res.ok && res.data) {
         const fList = Array.isArray(res.data) ? res.data : [];
         setFines(fList);
-        const total = fList.reduce((acc, f) => acc + (f.status === 'UNPAID' ? (f.amount || 0) : 0), 0);
+        const total = fList.reduce((acc, f) => acc + ((f.status !== 'PAID') ? (f.pendingFineAmount || f.amount || 0) : 0), 0);
         setFineTotalBalance(total);
       }
     }
@@ -1056,12 +1184,122 @@ export default function App() {
 
   const handlePayFine = async (fineId) => {
     if (!fineId) return;
-    const res = await fetchApi(`/fines/${fineId}/pay`, { method: 'POST' });
-    if (res.ok) {
-      showToast('Fine payment processed successfully', 'success');
-      loadFines();
-    } else {
-      showToast(res.data?.message || 'Failed to settle fine', 'error');
+    setIsProcessingPayment(true);
+    try {
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) {
+        showToast('Could not load Razorpay payment gateway. Please check your network connection.', 'error');
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      const res = await fetchApi(`/payments/fine/${fineId}/order`, { method: 'POST' });
+      if (!res.ok || !res.data) {
+        showToast(res.data?.message || 'Failed to initialize fine payment order', 'error');
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      const orderData = res.data;
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: 'INR',
+        name: 'Padips',
+        description: orderData.description || `Overdue Book Fine Payment #${fineId}`,
+        order_id: orderData.orderId,
+        prefill: {
+          name: paymentProfile?.accountHolderName || currentUser?.name || '',
+          email: currentUser?.email || '',
+          contact: currentUser?.phone || ''
+        },
+        theme: {
+          color: '#6366f1'
+        },
+        handler: async function (response) {
+          try {
+            const verifyRes = await fetchApi('/payments/verify', {
+              method: 'POST',
+              body: JSON.stringify({
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature
+              })
+            });
+
+            if (verifyRes.ok) {
+              setPaymentResult({
+                type: 'success',
+                title: 'Fine Settled Successfully!',
+                message: `Fine payment of ₹${(orderData.amount / 100).toFixed(2)} confirmed (Payment ID: ${response.razorpay_payment_id}). Outstanding dues updated.`
+              });
+              showToast('Fine payment settled successfully', 'success');
+              await loadFines();
+              await loadUserFinesTotal();
+              const meRes = await fetchApi('/user/me');
+              if (meRes.ok && meRes.data) {
+                setCurrentUser(meRes.data);
+              }
+            } else {
+              setPaymentResult({
+                type: 'error',
+                title: 'Payment Verification Failed',
+                message: verifyRes.data?.message || 'Payment received by gateway but backend verification failed.'
+              });
+              showToast('Payment verification failed', 'error');
+            }
+          } catch (verErr) {
+            console.error('Error verifying fine payment:', verErr);
+          } finally {
+            setIsProcessingPayment(false);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setIsProcessingPayment(false);
+            setPaymentResult({
+              type: 'warning',
+              title: 'Fine Payment Cancelled',
+              message: 'Payment window was closed. Your fine remains unpaid and can be settled anytime.'
+            });
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', async function (response) {
+        setIsProcessingPayment(false);
+        const err = response?.error || {};
+        const meta = err.metadata || {};
+        const failureMsg = err.description || err.reason || 'Your payment was declined. The fine remains unpaid.';
+        setPaymentResult({
+          type: 'error',
+          title: 'Fine Payment Failed',
+          message: failureMsg
+        });
+        showToast(failureMsg, 'error');
+
+        try {
+          await fetchApi('/payments/verify', {
+            method: 'POST',
+            body: JSON.stringify({
+              razorpayOrderId: meta.order_id || orderData.orderId,
+              razorpayPaymentId: meta.payment_id || null,
+              razorpaySignature: null
+            })
+          });
+          loadPaymentHistory(paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch);
+          loadFines();
+          loadUserFinesTotal();
+        } catch (failErr) {
+          console.error('Error reporting fine payment failure:', failErr);
+        }
+      });
+      rzp.open();
+    } catch (err) {
+      console.error('Fine payment error:', err);
+      setIsProcessingPayment(false);
+      showToast('Failed to start fine payment checkout.', 'error');
     }
   };
 
@@ -1074,7 +1312,7 @@ export default function App() {
       if (loadAgreement && memUuid && memUuid !== 'null' && res.data.status === 'PENDING') {
         const resTerms = await fetchApi(`/memberships/${memUuid}/agreement`);
         if (resTerms.ok && resTerms.data) {
-          setAgreementText(typeof resTerms.data === 'string' ? resTerms.data : resTerms.data.terms || resTerms.data.agreementHtml || 'Athenaeum Library Membership Agreement...');
+          setAgreementText(typeof resTerms.data === 'string' ? resTerms.data : resTerms.data.terms || resTerms.data.agreementHtml || 'Padips Library Membership Agreement...');
         }
       }
     } else {
@@ -1110,12 +1348,126 @@ export default function App() {
     });
     if (res.ok && res.data) {
       setMembership(res.data);
-      showToast('Membership signed & activated successfully!', 'success');
+      showToast('Agreement signed successfully! Please complete your ₹500 security deposit payment to activate your membership.', 'info');
       setSigFile(null);
       setSigPreviewUrl('');
       await loadMembership(true);
     } else {
-      showToast(res.data?.message || 'Failed to activate membership', 'error');
+      showToast(res.data?.message || 'Failed to sign agreement', 'error');
+    }
+  };
+
+  const handlePayMembership = async () => {
+    setIsProcessingPayment(true);
+    try {
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) {
+        showToast('Could not load Razorpay payment gateway. Please check your network connection.', 'error');
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      const res = await fetchApi('/payments/membership/order', { method: 'POST' });
+      if (!res.ok || !res.data) {
+        showToast(res.data?.message || 'Failed to initialize membership payment order', 'error');
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      const orderData = res.data;
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: 'INR',
+        name: 'Padips',
+        description: orderData.description || '1-Year Library Membership Security Deposit',
+        order_id: orderData.orderId,
+        prefill: {
+          name: paymentProfile?.accountHolderName || currentUser?.name || '',
+          email: currentUser?.email || '',
+          contact: currentUser?.phone || ''
+        },
+        theme: {
+          color: '#6366f1'
+        },
+        handler: async function (response) {
+          try {
+            const verifyRes = await fetchApi('/payments/verify', {
+              method: 'POST',
+              body: JSON.stringify({
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature
+              })
+            });
+
+            if (verifyRes.ok) {
+              setPaymentResult({
+                type: 'success',
+                title: 'Membership Activated for 1 Year!',
+                message: `Payment of ₹${(orderData.amount / 100).toFixed(2)} confirmed (Payment ID: ${response.razorpay_payment_id}). Your digital library membership is now ACTIVE for 1 year!`
+              });
+              showToast('Membership activated successfully!', 'success');
+              await loadMembership(false);
+            } else {
+              setPaymentResult({
+                type: 'error',
+                title: 'Payment Verification Failed',
+                message: verifyRes.data?.message || 'Payment received by gateway but backend verification failed.'
+              });
+              showToast('Payment verification failed', 'error');
+            }
+          } catch (verErr) {
+            console.error('Error verifying membership payment:', verErr);
+          } finally {
+            setIsProcessingPayment(false);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setIsProcessingPayment(false);
+            setPaymentResult({
+              type: 'warning',
+              title: 'Payment Incomplete',
+              message: 'Checkout closed without payment. Your signed agreement is saved — you can click "Pay ₹500 via Razorpay" below anytime to activate.'
+            });
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', async function (response) {
+        setIsProcessingPayment(false);
+        const err = response?.error || {};
+        const meta = err.metadata || {};
+        const failureMsg = err.description || err.reason || 'Payment was declined by gateway. You can retry paying without re-signing the agreement.';
+        setPaymentResult({
+          type: 'error',
+          title: 'Payment Declined',
+          message: failureMsg
+        });
+        showToast('Payment failed. You can retry anytime.', 'error');
+
+        try {
+          await fetchApi('/payments/verify', {
+            method: 'POST',
+            body: JSON.stringify({
+              razorpayOrderId: meta.order_id || orderData.orderId,
+              razorpayPaymentId: meta.payment_id || null,
+              razorpaySignature: null
+            })
+          });
+          loadPaymentHistory(paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch);
+          loadMembership(false);
+        } catch (failErr) {
+          console.error('Error reporting membership payment failure:', failErr);
+        }
+      });
+      rzp.open();
+    } catch (err) {
+      console.error('Payment checkout error:', err);
+      setIsProcessingPayment(false);
+      showToast('Failed to start payment checkout.', 'error');
     }
   };
 
@@ -1140,16 +1492,58 @@ export default function App() {
     }
   };
 
+  const handleDownloadInvoice = async (item) => {
+    const paymentId = item.uuid || item.id;
+    if (!paymentId) {
+      showToast('Payment identifier not found', 'error');
+      return;
+    }
+    setDownloadingInvoiceId(paymentId);
+    try {
+      const res = await fetchApi(`/payments/${paymentId}/invoice`);
+      if (res.ok && res.data instanceof Blob) {
+        const blobUrl = URL.createObjectURL(res.data);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        const rawName = currentUser?.name || currentUser?.email || 'User';
+        const namePart = rawName.includes('@') ? rawName.split('@')[0] : rawName;
+        const cleanUsername = namePart.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const filename = item.status === 'SUCCESS' ? `Padips-Receipt-${cleanUsername}.pdf` : `Padips-Statement-${cleanUsername}.pdf`;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+        showToast('Payment document downloaded successfully', 'success');
+      } else {
+        showToast(res.data?.message || 'Failed to download payment document', 'error');
+      }
+    } catch (err) {
+      console.error('Failed to download payment document:', err);
+      showToast('Error downloading payment document', 'error');
+    } finally {
+      setDownloadingInvoiceId(null);
+    }
+  };
+
   const handleCancelMembership = () => {
     setConfirmConfig({
-      title: 'Cancel Library Membership',
-      message: 'Are you sure you want to cancel your membership? You will no longer be able to borrow new books.',
-      actionBtnText: 'Cancel Membership',
+      title: 'Cancel Library Membership & Refund Deposit',
+      message: 'Are you sure you want to cancel your membership? Your ₹500 security deposit will be refunded to your original payment method minus any outstanding unpaid fines. Any unreturned books will continue to accrue overdue fines.',
+      actionBtnText: 'Confirm Cancellation & Refund',
       onConfirm: async () => {
-        const res = await fetchApi('/memberships/cancel', { method: 'POST' });
-        if (res.ok) {
-          showToast('Membership cancelled successfully', 'success');
+        const res = await fetchApi('/payments/membership/cancel-with-refund', { method: 'POST' });
+        if (res.ok && res.data) {
+          const ref = res.data;
+          setPaymentResult({
+            type: 'info',
+            title: 'Membership Cancelled',
+            message: `${ref.message} (Security Deposit: ₹${(ref.originalDepositAmount / 100).toFixed(2)}, Unpaid Fines Deducted: ₹${(ref.unpaidFinesDeducted / 100).toFixed(2)}, Net Refund: ₹${(ref.refundAmount / 100).toFixed(2)}${ref.razorpayRefundId ? ` | Refund ID: ${ref.razorpayRefundId}` : ''})`
+          });
+          showToast('Membership cancelled and refund processed', 'success');
           loadMembership(false);
+          loadFines();
+          loadUserFinesTotal();
         } else {
           showToast(res.data?.message || 'Failed to cancel membership', 'error');
         }
@@ -1253,8 +1647,101 @@ export default function App() {
     }
   };
 
-  // Render loading screen while Auth0 verifies session
-  if (isLoading) {
+  // Bank Account Profile Functions & Helpers
+  const formatIfsc = (val) => {
+    return (val || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 11).toUpperCase();
+  };
+
+  const openPaymentProfileModal = (forceEdit = false) => {
+    if (paymentProfile && !forceEdit) {
+      setIsEditingPaymentProfile(false);
+    } else {
+      setIsEditingPaymentProfile(true);
+      setPaymentProfileForm({
+        accountHolderName: paymentProfile?.accountHolderName || currentUser?.name || '',
+        bankName: paymentProfile?.bankName || '',
+        accountNumber: '',
+        ifscCode: paymentProfile?.ifscCode || '',
+        formError: ''
+      });
+    }
+    setActiveModal('paymentProfile');
+  };
+
+  const handleSavePaymentProfile = async (e) => {
+    e.preventDefault();
+    const { accountHolderName, bankName, accountNumber, ifscCode } = paymentProfileForm;
+
+    if (!accountHolderName.trim()) {
+      setPaymentProfileForm(prev => ({ ...prev, formError: 'Account holder name is required' }));
+      return;
+    }
+    if (!bankName.trim()) {
+      setPaymentProfileForm(prev => ({ ...prev, formError: 'Bank name is required' }));
+      return;
+    }
+    if (!accountNumber.trim()) {
+      setPaymentProfileForm(prev => ({ ...prev, formError: 'Account number is required' }));
+      return;
+    }
+    const cleanIfsc = ifscCode.trim().toUpperCase();
+    const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+    if (!ifscRegex.test(cleanIfsc)) {
+      setPaymentProfileForm(prev => ({ ...prev, formError: 'Invalid IFSC code format (e.g. HDFC0001234)' }));
+      return;
+    }
+
+    setIsSavingPaymentProfile(true);
+    setPaymentProfileForm(prev => ({ ...prev, formError: '' }));
+
+    const payload = {
+      accountHolderName: accountHolderName.trim(),
+      bankName: bankName.trim(),
+      accountNumber: accountNumber.trim(),
+      ifscCode: cleanIfsc
+    };
+
+    const res = await fetchApi('/user/payment-profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+
+    setIsSavingPaymentProfile(false);
+
+    if (res.ok && res.data) {
+      setPaymentProfile(res.data);
+      setIsEditingPaymentProfile(false);
+      showToast('Bank account details saved successfully', 'success');
+    } else {
+      const errMsg = res.data?.message || 'Failed to save bank account details';
+      setPaymentProfileForm(prev => ({ ...prev, formError: errMsg }));
+      showToast(errMsg, 'error');
+    }
+  };
+
+  const handleDeletePaymentProfile = () => {
+    setConfirmConfig({
+      title: 'Delete Saved Bank Account',
+      message: 'Are you sure you want to delete your saved bank account details? You will need to re-enter them for refunds or security deposit returns.',
+      actionBtnText: 'Delete Account',
+      onConfirm: async () => {
+        const res = await fetchApi('/user/payment-profile', { method: 'DELETE' });
+        if (res.ok) {
+          setPaymentProfile(null);
+          setIsEditingPaymentProfile(false);
+          setActiveModal(null);
+          showToast('Bank account details removed', 'info');
+        } else {
+          showToast(res.data?.message || 'Failed to delete bank details', 'error');
+        }
+      }
+    });
+    setActiveModal('confirm');
+  };
+
+
+  // Render loading screen while Auth0 verifies session or profile is synchronizing
+  if (isLoading || (isAuthenticated && (isUserSyncing || !currentUser))) {
     return (
       <div className="auth-screen">
         <div className="auth-card" style={{ textAlign: 'center', padding: '48px 32px' }}>
@@ -1265,8 +1752,12 @@ export default function App() {
             <h1 className="brand-title">Padips</h1>
           </div>
           <RefreshCw className="animate-spin mb-4" size={32} style={{ margin: '0 auto', color: '#6366f1' }} />
-          <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Authenticating session...</h3>
-          <p style={{ color: '#888', fontSize: '14px' }}>Connecting to Auth0 Identity Provider</p>
+          <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>
+            {isLoading ? 'Authenticating session...' : 'Loading profile...'}
+          </h3>
+          <p style={{ color: '#888', fontSize: '14px' }}>
+            {isLoading ? 'Connecting to Auth0 Identity Provider' : 'Verifying account status and permissions'}
+          </p>
         </div>
       </div>
     );
@@ -1435,8 +1926,44 @@ export default function App() {
     );
   }
 
-  // Render Deactivated Account Screen if account status is DEACTIVATED
-  if (currentUser && currentUser.status === 'DEACTIVATED') {
+  // Render error screen if authenticated but profile synchronization failed
+  if (isAuthenticated && !currentUser) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card" style={{ textAlign: 'center', padding: '48px 32px' }}>
+          <div className="auth-brand" style={{ justifyContent: 'center', marginBottom: '24px' }}>
+            <div className="brand-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Lock size={28} />
+            </div>
+            <h1 className="brand-title">Padips</h1>
+          </div>
+          <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px', color: '#ef4444' }}>Profile Synchronization Failed</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '24px' }}>
+            Unable to load your account profile from the server. Please sign in again.
+          </p>
+          <button type="button" className="btn btn-primary" onClick={handleSignOut}>
+            Sign Out & Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Render Deactivated or Permanently Deactivated Account Screen
+  if (currentUser && (currentUser.status === 'DEACTIVATED' || currentUser.status === 'PERMANENTLY_DEACTIVATED')) {
+    const isPending = currentUser.reactivationRequestStatus === 'PENDING' || currentUser.reactivationRequested;
+    const isPermanentlyDeactivated = currentUser.status === 'PERMANENTLY_DEACTIVATED' && !isPending;
+
+    const unpaidFines = fines.filter(f => f.status === 'PENDING' || f.status === 'UNPAID' || f.status !== 'PAID');
+    const hasPendingFines = Boolean(
+      currentUser.hasPendingFines ||
+      (currentUser.pendingFineAmount && currentUser.pendingFineAmount > 0) ||
+      unpaidFines.length > 0
+    );
+    const totalPendingFine = (currentUser.pendingFineAmount && currentUser.pendingFineAmount > 0)
+      ? currentUser.pendingFineAmount
+      : unpaidFines.reduce((acc, f) => acc + (f.pendingFineAmount || f.amount || 0), 0) || fineTotalBalance || 0;
+
     const handleReactivateRequest = async () => {
       setRequestingReactivation(true);
       const res = await fetchApi('/user/me/request-reactivation', { method: 'POST' });
@@ -1447,6 +1974,26 @@ export default function App() {
       } else {
         const errMsg = res.data?.message || 'Failed to request reactivation';
         showToast(errMsg, 'error');
+        if (errMsg.toLowerCase().includes('permanently deactivated') || errMsg.toLowerCase().includes('expired')) {
+          setCurrentUser(prev => ({ ...prev, status: 'PERMANENTLY_DEACTIVATED' }));
+        }
+      }
+    };
+
+    const handleRefreshStatus = async () => {
+      setRefreshingStatus(true);
+      const res = await fetchApi('/user/me');
+      await loadFines();
+      setRefreshingStatus(false);
+      if (res.ok && res.data) {
+        setCurrentUser(res.data);
+        if (res.data.status === 'ACTIVE') {
+          showToast('Your account has been reactivated! Welcome back.', 'success');
+        } else {
+          showToast('Account status updated.', 'info');
+        }
+      } else {
+        showToast('Failed to refresh status.', 'error');
       }
     };
 
@@ -1454,90 +2001,246 @@ export default function App() {
       <div className="auth-screen">
         <div className="auth-card" style={{ maxWidth: '540px', textAlign: 'center', padding: '36px' }}>
           <div className="auth-brand" style={{ marginBottom: '24px' }}>
-            <div className="brand-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Shield size={32} />
+            <div className="brand-icon" style={{
+              background: isPermanentlyDeactivated
+                ? 'rgba(239, 68, 68, 0.2)'
+                : isPending
+                  ? 'rgba(245, 158, 11, 0.2)'
+                  : 'rgba(239, 68, 68, 0.15)',
+              color: isPermanentlyDeactivated ? '#ef4444' : isPending ? '#f59e0b' : '#ef4444',
+              margin: '0 auto 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {isPermanentlyDeactivated ? <Lock size={32} /> : isPending ? <Clock size={32} /> : <Shield size={32} />}
             </div>
-            <h1 className="brand-title" style={{ fontSize: '24px', fontWeight: 700 }}>Account Deactivated</h1>
+            <h1 className="brand-title" style={{
+              fontSize: '24px',
+              fontWeight: 700,
+              color: isPermanentlyDeactivated ? '#ef4444' : isPending ? '#f59e0b' : undefined
+            }}>
+              {isPermanentlyDeactivated
+                ? 'Account Permanently Deactivated'
+                : isPending
+                  ? 'Reactivation Request Pending Review'
+                  : 'Account Deactivated'}
+            </h1>
             <p className="brand-subtitle" style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
               Logged in as <strong>{currentUser.name || currentUser.email}</strong>
             </p>
           </div>
 
-          <div style={{ textAlign: 'left', marginBottom: '20px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-              <span style={{ fontSize: '22px', lineHeight: 1 }}>⚠️</span>
-              <div>
-                <strong style={{ display: 'block', fontSize: '15px', marginBottom: '4px', color: '#ef4444' }}>
-                  Your account has been deactivated
-                </strong>
-                <span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-main)', opacity: 0.9 }}>
-                  Your account has been deactivated due to inactivity. You cannot access the dashboard until an administrator approves your reactivation request.
+          {paymentResult && (
+            <div className={`payment-result-banner banner-${paymentResult.type || 'info'}`} style={{ textAlign: 'left', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '20px', lineHeight: 1 }}>
+                  {paymentResult.type === 'success' ? '✅' : paymentResult.type === 'warning' ? '⚠️' : 'ℹ️'}
                 </span>
+                <div>
+                  <strong style={{ fontSize: '14px', display: 'block', marginBottom: '2px' }}>{paymentResult.title}</strong>
+                  <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.4 }}>{paymentResult.message}</p>
+                </div>
               </div>
-            </div>
-          </div>
-
-          {currentUser.hasPendingFines ? (
-            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                <CreditCard size={18} color="#f59e0b" />
-                <strong style={{ fontSize: '14px', color: '#f59e0b' }}>Outstanding Fines Detected</strong>
-              </div>
-              <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '8px' }}>
-                You have unpaid pending fines of <strong style={{ color: '#f59e0b', fontSize: '15px' }}>${Number(currentUser.pendingFineAmount || 0).toFixed(2)}</strong>.
-              </p>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-                You can only submit a reactivation request after all outstanding fines have been cleared. Please contact library support or settle pending dues first.
-              </p>
-            </div>
-          ) : currentUser.reactivationRequestStatus === 'REJECTED' ? (
-            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                <X size={18} color="#ef4444" />
-                <strong style={{ fontSize: '14px', color: '#ef4444' }}>Reactivation Request Rejected</strong>
-              </div>
-              <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '14px' }}>
-                Your previous account reactivation request was rejected by an administrator. If you believe this is in error, you may submit a new reactivation request.
-              </p>
               <button
                 type="button"
-                className="btn btn-primary btn-block"
-                onClick={handleReactivateRequest}
-                disabled={requestingReactivation}
+                className="btn-link"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0 4px' }}
+                onClick={() => setPaymentResult(null)}
+                title="Dismiss"
               >
-                {requestingReactivation ? 'Submitting Request...' : 'Submit New Request'}
-              </button>
-            </div>
-          ) : (currentUser.reactivationRequested || currentUser.reactivationRequestStatus === 'PENDING') ? (
-            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                <Check size={18} color="#3b82f6" />
-                <strong style={{ fontSize: '14px', color: '#3b82f6' }}>Reactivation Request Submitted</strong>
-              </div>
-              <p style={{ fontSize: '13px', color: 'var(--text-main)', margin: 0 }}>
-                Your reactivation request has been submitted and is currently awaiting administrator review. Once approved, you will be able to access your dashboard.
-              </p>
-            </div>
-          ) : (
-            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '16px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-subtle)' }}>
-              <strong style={{ display: 'block', fontSize: '14px', marginBottom: '6px' }}>
-                Request Account Reactivation
-              </strong>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                You have no pending fines. Would you like to request the library administrator to reactivate your account?
-              </p>
-              <button
-                type="button"
-                className="btn btn-primary btn-block"
-                onClick={handleReactivateRequest}
-                disabled={requestingReactivation}
-              >
-                {requestingReactivation ? 'Submitting Request...' : 'Request Reactivation'}
+                <X size={16} />
               </button>
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          {isPermanentlyDeactivated ? (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '18px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.35)' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '24px', lineHeight: 1 }}>🚫</span>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '15px', marginBottom: '6px', color: '#ef4444' }}>
+                    Reactivation Window Expired
+                  </strong>
+                  <span style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-main)', opacity: 0.9 }}>
+                    Your account has been permanently deactivated because the 10-day reactivation window has elapsed without an approved reactivation request. Further reactivation requests cannot be submitted. If you believe this is in error, please contact library administration directly.
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : isPending ? (
+            <div style={{ textAlign: 'left', marginBottom: '24px', padding: '18px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.35)' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <Clock size={22} color="#f59e0b" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div>
+                  <strong style={{ display: 'block', fontSize: '15px', marginBottom: '6px', color: '#f59e0b' }}>
+                    Reactivation Request Under Review
+                  </strong>
+                  <span style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-main)', opacity: 0.9 }}>
+                    Your reactivation request is pending administrator review
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : !hasPendingFines ? (
+            /* Fine settled or no fines: display strictly ONLY the Request Reactivation button */
+            <div style={{ marginTop: '24px', marginBottom: '24px' }}>
+              <button
+                type="button"
+                className="btn btn-primary btn-block"
+                onClick={handleReactivateRequest}
+                disabled={requestingReactivation}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '16px', fontSize: '16px', fontWeight: '700' }}
+              >
+                {requestingReactivation ? (
+                  <>
+                    <RefreshCw size={18} className="spin" />
+                    <span>Submitting Request...</span>
+                  </>
+                ) : (
+                  currentUser.reactivationRequestStatus === 'REJECTED' ? 'Submit New Request' : 'Request Reactivation'
+                )}
+              </button>
+            </div>
+          ) : (
+            <>
+              {paymentResult && (
+                <div className={`payment-result-banner banner-${paymentResult.type || 'info'}`} style={{ textAlign: 'left', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: '20px', lineHeight: 1 }}>
+                      {paymentResult.type === 'success' ? '✅' : paymentResult.type === 'warning' ? '⚠️' : 'ℹ️'}
+                    </span>
+                    <div>
+                      <strong style={{ fontSize: '14px', display: 'block', marginBottom: '2px' }}>{paymentResult.title}</strong>
+                      <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.4 }}>{paymentResult.message}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-link"
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0 4px' }}
+                    onClick={() => setPaymentResult(null)}
+                    title="Dismiss"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+
+              <div style={{ textAlign: 'left', marginBottom: '20px', padding: '16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '22px', lineHeight: 1 }}>⚠️</span>
+                  <div>
+                    <strong style={{ display: 'block', fontSize: '15px', marginBottom: '4px', color: '#ef4444' }}>
+                      Your account has been deactivated
+                    </strong>
+                    <span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-main)', opacity: 0.9 }}>
+                      Your account is deactivated due to inactivity. Please settle your overdue fine to request reactivation.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Outstanding Fines Section */}
+              <div className="deactivated-fine-card">
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
+                  <CreditCard size={20} color="#f59e0b" />
+                  <strong style={{ fontSize: '15px', color: '#f59e0b' }}>Outstanding Fine Detected</strong>
+                </div>
+                <p style={{ fontSize: '13px', color: 'var(--text-main)', marginBottom: '8px' }}>
+                  You have unpaid pending fines of <strong style={{ color: '#f59e0b', fontSize: '16px' }}>₹{Number(totalPendingFine).toFixed(2)}</strong>.
+                </p>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                  Please settle your pending fine to enable account reactivation:
+                </p>
+
+                {unpaidFines.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {unpaidFines.map((f, idx) => {
+                      const fineAmt = f.pendingFineAmount || f.amount || 0;
+                      return (
+                        <div key={f.id ?? `unpaid-fine-${idx}`} className="deactivated-fine-item">
+                          <div className="deactivated-fine-details">
+                            <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>
+                              {f.bookTitle || 'Library Book Overdue Fine'}
+                            </strong>
+                            {f.bookAuthor && (
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>by {f.bookAuthor}</span>
+                            )}
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fine #{f.id}</span>
+                          </div>
+                          <div className="deactivated-fine-actions">
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b', marginRight: '6px' }}>
+                              ₹{Number(fineAmt).toFixed(2)}
+                            </span>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              disabled={isProcessingPayment}
+                              onClick={() => handlePayFine(f.id)}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 14px' }}
+                            >
+                              {isProcessingPayment ? (
+                                <>
+                                  <RefreshCw size={12} className="spin" />
+                                  <span>Processing...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CreditCard size={12} />
+                                  <span>Pay Fine</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: '10px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-block"
+                      disabled={isProcessingPayment}
+                      onClick={() => {
+                        if (unpaidFines[0]?.id) {
+                          handlePayFine(unpaidFines[0].id);
+                        } else {
+                          loadFines();
+                        }
+                      }}
+                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                    >
+                      {isProcessingPayment ? (
+                        <>
+                          <RefreshCw size={14} className="spin" />
+                          <span>Opening Razorpay...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard size={16} />
+                          <span>Pay Fine (₹{Number(totalPendingFine).toFixed(2)}) via Razorpay</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleRefreshStatus}
+              disabled={refreshingStatus}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <RefreshCw size={16} className={refreshingStatus ? 'spin' : ''} />
+              <span>{refreshingStatus ? 'Checking...' : 'Refresh Status'}</span>
+            </button>
             <button
               type="button"
               className="btn btn-secondary"
@@ -1631,6 +2334,13 @@ export default function App() {
           </button>
 
           <button
+            className={`nav-link ${currentPage === 'payments' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('payments')}>
+            <Clock className="nav-icon" size={18} />
+            <span>Payment History</span>
+          </button>
+
+          <button
             className={`nav-link ${currentPage === 'donations' ? 'active' : ''}`}
             onClick={() => setCurrentPage('donations')}
           >
@@ -1651,7 +2361,7 @@ export default function App() {
             <Edit2 size={16} />
           </button>
           <button className="btn-signout-icon" onClick={handleSignOut} title="Sign Out">
-            <LogOut size={18} />
+            <LogOut size={16} />
           </button>
         </div>
       </aside>
@@ -1667,15 +2377,9 @@ export default function App() {
               {currentPage === 'borrow' && (userRole === 'ADMIN' ? 'Circulation Log' : 'My Loans')}
               {currentPage === 'fines' && (userRole === 'ADMIN' ? 'Fine Settlement' : 'Fines & Dues')}
               {currentPage === 'membership' && 'Digital Membership'}
+              {currentPage === 'payments' && 'Payment & Refund History'}
               {currentPage === 'donations' && (userRole === 'ADMIN' ? 'Donation Management' : 'Book Donations')}
             </h1>
-            <p className="header-page-subtitle">
-              {currentPage === 'members' && (membersTab === 'reactivation'
-                ? 'Review, approve, or reject account reactivation requests from deactivated members'
-                : 'Manage library patrons, membership statuses, and sync to CRM')}
-              {currentPage === 'donations' && (userRole === 'ADMIN' ? 'Review, approve, or reject user book donation requests' : 'Donate books to expand the library collection and view your donation history')}
-              {currentPage !== 'members' && currentPage !== 'donations' && 'Overview of library holdings and staff operations'}
-            </p>
           </div>
 
           <div className="header-actions">
@@ -1718,6 +2422,28 @@ export default function App() {
                     <Award size={14} />
                     <span>{userRole === 'ADMIN' ? 'Membership' : 'Digital Membership'}</span>
                   </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setCurrentPage('payments');
+                      setShowUserDropdown(false);
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <Clock size={14} />
+                    <span>Payment History</span>
+                  </button>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      openPaymentProfileModal();
+                      setShowUserDropdown(false);
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <Landmark size={14} />
+                    <span>Bank Account Details</span>
+                  </button>
                   <div className="dropdown-divider"></div>
                   <button className="dropdown-item danger" onClick={handleSignOut}>Sign Out</button>
                 </div>
@@ -1728,6 +2454,25 @@ export default function App() {
 
         {/* MAIN CONTENT AREA */}
         <main className="content-area">
+          {paymentResult && (
+            <div className={`payment-result-banner banner-${paymentResult.type || 'info'}`}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <Shield size={18} />
+                  <strong style={{ fontSize: '15px' }}>{paymentResult.title}</strong>
+                </div>
+                <p style={{ margin: 0, fontSize: '14px', lineHeight: 1.5 }}>{paymentResult.message}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentResult(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '4px', marginLeft: '12px' }}
+                aria-label="Dismiss payment notification"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          )}
           {/* PAGE 1: DASHBOARD */}
           {currentPage === 'dashboard' && (
             <div className="page-pane active">
@@ -1783,7 +2528,7 @@ export default function App() {
                   <div className="user-welcome-banner mb-6" style={{ background: 'linear-gradient(135deg, rgba(224, 122, 73, 0.12) 0%, rgba(224, 122, 73, 0.02) 100%)', border: '10px solid #121214', borderRadius: 'var(--radius-lg)', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                     <div>
                       <span className="badge badge-primary mb-2" style={{ background: 'var(--accent-subtle)', color: 'var(--accent-primary)', fontWeight: 600, fontSize: '11px', padding: '4px 10px', borderRadius: '999px' }}>LIBRARY MEMBER PORTAL</span>
-                      <h2 style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', marginBottom: '4px' }}>Welcome to Athenaeum</h2>
+                      <h2 style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', marginBottom: '4px' }}>Welcome to Padips</h2>
                       <p className="text-muted" style={{ fontSize: '14px' }}>Browse books, borrow titles with your digital membership, and manage loan returns.</p>
                     </div>
                     <div>
@@ -1808,7 +2553,7 @@ export default function App() {
                       </div>
                       <div className="metric-data">
                         <span className="metric-label">My Outstanding Fines</span>
-                        <span className="metric-value text-danger">${fineTotalBalance.toFixed(2)}</span>
+                        <span className="metric-value text-danger">₹{fineTotalBalance.toFixed(2)}</span>
                       </div>
                     </div>
 
@@ -2134,16 +2879,32 @@ export default function App() {
                                 )}
                               </td>
                               <td>
-                                {String(m.status || '').toUpperCase() === 'DEACTIVATED' ? (
+                                {(m.reactivationRequestStatus === 'PENDING' || m.reactivationRequested) ? (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
                                     <span style={{ color: '#ef4444', fontWeight: '600', fontSize: '13px' }}>
                                       Deactivated
                                     </span>
-                                    {(m.reactivationRequestStatus === 'PENDING' || m.reactivationRequested) ? (
-                                      <span style={{ color: '#f59e0b', fontWeight: '500', fontSize: '11px' }}>
-                                        Pending Review
+                                    <span style={{ color: '#f59e0b', fontWeight: '500', fontSize: '11px' }}>
+                                      Pending Review
+                                    </span>
+                                  </div>
+                                ) : String(m.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                                    <span style={{ color: '#ef4444', fontWeight: '700', fontSize: '12px', background: 'rgba(239, 68, 68, 0.12)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                                      Permanently Deactivated
+                                    </span>
+                                    {m.reactivationRequestStatus === 'REJECTED' && (
+                                      <span style={{ color: '#f87171', fontWeight: '500', fontSize: '11px' }}>
+                                        Request Rejected
                                       </span>
-                                    ) : m.reactivationRequestStatus === 'REJECTED' ? (
+                                    )}
+                                  </div>
+                                ) : String(m.status || '').toUpperCase() === 'DEACTIVATED' ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                                    <span style={{ color: '#ef4444', fontWeight: '600', fontSize: '13px' }}>
+                                      Deactivated
+                                    </span>
+                                    {m.reactivationRequestStatus === 'REJECTED' ? (
                                       <span style={{ color: '#f87171', fontWeight: '500', fontSize: '11px' }}>
                                         Request Rejected
                                       </span>
@@ -2418,9 +3179,9 @@ export default function App() {
                             const reqStatus = (req.reactivationRequestStatus || (req.reactivationRequested ? 'PENDING' : 'NONE')).toUpperCase();
                             const matchesTab =
                               reactivationTab === 'ALL' ? true :
-                              reactivationTab === 'PENDING' ? (reqStatus === 'PENDING' || (req.reactivationRequested && reqStatus !== 'APPROVED' && reqStatus !== 'REJECTED')) :
-                              reactivationTab === 'APPROVED' ? reqStatus === 'APPROVED' :
-                              reactivationTab === 'REJECTED' ? reqStatus === 'REJECTED' : true;
+                                reactivationTab === 'PENDING' ? (reqStatus === 'PENDING' || (req.reactivationRequested && reqStatus !== 'APPROVED' && reqStatus !== 'REJECTED')) :
+                                  reactivationTab === 'APPROVED' ? reqStatus === 'APPROVED' :
+                                    reactivationTab === 'REJECTED' ? reqStatus === 'REJECTED' : true;
 
                             if (!matchesTab) return false;
 
@@ -2449,10 +3210,10 @@ export default function App() {
                                     {reactivationTab === 'PENDING'
                                       ? ' No pending request'
                                       : reactivationTab === 'APPROVED'
-                                      ? 'No reactivation requests have been approved yet.'
-                                      : reactivationTab === 'REJECTED'
-                                      ? 'No account reactivation requests are currently marked as rejected.'
-                                      : 'There are currently no account reactivation requests recorded in the system.'}
+                                        ? 'No reactivation requests have been approved yet.'
+                                        : reactivationTab === 'REJECTED'
+                                          ? 'No account reactivation requests are currently marked as rejected.'
+                                          : 'There are currently no account reactivation requests recorded in the system.'}
                                   </p>
                                 </td>
                               </tr>
@@ -2481,8 +3242,14 @@ export default function App() {
                                   )}
                                 </td>
                                 <td>
-                                  <span style={{ color: String(req.status || '').toUpperCase() === 'ACTIVE' ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '13px' }}>
-                                    {String(req.status || '').toUpperCase() === 'ACTIVE' ? 'Active' : 'Deactivated'}
+                                  <span style={{
+                                    color: String(req.status || '').toUpperCase() === 'ACTIVE' ? '#10b981' :
+                                      String(req.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? '#dc2626' : '#ef4444',
+                                    fontWeight: '600',
+                                    fontSize: '13px'
+                                  }}>
+                                    {String(req.status || '').toUpperCase() === 'ACTIVE' ? 'Active' :
+                                      String(req.status || '').toUpperCase() === 'PERMANENTLY_DEACTIVATED' ? 'Permanently Deactivated' : 'Deactivated'}
                                   </span>
                                 </td>
                                 <td>
@@ -2744,7 +3511,7 @@ export default function App() {
                   </div>
                   <div className="summary-item text-right">
                     <span className="summary-label">Total Outstanding Balance:</span>
-                    <span className="summary-amount text-danger">${fineTotalBalance.toFixed(2)}</span>
+                    <span className="summary-amount text-danger">₹{fineTotalBalance.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -2773,7 +3540,7 @@ export default function App() {
                               <td>#{f.id || '—'}</td>
                               {userRole === 'ADMIN' && <td>{fineUser}</td>}
                               <td><strong>{fineTitle}</strong>{fineAuthor ? <><br /><span className="text-muted">{fineAuthor}</span></> : null}</td>
-                              <td><strong>${(f.amount || f.pendingFineAmount || 0).toFixed(2)}</strong></td>
+                              <td><strong>₹{(f.amount || f.pendingFineAmount || 0).toFixed(2)}</strong></td>
                               <td>
                                 <span style={{ color: f.status === 'PAID' ? '#10b981' : '#ef4444', fontWeight: 600 }}>
                                   {f.status}
@@ -2781,7 +3548,13 @@ export default function App() {
                               </td>
                               <td className="text-right">
                                 {f.status === 'UNPAID' || f.status === 'PENDING' ? (
-                                  <button className="btn btn-primary btn-sm" onClick={() => handlePayFine(f.id)}>Settle & Pay</button>
+                                  <button
+                                    className="btn btn-primary btn-sm"
+                                    disabled={isProcessingPayment}
+                                    onClick={() => handlePayFine(f.id)}
+                                  >
+                                    Pay Fine (₹{(f.amount || f.pendingFineAmount || 0).toFixed(2)})
+                                  </button>
                                 ) : null}
                               </td>
                             </tr>
@@ -2825,64 +3598,192 @@ export default function App() {
                   </button>
                 </div>
               ) : membership.status === 'PENDING' ? (
-                <div className="section-card">
-                  <div className="section-header">
-                    <h3>Review & Sign Agreement</h3>
-                    <p className="section-desc">Please review the agreement and upload your signature PNG to activate your membership</p>
-                  </div>
+                membership.isSigned ? (
+                  /* Step 3: Security Deposit Payment via Razorpay Checkout */
+                  <div className="section-card max-w-2xl" style={{ margin: '0 auto' }}>
+                    <div className="payment-steps-row">
+                      <div className="payment-step-badge completed"><span>✓</span> 1. Application</div>
+                      <div className="payment-step-badge completed"><span>✓</span> 2. Agreement Signed</div>
+                      <div className="payment-step-badge active"><span>3</span> Pay Security Deposit</div>
+                    </div>
 
-                  <div className="grid-2col mt-6">
-                    <div
-                      className="panel-agreement p-4 rounded-lg"
-                      style={{ background: '#ffffff', color: '#0f172a', border: '1px solid var(--border-color)', maxHeight: '450px', overflowY: 'auto' }}
-                      dangerouslySetInnerHTML={{ __html: agreementText || '<div style="padding: 20px; color: #475569;">Loading membership agreement template...</div>' }}
-                    />
-
-                    <div className="panel-signature" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                      <div className="form-group">
-                        <label className="form-label">Upload Signature PNG</label>
-                        <p className="section-desc mb-2">File must be a transparent PNG, maximum 50KB</p>
-
-                        <div className="file-upload-box text-center p-6 rounded-lg" style={{ border: '2px dashed var(--border-color)', cursor: 'pointer' }} onClick={() => document.getElementById('sigFileElem').click()}>
-                          <Upload size={36} className="mx-auto text-muted mb-2" style={{ margin: '0 auto 10px auto', display: 'block' }} />
-                          <span className="text-sm font-medium block">{sigFile ? sigFile.name : 'Click to select PNG signature file'}</span>
-                          <input
-                            type="file"
-                            id="sigFileElem"
-                            className="hidden"
-                            accept="image/png"
-                            onChange={(e) => {
-                              if (e.target.files && e.target.files[0]) {
-                                setSigFile(e.target.files[0]);
-                                setSigPreviewUrl(URL.createObjectURL(e.target.files[0]));
-                              }
-                            }}
-                          />
-                        </div>
+                    <div className="section-header text-center">
+                      <div className="brand-badge mb-4" style={{ margin: '0 auto', display: 'inline-flex', width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.15)', alignItems: 'center', justifyContent: 'center', color: '#818cf8' }}>
+                        <CreditCard size={28} />
                       </div>
+                      <h3>Activate 1-Year Library Membership</h3>
+                      <p className="section-desc">Agreement signed successfully! Complete your one-time refundable security deposit to activate your digital membership for 1 year.</p>
+                    </div>
 
-                      {sigPreviewUrl && (
-                        <div className="signature-preview-container mt-4" style={{ textAlign: 'center' }}>
-                          <span className="form-label block text-left">Signature Preview:</span>
-                          <div style={{ background: '#ffffff', padding: '10px', borderRadius: '4px', display: 'inline-block', marginTop: '5px', border: '1px solid var(--border-color)' }}>
-                            <img src={sigPreviewUrl} alt="Preview" style={{ maxHeight: '80px', maxWidth: '240px', display: 'block' }} />
+                    <div className="payment-order-card mt-6">
+                      <div className="payment-order-item">
+                        <span>Membership Period</span>
+                        <strong>1 Year (365 Days)</strong>
+                      </div>
+                      <div className="payment-order-item">
+                        <span>Agreement Status</span>
+                        <span style={{ color: '#22c55e', fontWeight: 600 }}>✓ Signed & Stored</span>
+                      </div>
+                      <div className="payment-order-item">
+                        <span>Refundable Security Deposit</span>
+                        <strong style={{ fontSize: '18px', color: '#6366f1' }}>₹500.00</strong>
+                      </div>
+                      <div className="payment-order-item" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+                        <span className="text-muted text-xs">
+                          * 100% refundable upon membership cancellation (minus any unpaid fines) or permanent deactivation.
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Saved Bank Details Card */}
+                    {paymentProfile ? (
+                      <div className="amazon-payment-box mt-4">
+                        <div className="amazon-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Landmark size={18} color="var(--accent-primary)" />
+                            <span>Linked Refund Bank Account</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-link btn-sm"
+                            style={{ fontSize: '12px', padding: 0, color: 'var(--accent-primary)', textDecoration: 'underline' }}
+                            onClick={() => openPaymentProfileModal(true)}
+                          >
+                            Edit Bank Details
+                          </button>
+                        </div>
+
+                        <div className="saved-profile-card" style={{ marginBottom: 0 }}>
+                          <div className="saved-profile-info">
+                            <div className="saved-profile-icon">
+                              <Landmark size={20} />
+                            </div>
+                            <div className="saved-profile-details">
+                              <strong className="saved-profile-title">
+                                {paymentProfile.bankName}
+                              </strong>
+                              <span className="saved-profile-sub">
+                                {paymentProfile.accountHolderName} • A/C: {paymentProfile.maskedAccountNumber || '••••••••'} • IFSC: {paymentProfile.ifscCode}
+                              </span>
+                              <div className="bank-detail-badge">
+                                <ShieldCheck size={12} />
+                                <span>Security deposit & dues refunds routed directly to this verified bank account</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      )}
+                      </div>
+                    ) : (
+                      <div className="amazon-payment-box mt-4" style={{ textAlign: 'left' }}>
+                        <div className="amazon-section-title">
+                          <Landmark size={18} color="var(--accent-primary)" />
+                          <span>Bank Refund Account</span>
+                        </div>
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                          Add your bank account details for direct security deposit refunds and automated settlements.
+                        </p>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => openPaymentProfileModal(true)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <Plus size={14} />
+                          <span>Add Bank Account Details</span>
+                        </button>
+                      </div>
+                    )}
 
-                      <button className="btn btn-primary btn-block mt-6" disabled={!sigFile} onClick={handleSignatureSubmit}>
-                        Sign & Activate Membership
-                      </button>
+                    <button
+                      className="btn btn-primary btn-block mt-6"
+                      disabled={isProcessingPayment}
+                      onClick={handlePayMembership}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '14px', fontSize: '15px' }}
+                    >
+                      {isProcessingPayment ? (
+                        <>
+                          <RefreshCw className="animate-spin" size={18} />
+                          Opening Razorpay Gateway...
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard size={18} />
+                          Pay ₹500 via Razorpay Checkout
+                        </>
+                      )}
+                    </button>
+
+                    <p className="text-muted text-center text-xs mt-3">
+                      Razorpay Test Mode. Supports UPI, Cards, NetBanking, and Wallets.
+                    </p>
+                  </div>
+                ) : (
+                  /* Step 2: Review & Sign Agreement */
+                  <div className="section-card">
+                    <div className="payment-steps-row">
+                      <div className="payment-step-badge completed"><span>✓</span> 1. Application</div>
+                      <div className="payment-step-badge active"><span>2</span> Sign Agreement</div>
+                      <div className="payment-step-badge"><span>3</span> Pay Security Deposit</div>
+                    </div>
+
+                    <div className="section-header">
+                      <h3>Review & Sign Agreement</h3>
+                      <p className="section-desc">Please review the agreement and upload your signature PNG to proceed to activation</p>
+                    </div>
+
+                    <div className="grid-2col mt-6">
+                      <div
+                        className="panel-agreement p-4 rounded-lg"
+                        style={{ background: '#ffffff', color: '#0f172a', border: '1px solid var(--border-color)', maxHeight: '450px', overflowY: 'auto' }}
+                        dangerouslySetInnerHTML={{ __html: agreementText || '<div style="padding: 20px; color: #475569;">Loading membership agreement template...</div>' }}
+                      />
+
+                      <div className="panel-signature" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                        <div className="form-group">
+                          <label className="form-label">Upload Signature PNG</label>
+                          <p className="section-desc mb-2">File must be a transparent PNG, maximum 50KB</p>
+
+                          <div className="file-upload-box text-center p-6 rounded-lg" style={{ border: '2px dashed var(--border-color)', cursor: 'pointer' }} onClick={() => document.getElementById('sigFileElem').click()}>
+                            <Upload size={36} className="mx-auto text-muted mb-2" style={{ margin: '0 auto 10px auto', display: 'block' }} />
+                            <span className="text-sm font-medium block">{sigFile ? sigFile.name : 'Click to select PNG signature file'}</span>
+                            <input
+                              type="file"
+                              id="sigFileElem"
+                              className="hidden"
+                              accept="image/png"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  setSigFile(e.target.files[0]);
+                                  setSigPreviewUrl(URL.createObjectURL(e.target.files[0]));
+                                }
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {sigPreviewUrl && (
+                          <div className="signature-preview-container mt-4" style={{ textAlign: 'center' }}>
+                            <span className="form-label block text-left">Signature Preview:</span>
+                            <div style={{ background: '#ffffff', padding: '10px', borderRadius: '4px', display: 'inline-block', marginTop: '5px', border: '1px solid var(--border-color)' }}>
+                              <img src={sigPreviewUrl} alt="Preview" style={{ maxHeight: '80px', maxWidth: '240px', display: 'block' }} />
+                            </div>
+                          </div>
+                        )}
+
+                        <button className="btn btn-primary btn-block mt-6" disabled={!sigFile} onClick={handleSignatureSubmit}>
+                          Sign Agreement & Proceed to Payment
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )
               ) : (
                 <div>
                   <div className="grid-2col">
                     <div className="membership-card-badge" style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', border: '1px solid #334155', borderRadius: '16px', padding: '24px', color: '#ffffff', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
                       <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
-                          <h4 style={{ fontSize: '18px', fontWeight: 'bold', letterSpacing: '0.05em', color: '#38bdf8', margin: 0 }}>ATHENAEUM</h4>
+                          <h4 style={{ fontSize: '18px', fontWeight: 'bold', letterSpacing: '0.05em', color: '#38bdf8', margin: 0 }}>PADIPS</h4>
                           <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Library System</span>
                         </div>
                         <span style={{ color: '#4ade80', fontWeight: 700, fontSize: '12px', letterSpacing: '0.05em' }}>ACTIVE</span>
@@ -2930,13 +3831,431 @@ export default function App() {
                         Download Signed PDF (Agreement)
                       </button>
 
+                      <button className="btn btn-secondary btn-block mt-3" onClick={() => setCurrentPage('payments')}>
+                        <Clock size={16} style={{ marginRight: '8px' }} />
+                        View Payment History
+                      </button>
+
                       <button className="btn btn-danger btn-block mt-3" onClick={handleCancelMembership}>
                         Cancel Membership
                       </button>
+
+                      {/* Saved Bank Details Card */}
+                      {paymentProfile ? (
+                        <div className="amazon-payment-box mt-4" style={{ textAlign: 'left' }}>
+                          <div className="amazon-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Landmark size={18} color="var(--accent-primary)" />
+                              <span>Linked Refund Bank Account</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-link btn-sm"
+                              style={{ fontSize: '12px', padding: 0, color: 'var(--accent-primary)', textDecoration: 'underline' }}
+                              onClick={() => openPaymentProfileModal(true)}
+                            >
+                              Edit Details
+                            </button>
+                          </div>
+                          <div className="saved-profile-card" style={{ marginBottom: 0 }}>
+                            <div className="saved-profile-info">
+                              <div className="saved-profile-icon">
+                                <Landmark size={20} />
+                              </div>
+                              <div className="saved-profile-details">
+                                <strong className="saved-profile-title">
+                                  {paymentProfile.bankName}
+                                </strong>
+                                <span className="saved-profile-sub">
+                                  {paymentProfile.accountHolderName} • A/C: {paymentProfile.maskedAccountNumber || '••••••••'} • IFSC: {paymentProfile.ifscCode}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="amazon-payment-box mt-4" style={{ textAlign: 'left' }}>
+                          <div className="amazon-section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Landmark size={18} color="var(--accent-primary)" />
+                            <span>Linked Refund Bank Account</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => openPaymentProfileModal(true)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            <Plus size={14} />
+                            <span>Add Bank Details</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* PAGE: PAYMENT & REFUND HISTORY */}
+          {currentPage === 'payments' && (
+            <div className="page-pane active">
+              {/* Summary Metrics Cards */}
+              <div className="metrics-grid mb-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                <div className="metric-card">
+                  <div className="metric-icon" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e' }}>
+                    <CreditCard size={24} />
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Paid</span>
+                    <h3 style={{ fontSize: '24px', fontWeight: 700, margin: '2px 0 0 0' }}>
+                      ₹{((paymentHistory.totalPaid || 0) / 100).toFixed(2)}
+                    </h3>
+                    <small className="text-muted" style={{ fontSize: '11px' }}>All successful transactions</small>
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-icon" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316' }}>
+                    <RefreshCw size={24} />
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Refunded</span>
+                    <h3 style={{ fontSize: '24px', fontWeight: 700, margin: '2px 0 0 0' }}>
+                      ₹{((paymentHistory.totalRefunded || 0) / 100).toFixed(2)}
+                    </h3>
+                    <small className="text-muted" style={{ fontSize: '11px' }}>Deposits & dues returned</small>
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-icon" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#6366f1' }}>
+                    <Landmark size={24} />
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>Net Paid</span>
+                    <h3 style={{ fontSize: '24px', fontWeight: 700, margin: '2px 0 0 0' }}>
+                      ₹{((paymentHistory.netPaid || 0) / 100).toFixed(2)}
+                    </h3>
+                    <small className="text-muted" style={{ fontSize: '11px' }}>Total Paid minus Refunded</small>
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+                    <Check size={24} />
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>Successful Count</span>
+                    <h3 style={{ fontSize: '24px', fontWeight: 700, margin: '2px 0 0 0' }}>
+                      {paymentHistory.successfulTransactionCount || 0}
+                    </h3>
+                    <small className="text-muted" style={{ fontSize: '11px' }}>Settled payments & refunds</small>
+                  </div>
+                </div>
+              </div>
+
+              {/* Transactions Section Card */}
+              <div className="section-card">
+                <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h3>Transactions & Invoices</h3>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => loadPaymentHistory(paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch)}
+                    disabled={isLoadingPaymentHistory}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <RefreshCw size={14} className={isLoadingPaymentHistory ? 'animate-spin' : ''} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                {/* Filter and Search Row */}
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', margin: '20px 0' }}>
+                  <div style={{ flex: '1 1 240px', position: 'relative' }}>
+                    <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Search by Payment ID, Order ID, or Ref..."
+                      value={paymentHistorySearch}
+                      onChange={e => {
+                        setPaymentHistorySearch(e.target.value);
+                        setPaymentHistoryPage(0);
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          loadPaymentHistory(0, paymentHistoryType, paymentHistoryStatus, e.target.value);
+                        }
+                      }}
+                      style={{ paddingLeft: '36px' }}
+                    />
+                  </div>
+
+                  <div style={{ width: '180px' }}>
+                    <select
+                      className="form-input"
+                      value={paymentHistoryType}
+                      onChange={e => {
+                        setPaymentHistoryType(e.target.value);
+                        setPaymentHistoryPage(0);
+                        loadPaymentHistory(0, e.target.value, paymentHistoryStatus, paymentHistorySearch);
+                      }}
+                    >
+                      <option value="">All Payment Types</option>
+                      <option value="MEMBERSHIP">Membership Fee</option>
+                      <option value="FINE">Overdue Fine</option>
+                    </select>
+                  </div>
+
+                  <div style={{ width: '190px' }}>
+                    <select
+                      className="form-input"
+                      value={paymentHistoryStatus}
+                      onChange={e => {
+                        setPaymentHistoryStatus(e.target.value);
+                        setPaymentHistoryPage(0);
+                        loadPaymentHistory(0, paymentHistoryType, e.target.value, paymentHistorySearch);
+                      }}
+                    >
+                      <option value="">All Statuses</option>
+                      <option value="SUCCESS">Success</option>
+                      <option value="FAILED">Failed</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div className="table-responsive">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Date & Time</th>
+                        <th>Type</th>
+                        <th>Reference / Razorpay ID</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Refund Details</th>
+                        <th>Receipt / Document</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {isLoadingPaymentHistory ? (
+                        <tr>
+                          <td colSpan="7" style={{ textAlign: 'center', padding: '36px' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)' }}>
+                              <RefreshCw size={18} className="animate-spin" />
+                              <span>Loading payment history...</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : !paymentHistory.content || paymentHistory.content.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" style={{ textAlign: 'center', padding: '48px 24px' }}>
+                            <Clock size={36} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
+                            <h4 style={{ margin: '0 0 4px', fontSize: '15px' }}>No Payment Records Found</h4>
+                            <p className="text-muted" style={{ fontSize: '13px', margin: 0 }}>
+                              {paymentHistorySearch || paymentHistoryType || paymentHistoryStatus
+                                ? 'No transactions match the selected filters.'
+                                : 'You have not made any payments or refund transactions yet.'}
+                            </p>
+                          </td>
+                        </tr>
+                      ) : (
+                        paymentHistory.content.map((item) => {
+                          const isExpanded = expandedPaymentUuid === item.uuid;
+                          const hasRefunds = item.refunds && item.refunds.length > 0;
+                          return (
+                            <React.Fragment key={item.uuid || item.id}>
+                              <tr>
+                                <td>
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <strong style={{ fontSize: '13px' }}>
+                                      {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
+                                    </strong>
+                                    <span className="text-muted" style={{ fontSize: '11px' }}>
+                                      {item.createdAt ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                <td>
+                                  {item.transactionType === 'REFUND' ? (
+                                    <span className="badge" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316' }}>
+                                      Refund
+                                    </span>
+                                  ) : item.paymentType === 'MEMBERSHIP' ? (
+                                    <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
+                                      Membership Fee
+                                    </span>
+                                  ) : (
+                                    <span className="badge" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#eab308' }}>
+                                      Overdue Fine
+                                    </span>
+                                  )}
+                                </td>
+
+                                <td>
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span style={{ fontFamily: 'monospace', fontSize: '12px', fontWeight: 600 }}>
+                                      {item.razorpayPaymentId || item.razorpayRefundId || item.razorpayOrderId || item.uuid?.slice(0, 16)}
+                                    </span>
+                                    {item.razorpayOrderId && item.razorpayPaymentId && (
+                                      <small className="text-muted" style={{ fontSize: '11px', fontFamily: 'monospace' }}>
+                                        Order: {item.razorpayOrderId}
+                                      </small>
+                                    )}
+                                  </div>
+                                </td>
+
+                                <td>
+                                  <strong style={{
+                                    fontSize: '14px',
+                                    color: item.transactionType === 'REFUND' ? '#f97316' : '#22c55e'
+                                  }}>
+                                    {item.transactionType === 'REFUND' ? '-' : '+'}₹{((item.amount || 0) / 100).toFixed(2)}
+                                  </strong>
+                                </td>
+
+                                <td>
+                                  {item.status === 'SUCCESS' && (
+                                    <span className="badge badge-success">Success</span>
+                                  )}
+                                  {item.status === 'FAILED' && (
+                                    <span className="badge badge-danger">Failed</span>
+                                  )}
+                                </td>
+
+                                <td>
+                                  {hasRefunds ? (
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-sm"
+                                      onClick={() => setExpandedPaymentUuid(isExpanded ? null : item.uuid)}
+                                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--accent-primary)' }}
+                                    >
+                                      <span>{item.refunds.length} Refund{item.refunds.length > 1 ? 's' : ''}</span>
+                                      <ChevronDown size={14} style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                                    </button>
+                                  ) : (
+                                    <span className="text-muted" style={{ fontSize: '12px' }}>—</span>
+                                  )}
+                                </td>
+
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => handleDownloadInvoice(item)}
+                                    disabled={downloadingInvoiceId === (item.uuid || item.id)}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                                    title={item.status === 'SUCCESS' ? 'Download Paid Receipt' : 'Download Payment Statement'}
+                                  >
+                                    {downloadingInvoiceId === (item.uuid || item.id) ? (
+                                      <>
+                                        <RefreshCw size={13} className="animate-spin" />
+                                        <span>Loading...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Download size={13} />
+                                        <span>{item.status === 'SUCCESS' ? 'Download Receipt' : 'Download Statement'}</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </td>
+                              </tr>
+
+                              {/* Expandable Refund Details Row */}
+                              {isExpanded && hasRefunds && (
+                                <tr style={{ background: 'var(--bg-surface-elevated)' }}>
+                                  <td colSpan="7" style={{ padding: '12px 20px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                      <strong style={{ fontSize: '12px', color: 'var(--accent-primary)' }}>
+                                        Associated Refunds ({item.refunds.length}):
+                                      </strong>
+                                      {item.refunds.map(rf => (
+                                        <div
+                                          key={rf.uuid || rf.id}
+                                          style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            padding: '8px 12px',
+                                            background: 'var(--bg-input)',
+                                            borderRadius: '6px',
+                                            border: '1px solid var(--border-subtle)',
+                                            fontSize: '12px'
+                                          }}
+                                        >
+                                          <div>
+                                            <span style={{ fontWeight: 600 }}>Refund ID: </span>
+                                            <span style={{ fontFamily: 'monospace' }}>{rf.razorpayRefundId || rf.uuid}</span>
+                                            <span className="text-muted" style={{ marginLeft: '12px' }}>
+                                              {rf.createdAt ? new Date(rf.createdAt).toLocaleDateString() : ''}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span style={{ color: '#f97316', fontWeight: 700, marginRight: '12px' }}>
+                                              -₹{((rf.amount || 0) / 100).toFixed(2)}
+                                            </span>
+                                            <span className="badge badge-success" style={{ fontSize: '10px' }}>
+                                              {rf.status}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                {paymentHistory.totalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' }}>
+                    <span className="text-muted" style={{ fontSize: '12px' }}>
+                      Showing page {paymentHistory.currentPage + 1} of {paymentHistory.totalPages} ({paymentHistory.totalElements} records)
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={paymentHistory.isFirst}
+                        onClick={() => {
+                          const prev = Math.max(0, paymentHistory.currentPage - 1);
+                          setPaymentHistoryPage(prev);
+                          loadPaymentHistory(prev, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch);
+                        }}
+                      >
+                        Previous
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={paymentHistory.isLast || !paymentHistory.hasNext}
+                        onClick={() => {
+                          const next = paymentHistory.currentPage + 1;
+                          setPaymentHistoryPage(next);
+                          loadPaymentHistory(next, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch);
+                        }}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -3511,6 +4830,170 @@ export default function App() {
                 <button type="submit" className="btn btn-primary">Save Changes</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bank Account Details Modal */}
+      {activeModal === 'paymentProfile' && (
+        <div className="modal-backdrop open">
+          <div className="modal-card" style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--accent-subtle)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Landmark size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Bank Account Details</h3>
+                </div>
+              </div>
+              <button className="btn-close" onClick={() => setActiveModal(null)}>&times;</button>
+            </div>
+
+            {paymentProfile && !isEditingPaymentProfile ? (
+              <div className="modal-body">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', padding: '18px', background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-medium)' }}>
+                  <div>
+                    <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Account Holder</span>
+                    <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.accountHolderName}</strong>
+                  </div>
+                  <div>
+                    <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Bank Name</span>
+                    <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.bankName}</strong>
+                  </div>
+                  <div>
+                    <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Account Number</span>
+                    <strong style={{ fontSize: '14px', color: 'var(--text-main)', letterSpacing: '1px' }}>{paymentProfile.maskedAccountNumber || '••••••••'}</strong>
+                  </div>
+                  <div>
+                    <span className="text-subtle" style={{ fontSize: '11px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>IFSC Code</span>
+                    <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{paymentProfile.ifscCode}</strong>
+                  </div>
+                </div>
+
+                <div className="modal-footer" style={{ marginTop: '20px', padding: '16px 0 0 0', background: 'transparent' }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ color: '#ef4444' }}
+                    onClick={handleDeletePaymentProfile}
+                  >
+                    <Trash2 size={14} style={{ marginRight: '6px' }} />
+                    Delete Account
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => openPaymentProfileModal(true)}
+                  >
+                    <Edit2 size={14} style={{ marginRight: '6px' }} />
+                    Update Details
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSavePaymentProfile}>
+                <div className="modal-body">
+                  <div className="form-group mb-3">
+                    <label className="form-label">
+                      Account Holder Name <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. JOHN DOE"
+                      required
+                      value={paymentProfileForm.accountHolderName}
+                      onChange={e => setPaymentProfileForm({ ...paymentProfileForm, accountHolderName: e.target.value.toUpperCase() })}
+                    />
+                    <small className="text-muted" style={{ fontSize: '11px' }}>
+                      Name as registered with your bank account
+                    </small>
+                  </div>
+
+                  <div className="form-group mb-3">
+                    <label className="form-label">
+                      Bank Name <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. HDFC Bank, State Bank of India, ICICI Bank"
+                      required
+                      value={paymentProfileForm.bankName}
+                      onChange={e => setPaymentProfileForm({ ...paymentProfileForm, bankName: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-grid-2 mb-3">
+                    <div className="form-group">
+                      <label className="form-label">
+                        Account Number <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. 123456789012"
+                        required
+                        value={paymentProfileForm.accountNumber}
+                        onChange={e => setPaymentProfileForm({ ...paymentProfileForm, accountNumber: e.target.value.replace(/[^\d]/g, '') })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">
+                        IFSC Code <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. HDFC0001234"
+                        required
+                        maxLength={11}
+                        value={paymentProfileForm.ifscCode}
+                        onChange={e => setPaymentProfileForm({ ...paymentProfileForm, ifscCode: formatIfsc(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+
+                  {paymentProfileForm.formError && (
+                    <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', fontSize: '13px', marginTop: '10px' }}>
+                      {paymentProfileForm.formError}
+                    </div>
+                  )}
+                </div>
+
+                <div className="modal-footer">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      if (paymentProfile) {
+                        setIsEditingPaymentProfile(false);
+                      } else {
+                        setActiveModal(null);
+                      }
+                    }}
+                    disabled={isSavingPaymentProfile}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={isSavingPaymentProfile}
+                  >
+                    {isSavingPaymentProfile ? (
+                      <>
+                        <RefreshCw className="animate-spin" size={16} />
+                        <span>Saving Details...</span>
+                      </>
+                    ) : (
+                      'Save Bank Details'
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

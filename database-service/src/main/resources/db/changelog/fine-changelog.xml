@@ -56,4 +56,9 @@
         <modifyDataType tableName="fine" columnName="user_uuid" newDataType="varchar(36)"/>
     </changeSet>
 
+    <changeSet id="drop-book-id-user-id-from-fine" author="thani">
+        <dropColumn tableName="fine" columnName="book_id"/>
+        <dropColumn tableName="fine" columnName="user_id"/>
+    </changeSet>
+
 </databaseChangeLog>

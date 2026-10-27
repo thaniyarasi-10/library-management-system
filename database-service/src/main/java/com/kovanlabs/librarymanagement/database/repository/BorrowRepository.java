@@ -20,14 +20,13 @@ public interface BorrowRepository extends JpaRepository<Borrow, String> {
     List<Borrow> findByReturnedDateIsNullAndDueDateBefore(LocalDate date);
     List<Borrow> findAllByOrderByIdDesc();
     List<Borrow> findByUser_IdOrderByIdDesc(Long userId);
-    List<Borrow> findByUser_UuidOrderByIdDesc(String userUuid);
     long countByUser_UuidAndStatus(String userUuid, BorrowStatus status);
-    List<Borrow> findByBook_UuidAndUser_Uuid(String bookUuid, String userUuid);
+    long countByUser_UuidAndReturnedDateIsNull(String userUuid);
     Optional<Borrow> findFirstByBook_UuidAndUser_UuidOrderByDueDateDesc(String bookUuid, String userUuid);
     List<Borrow> findBySalesforceSyncStatus(SalesforceSyncStatus salesforceSyncStatus);
 
     @Query("""
-        SELECT b FROM Borrow b 
+        SELECT b FROM Borrow b
         WHERE b.status = com.kovanlabs.librarymanagement.database.enums.BorrowStatus.RETURNED 
           AND b.returnedDate IS NOT NULL 
           AND b.returnedDate <= b.dueDate 

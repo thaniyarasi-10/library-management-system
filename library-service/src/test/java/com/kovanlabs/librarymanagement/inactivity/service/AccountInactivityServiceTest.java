@@ -13,6 +13,7 @@ import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import com.kovanlabs.librarymanagement.service.AccountInactivityService;
+import com.kovanlabs.librarymanagement.user.service.AccountDeactivationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,7 @@ class AccountInactivityServiceTest {
     private UserRepository userRepository;
     private RewardRepository rewardRepository;
     private SalesforceSync salesforceSyncDelegate;
+    private AccountDeactivationService deactivationService;
     private AccountInactivityService service;
 
     @BeforeEach
@@ -42,6 +44,7 @@ class AccountInactivityServiceTest {
         userRepository = mock(UserRepository.class);
         rewardRepository = mock(RewardRepository.class);
         salesforceSyncDelegate = mock(SalesforceSync.class);
+        deactivationService = mock(AccountDeactivationService.class);
 
         when(notificationFactory.get(NotificationTypeEnum.EMAIL)).thenReturn(emailNotificationService);
 
@@ -49,7 +52,8 @@ class AccountInactivityServiceTest {
                 notificationFactory,
                 userRepository,
                 rewardRepository,
-                salesforceSyncDelegate
+                salesforceSyncDelegate,
+                deactivationService
         );
     }
 
@@ -478,7 +482,7 @@ class AccountInactivityServiceTest {
     @DisplayName("processUser when rewardRepository is null should deactivate user without error")
     void processUser_whenRewardRepositoryNull_shouldDeactivateWithoutError() {
         AccountInactivityService serviceWithoutRewardRepo = new AccountInactivityService(
-                notificationFactory, userRepository, null, salesforceSyncDelegate);
+                notificationFactory, userRepository, null, salesforceSyncDelegate, deactivationService);
 
         User user = User.builder()
                 .id(71L)
@@ -522,7 +526,7 @@ class AccountInactivityServiceTest {
     @DisplayName("processUser when salesforceSyncDelegate is null should deactivate without attempting Salesforce sync")
     void processUser_whenSalesforceDelegateNull_shouldDeactivateWithoutSync() {
         AccountInactivityService serviceWithoutSF = new AccountInactivityService(
-                notificationFactory, userRepository, rewardRepository, null);
+                notificationFactory, userRepository, rewardRepository, null, deactivationService);
 
         User user = User.builder()
                 .id(73L)
@@ -546,7 +550,7 @@ class AccountInactivityServiceTest {
     @DisplayName("processUser when salesforceSyncDelegate is null should send warning without attempting Salesforce sync")
     void processUser_warning_whenSalesforceDelegateNull_shouldWarnWithoutSync() {
         AccountInactivityService serviceWithoutSF = new AccountInactivityService(
-                notificationFactory, userRepository, rewardRepository, null);
+                notificationFactory, userRepository, rewardRepository, null, deactivationService);
 
         User user = User.builder()
                 .id(74L)
@@ -618,5 +622,52 @@ class AccountInactivityServiceTest {
         verify(userRepository, atLeastOnce()).save(userToReset);
         verify(salesforceSyncDelegate).syncContact(any());
         verifyNoInteractions(emailNotificationService);
+    }
+
+    @Test
+    @DisplayName("processInactiveAccounts should delegate permanent deactivation to deactivationService")
+    void processInactiveAccounts_shouldDelegatePermanentDeactivation() {
+        when(userRepository.findUsersEligibleForDeactivation(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findUsersEligibleForInactivityWarning(eq(AccountStatus.ACTIVE), any(LocalDateTime.class), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+        when(userRepository.findActiveUsersWithPendingWarningToReset(eq(AccountStatus.ACTIVE), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+
+        service.processInactiveAccounts();
+
+        verify(deactivationService).processExpiredDeactivations();
+    }
+
+    @Test
+    @DisplayName("processPermanentlyDeactivatedAccounts should delegate to deactivationService")
+    void processPermanentlyDeactivatedAccounts_shouldDelegate() {
+        service.processPermanentlyDeactivatedAccounts();
+        verify(deactivationService).processExpiredDeactivations();
+    }
+
+    @Test
+    @DisplayName("permanentlyDeactivateUser should delegate to deactivationService")
+    void permanentlyDeactivateUser_shouldDelegate() {
+        User user = User.builder().id(88L).build();
+        service.permanentlyDeactivateUser(user);
+        verify(deactivationService).permanentlyDeactivateUser(user);
+    }
+
+    @Test
+    @DisplayName("deactivateUser should set deactivatedAt timestamp")
+    void deactivateUser_shouldSetDeactivatedAt() {
+        User user = User.builder()
+                .id(91L)
+                .uuid("u-91")
+                .email("deact-time@test.com")
+                .status(AccountStatus.ACTIVE)
+                .lastLoginAt(LocalDateTime.now().minusDays(35))
+                .build();
+
+        service.processUser(user);
+
+        assertEquals(AccountStatus.DEACTIVATED, user.getStatus());
+        assertNotNull(user.getDeactivatedAt());
     }
 }

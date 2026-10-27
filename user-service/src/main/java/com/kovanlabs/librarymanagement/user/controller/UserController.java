@@ -109,4 +109,8 @@ public class UserController {
         return userService.deactivateUser(id);
     }
 
+    @PostMapping("/process-expired-deactivations")
+    public int processExpiredDeactivations() {
+        return userService.processExpiredDeactivations();
+    }
 }

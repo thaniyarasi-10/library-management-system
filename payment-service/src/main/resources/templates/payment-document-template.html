@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <title>{{DOC_TITLE}} - {{DOC_NUMBER}}</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 12mm 14mm 12mm 14mm;
+        }
+        * {
+            box-sizing: border-box;
+        }
+        html, body {
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            color: #1e293b;
+            background: #ffffff;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        .header-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 14px;
+        }
+        .brand-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #0f172a;
+            letter-spacing: -0.5px;
+            margin: 0;
+            line-height: 1.1;
+        }
+        .brand-subtitle {
+            font-size: 9px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 2px;
+        }
+        .doc-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #334155;
+            text-align: right;
+            margin: 0;
+        }
+        .status-pill {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 9px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+            color: #ffffff;
+            background-color: {{STATUS_BADGE_BG}};
+        }
+        .info-grid {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 14px;
+            page-break-inside: avoid;
+        }
+        .info-box {
+            width: 48%;
+            vertical-align: top;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 10px 12px;
+        }
+        .info-box-title {
+            font-size: 9px;
+            font-weight: bold;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-bottom: 6px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 3px;
+        }
+        .info-item {
+            margin-bottom: 3px;
+            font-size: 10.5px;
+        }
+        .info-label {
+            color: #64748b;
+        }
+        .info-value {
+            color: #0f172a;
+            font-weight: 600;
+        }
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 12px;
+            page-break-inside: avoid;
+        }
+        .items-table th {
+            background-color: #0f172a;
+            color: #ffffff;
+            padding: 8px 10px;
+            font-size: 9.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            text-align: left;
+        }
+        .items-table td {
+            padding: 9px 10px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 10.5px;
+        }
+        .totals-table-wrapper {
+            width: 100%;
+            margin-bottom: 14px;
+            page-break-inside: avoid;
+        }
+        .totals-table {
+            width: 48%;
+            margin-left: auto;
+            border-collapse: collapse;
+        }
+        .totals-table td {
+            padding: 4px 8px;
+            font-size: 10.5px;
+        }
+        .grand-total-row {
+            border-top: 1.5px solid #0f172a;
+            border-bottom: 1.5px solid #0f172a;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .section-title {
+            font-size: 10px;
+            font-weight: bold;
+            color: #0f172a;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-bottom: 6px;
+        }
+        .footer {
+            margin-top: 20px;
+            padding-top: 8px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+            font-size: 9px;
+            color: #94a3b8;
+            page-break-inside: avoid;
+        }
+    </style>
+</head>
+<body>
+    <table class="header-table">
+        <tr>
+            <td style="vertical-align: top;">
+                <div class="brand-title">Padips</div>
+                <div class="brand-subtitle">Library Management System</div>
+            </td>
+            <td style="vertical-align: top; text-align: right;">
+                <div class="doc-title">{{DOC_TITLE}}</div>
+                <div style="font-size: 10.5px; color: #64748b; margin-top: 2px;">Doc No: <strong style="color: #0f172a;">{{DOC_NUMBER}}</strong></div>
+                <div class="status-pill">{{STATUS_BADGE_TEXT}}</div>
+            </td>
+        </tr>
+    </table>
+
+    <table class="info-grid">
+        <tr>
+            <td class="info-box">
+                <div class="info-box-title">Billed / Issued To</div>
+                <div class="info-item"><span class="info-label">Name:</span> <span class="info-value">{{PAYER_NAME}}</span></div>
+                <div class="info-item"><span class="info-label">Email:</span> <span class="info-value">{{PAYER_EMAIL}}</span></div>
+                <div class="info-item"><span class="info-label">Member ID:</span> <span class="info-value">{{MEMBER_ID}}</span></div>
+            </td>
+            <td style="width: 4%;"></td>
+            <td class="info-box">
+                <div class="info-box-title">Transaction Details</div>
+                <div class="info-item"><span class="info-label">Date &amp; Time:</span> <span class="info-value">{{TRANSACTION_DATE}}</span></div>
+                <div class="info-item"><span class="info-label">Razorpay Order ID:</span> <span class="info-value" style="font-family: monospace;">{{ORDER_ID}}</span></div>
+                <div class="info-item"><span class="info-label">Payment ID:</span> <span class="info-value" style="font-family: monospace;">{{PAYMENT_ID}}</span></div>
+                {{REFUND_INFO_ITEM}}
+            </td>
+        </tr>
+    </table>
+
+    <div class="section-title">Itemized Summary</div>
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 55%;">Description</th>
+                <th style="width: 15%; text-align: center;">Qty</th>
+                <th style="width: 15%; text-align: right;">Unit Price</th>
+                <th style="width: 15%; text-align: right;">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>
+                    <strong>{{ITEM_DESCRIPTION}}</strong>
+                    <div style="font-size: 9.5px; color: #64748b; margin-top: 2px;">
+                        Type: {{ITEM_TYPE}} | Transaction: {{TRANSACTION_TYPE}}
+                    </div>
+                </td>
+                <td style="text-align: center;">1</td>
+                <td style="text-align: right;">₹{{ITEM_AMOUNT}}</td>
+                <td style="text-align: right; font-weight: bold;">₹{{ITEM_AMOUNT}}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="totals-table-wrapper">
+        <table class="totals-table">
+            {{TOTALS_SECTION}}
+        </table>
+    </div>
+
+    {{REFUNDS_SECTION}}
+
+    <div class="footer">
+        <div>This is an official, computer-generated document from Padips Library Management System.</div>
+        <div>For inquiries or support, please contact library administration at support@kovanlabs.com.</div>
+    </div>
+</body>
+</html>

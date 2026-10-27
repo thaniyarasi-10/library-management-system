@@ -19,7 +19,7 @@ import static org.mockito.Mockito.when;
 
 class Auth0AuthoritiesConverterTest {
 
-    private static final String NAMESPACED_ROLES = "https://library.kovanlabs.com/roles";
+    private static final String NAMESPACED_ROLES = "https://library-management.com/roles";
     private Auth0AuthoritiesConverter converter;
 
     @BeforeEach
