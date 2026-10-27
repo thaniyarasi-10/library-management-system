@@ -17,6 +17,7 @@ import com.kovanlabs.librarymanagement.database.repository.UserProviderRepositor
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.ContactSObject;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
+import com.kovanlabs.librarymanagement.user.dto.CompleteProfileRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserRequest;
 import com.kovanlabs.librarymanagement.user.dto.UserResponse;
 import com.kovanlabs.librarymanagement.user.mapping.UserMapper;
@@ -72,6 +73,7 @@ public class UserServiceImpl implements UserService {
     private final FineRepository fineRepository;
     private final SalesforceSync salesforceSyncDelegate;
     private final AccountDeactivationService accountDeactivationService;
+    private final AadhaarSecurityService aadhaarSecurityService;
 
     /**
      * Maps a single User entity to {@link UserResponse} with reward points and
@@ -599,6 +601,39 @@ public class UserServiceImpl implements UserService {
             RoleEnum role = extractRoleFromJwt(jwt);
 
             User syncedUser = syncAuth0User(sub, email, name, role);
+
+            // If signup provided Aadhaar and/or phone via headers, store them
+            String headerAadhaar = getHeaderFromRequestContext("X-User-Aadhaar");
+            String headerPhone = getHeaderFromRequestContext("X-User-Phone");
+            boolean userUpdated = false;
+
+            if (Objects.nonNull(headerAadhaar) && !headerAadhaar.isBlank() && (Objects.isNull(syncedUser.getAadhaarHash()) || syncedUser.getAadhaarHash().isBlank())) {
+                try {
+                    String cleanAadhaar = aadhaarSecurityService.validateAndNormalize(headerAadhaar);
+                    String last4 = aadhaarSecurityService.extractLast4(cleanAadhaar);
+                    String shaHash = aadhaarSecurityService.computeHash(cleanAadhaar);
+
+                    Optional<User> existingUserWithAadhaar = userRepository.findByAadhaarHash(shaHash);
+                    if (existingUserWithAadhaar.isEmpty() || existingUserWithAadhaar.get().getUuid().equals(syncedUser.getUuid())) {
+                        syncedUser.setAadhaarLast4(last4);
+                        syncedUser.setAadhaarHash(shaHash);
+                        userUpdated = true;
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to process header Aadhaar on login: {}", e.getMessage());
+                }
+            }
+
+            if (Objects.nonNull(headerPhone) && !headerPhone.isBlank() && (Objects.isNull(syncedUser.getPhone()) || syncedUser.getPhone().isBlank())) {
+                syncedUser.setPhone(headerPhone.trim());
+                userUpdated = true;
+            }
+
+            if (userUpdated) {
+                syncedUser = userRepository.save(syncedUser);
+                syncUserToSalesforce(syncedUser);
+            }
+
             syncedUser = reconcileSalesforcePendingReactivation(syncedUser);
             syncedUser = checkAndTransitionExpiredDeactivation(syncedUser);
             return toUserResponse(syncedUser);
@@ -661,6 +696,38 @@ public class UserServiceImpl implements UserService {
             RoleEnum role = extractRoleFromJwt(jwt);
 
             user = syncAuth0User(sub, email, name, role);
+
+            // If signup provided Aadhaar and/or phone via headers, store them
+            String headerAadhaar = getHeaderFromRequestContext("X-User-Aadhaar");
+            String headerPhone = getHeaderFromRequestContext("X-User-Phone");
+            boolean userUpdated = false;
+
+            if (Objects.nonNull(headerAadhaar) && !headerAadhaar.isBlank() && (Objects.isNull(user.getAadhaarHash()) || user.getAadhaarHash().isBlank())) {
+                try {
+                    String cleanAadhaar = aadhaarSecurityService.validateAndNormalize(headerAadhaar);
+                    String last4 = aadhaarSecurityService.extractLast4(cleanAadhaar);
+                    String shaHash = aadhaarSecurityService.computeHash(cleanAadhaar);
+
+                    Optional<User> existingUserWithAadhaar = userRepository.findByAadhaarHash(shaHash);
+                    if (existingUserWithAadhaar.isEmpty() || existingUserWithAadhaar.get().getUuid().equals(user.getUuid())) {
+                        user.setAadhaarLast4(last4);
+                        user.setAadhaarHash(shaHash);
+                        userUpdated = true;
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to process header Aadhaar on recordLogin: {}", e.getMessage());
+                }
+            }
+
+            if (Objects.nonNull(headerPhone) && !headerPhone.isBlank() && (Objects.isNull(user.getPhone()) || user.getPhone().isBlank())) {
+                user.setPhone(headerPhone.trim());
+                userUpdated = true;
+            }
+
+            if (userUpdated) {
+                user = userRepository.save(user);
+                syncUserToSalesforce(user);
+            }
         } else {
             user = findUserEntityByIdentifier(principal.getName());
         }
@@ -694,6 +761,74 @@ public class UserServiceImpl implements UserService {
                     "Account is " + currentUser.status() + ". Profile updates are restricted to ACTIVE accounts.");
         }
         return updateUser(currentUser.id(), request);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse completeProfile(Principal principal, CompleteProfileRequest request) {
+        if (Objects.isNull(principal)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated");
+        }
+        if (Objects.isNull(request)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Profile completion payload is required");
+        }
+
+        // Always resolve user securely from principal identity (sub / JWT claims / identifier)
+        User user;
+        if (principal instanceof Authentication auth && auth.getPrincipal() instanceof Jwt jwt) {
+            String sub = jwt.getSubject();
+            var userProviderOpt = userProviderRepository.findByProviderId(sub);
+            if (userProviderOpt.isPresent()) {
+                user = userRepository.findByUuid(userProviderOpt.get().getUserUuid())
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile not found"));
+            } else {
+                user = findUserEntityByIdentifier(sub);
+            }
+        } else {
+            user = findUserEntityByIdentifier(principal.getName());
+        }
+
+        if (user.getStatus() == AccountStatus.DEACTIVATED || user.getStatus() == AccountStatus.PERMANENTLY_DEACTIVATED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Account is " + user.getStatus() + ". Profile completion is not permitted.");
+        }
+
+        // Validate mandatory username
+        if (Objects.isNull(request.username()) || request.username().trim().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Username is mandatory");
+        }
+        user.setName(request.username().trim());
+
+        // Validate mandatory 12-digit Aadhaar number
+        String cleanAadhaar = aadhaarSecurityService.validateAndNormalize(request.aadhaarNumber());
+
+        // First store last 4 digits
+        String last4 = aadhaarSecurityService.extractLast4(cleanAadhaar);
+        user.setAadhaarLast4(last4);
+
+        // Then compute SHA hash and store only the hash
+        String shaHash = aadhaarSecurityService.computeHash(cleanAadhaar);
+
+        // Check if Aadhaar is already registered to a conflicting user
+        Optional<User> existingUserWithAadhaar = userRepository.findByAadhaarHash(shaHash);
+        if (existingUserWithAadhaar.isPresent() && !existingUserWithAadhaar.get().getUuid().equals(user.getUuid())) {
+            log.warn("Conflicting Aadhaar hash submission detected for user UUID: {}", user.getUuid());
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Aadhaar number is already registered with another account");
+        }
+
+        user.setAadhaarHash(shaHash);
+
+        // Optional mobile number
+        if (Objects.nonNull(request.phone())) {
+            String phoneStr = request.phone().trim();
+            user.setPhone(phoneStr.isBlank() ? null : phoneStr);
+        }
+
+        User savedUser = userRepository.save(user);
+        log.info("Successfully completed profile for user UUID: {}, last4: {}", savedUser.getUuid(), last4);
+
+        syncUserToSalesforce(savedUser);
+        return toUserResponse(savedUser);
     }
 
     private RoleEnum extractRoleFromJwt(Jwt jwt) {

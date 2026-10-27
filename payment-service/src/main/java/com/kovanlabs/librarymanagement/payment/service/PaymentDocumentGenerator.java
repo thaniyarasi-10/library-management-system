@@ -125,6 +125,10 @@ public class PaymentDocumentGenerator {
         String payerEmail = escape(user != null && user.getEmail() != null ? user.getEmail() : "N/A");
         String memberId = escape(user != null && user.getUuid() != null ? user.getUuid() : "N/A");
 
+        String aadhaarNumber = (user != null && user.getAadhaarLast4() != null && !user.getAadhaarLast4().isBlank())
+                ? "XXXX XXXX " + user.getAadhaarLast4().trim()
+                : "N/A";
+
         String formattedDate = payment.getCreatedAt() != null
                 ? payment.getCreatedAt().format(DATE_TIME_FORMATTER)
                 : LocalDate.now().toString();
@@ -140,112 +144,6 @@ public class PaymentDocumentGenerator {
 
         String orderId = escape(Objects.requireNonNullElse(payment.getRazorpayOrderId(), "N/A"));
         String paymentId = escape(Objects.requireNonNullElse(payment.getRazorpayPaymentId(), isSuccess ? "N/A" : "Not Captured"));
-        String refundId = escape(Objects.requireNonNullElse(payment.getRazorpayRefundId(), "N/A"));
-
-        String refundInfoItem = (isRefund && !refundId.equals("N/A"))
-                ? "<div class=\"info-item\"><span class=\"info-label\">Refund ID:</span> <span class=\"info-value\" style=\"font-family: monospace;\">" + refundId + "</span></div>"
-                : "";
-
-        // Build refund section if any refunds exist on a successful payment
-        StringBuilder refundsHtml = new StringBuilder();
-        if (isSuccess && refunds != null && !refunds.isEmpty()) {
-            refundsHtml.append("""
-                <div class="section-title">Associated Refund Activity</div>
-                <table class="items-table mb-4">
-                    <thead>
-                        <tr>
-                            <th>Refund Reference</th>
-                            <th>Date</th>
-                            <th>Status</th>
-                            <th style="text-align: right;">Refund Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            """);
-
-            long totalRefundedPaise = 0L;
-            for (Payment r : refunds) {
-                long rAmount = (r.getAmount() != null) ? r.getAmount() : 0L;
-                if (r.getStatus() == PaymentStatus.SUCCESS) {
-                    totalRefundedPaise += rAmount;
-                }
-                BigDecimal rInRupees = BigDecimal.valueOf(rAmount).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-                String rDate = r.getCreatedAt() != null ? r.getCreatedAt().format(DATE_TIME_FORMATTER) : "N/A";
-                refundsHtml.append(String.format("""
-                        <tr>
-                            <td>%s</td>
-                            <td>%s</td>
-                            <td><span class="status-badge" style="background: #ffedd5; color: #c2410c;">%s</span></td>
-                            <td style="text-align: right; color: #ea580c; font-weight: bold;">-₹%s</td>
-                        </tr>
-                """, escape(Objects.requireNonNullElse(r.getRazorpayRefundId(), r.getUuid())), rDate, r.getStatus(), rInRupees));
-            }
-
-            BigDecimal netPaidRupees = BigDecimal.valueOf(Math.max(0L, (payment.getAmount() != null ? payment.getAmount() : 0L) - totalRefundedPaise))
-                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-
-            refundsHtml.append(String.format("""
-                    </tbody>
-                </table>
-                <div class="totals-table-wrapper">
-                    <table class="totals-table">
-                        <tr>
-                            <td><strong>Original Payment:</strong></td>
-                            <td style="text-align: right;">₹%s</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Total Refunded:</strong></td>
-                            <td style="text-align: right; color: #ea580c;">-₹%s</td>
-                        </tr>
-                        <tr class="grand-total-row">
-                            <td><strong>Net Retained Amount:</strong></td>
-                            <td style="text-align: right; color: #16a34a;">₹%s</td>
-                        </tr>
-                    </table>
-                </div>
-            """, amountInRupees, BigDecimal.valueOf(totalRefundedPaise).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP), netPaidRupees));
-        }
-
-        // Main totals breakdown
-        String totalsRowHtml;
-        if (isSuccess) {
-            totalsRowHtml = String.format("""
-                <tr>
-                    <td><strong>Subtotal:</strong></td>
-                    <td style="text-align: right;">₹%s</td>
-                </tr>
-                <tr>
-                    <td><strong>Taxes &amp; Fees:</strong></td>
-                    <td style="text-align: right;">₹0.00</td>
-                </tr>
-                <tr class="grand-total-row">
-                    <td><strong>Total Paid (INR):</strong></td>
-                    <td style="text-align: right; color: #16a34a;">₹%s</td>
-                </tr>
-            """, amountInRupees, amountInRupees);
-        } else if (isRefund) {
-            totalsRowHtml = String.format("""
-                <tr class="grand-total-row">
-                    <td><strong>Total Refunded (INR):</strong></td>
-                    <td style="text-align: right; color: #ea580c;">-₹%s</td>
-                </tr>
-            """, amountInRupees);
-        } else {
-            totalsRowHtml = String.format("""
-                <tr>
-                    <td><strong>Amount Attempted:</strong></td>
-                    <td style="text-align: right;">₹%s</td>
-                </tr>
-                <tr class="grand-total-row" style="background: #fee2e2;">
-                    <td><strong style="color: #991b1b;">Amount Received:</strong></td>
-                    <td style="text-align: right; font-weight: bold; color: #991b1b;">₹0.00</td>
-                </tr>
-                <tr>
-                    <td><strong style="color: #64748b;">Outstanding Balance:</strong></td>
-                    <td style="text-align: right; color: #64748b;">₹%s</td>
-                </tr>
-            """, amountInRupees, amountInRupees);
-        }
 
         return template
                 .replace("{{DOC_TITLE}}", escape(title))
@@ -255,16 +153,17 @@ public class PaymentDocumentGenerator {
                 .replace("{{PAYER_NAME}}", payerName)
                 .replace("{{PAYER_EMAIL}}", payerEmail)
                 .replace("{{MEMBER_ID}}", memberId)
+                .replace("{{AADHAAR_NUMBER}}", escape(aadhaarNumber))
                 .replace("{{TRANSACTION_DATE}}", formattedDate)
                 .replace("{{ORDER_ID}}", orderId)
                 .replace("{{PAYMENT_ID}}", paymentId)
-                .replace("{{REFUND_INFO_ITEM}}", refundInfoItem)
                 .replace("{{ITEM_DESCRIPTION}}", escape(paymentTypeLabel))
                 .replace("{{ITEM_TYPE}}", escape(payment.getPaymentType().name()))
                 .replace("{{TRANSACTION_TYPE}}", escape(payment.getTransactionType().name()))
                 .replace("{{ITEM_AMOUNT}}", amountInRupees.toString())
-                .replace("{{TOTALS_SECTION}}", totalsRowHtml)
-                .replace("{{REFUNDS_SECTION}}", refundsHtml.toString());
+                .replace("{{SUBTOTAL}}", amountInRupees.toString())
+                .replace("{{TAXES}}", "0.00")
+                .replace("{{TOTAL_PAID}}", amountInRupees.toString());
     }
 
     private String escape(String input) {

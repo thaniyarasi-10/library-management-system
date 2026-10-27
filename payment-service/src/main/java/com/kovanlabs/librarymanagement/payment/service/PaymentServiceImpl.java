@@ -201,6 +201,10 @@ public class PaymentServiceImpl implements PaymentService {
             );
         }
 
+        String orderId = request.razorpayOrderId();
+        if ((orderId == null || orderId.isBlank()) && existingPaymentOpt.isPresent()) {
+            orderId = existingPaymentOpt.get().getRazorpayOrderId();
+        }
         RazorpayOrderDetails orderDetails = razorpayClientService.fetchOrder(request.razorpayOrderId());
         Map<String, String> notes = orderDetails.notes() != null ? orderDetails.notes() : Map.of();
         String orderUserUuid = notes.getOrDefault("user_uuid", user.getUuid());

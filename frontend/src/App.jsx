@@ -97,8 +97,17 @@ export default function App() {
   const [userRole, setUserRole] = useState('');
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [authMode, setAuthMode] = useState('signin');
-  const [signupUsername, setSignupUsername] = useState('');
-  const [signupError, setSignupError] = useState('');
+  const [signupForm, setSignupForm] = useState({
+    username: '',
+    aadhaarNumber: '',
+    countryCode: '+91',
+    phoneNumber: '',
+    usernameError: '',
+    aadhaarError: '',
+    phoneError: '',
+    generalError: '',
+    isSubmitting: false
+  });
   const userFetchedRef = useRef(false);
 
   // Navigation
@@ -203,6 +212,16 @@ export default function App() {
   const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [profileForm, setProfileForm] = useState({ name: '', email: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [promptPhoneForm, setPromptPhoneForm] = useState({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
+  const [completeProfileForm, setCompleteProfileForm] = useState({
+    username: '',
+    aadhaarNumber: '',
+    countryCode: '+91',
+    phoneNumber: '',
+    aadhaarError: '',
+    usernameError: '',
+    phoneError: '',
+    isSubmitting: false
+  });
   const [adminBorrowSelect, setAdminBorrowSelect] = useState({ memberId: '', bookId: '' });
   const [userBorrowBookId, setUserBorrowBookId] = useState('');
 
@@ -451,6 +470,14 @@ export default function App() {
           reqHeaders['X-User-Username'] = pendingUsername.trim();
           reqHeaders['X-User-Name'] = pendingUsername.trim();
         }
+        const pendingAadhaar = sessionStorage.getItem('auth0_pending_aadhaar');
+        if (pendingAadhaar && pendingAadhaar.trim()) {
+          reqHeaders['X-User-Aadhaar'] = pendingAadhaar.trim();
+        }
+        const pendingPhone = sessionStorage.getItem('auth0_pending_phone');
+        if (pendingPhone && pendingPhone.trim()) {
+          reqHeaders['X-User-Phone'] = pendingPhone.trim();
+        }
 
         let res = await fetchApi('/user/callback', { method: 'POST', headers: reqHeaders });
         if (!res.ok) {
@@ -459,6 +486,8 @@ export default function App() {
         if (res.ok && res.data) {
           setCurrentUser(res.data);
           sessionStorage.removeItem('auth0_pending_username');
+          sessionStorage.removeItem('auth0_pending_aadhaar');
+          sessionStorage.removeItem('auth0_pending_phone');
           loadPaymentProfile();
           if (!res.data.phone && !sessionStorage.getItem('phone_prompt_dismissed')) {
             setPromptPhoneForm({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
@@ -1647,6 +1676,90 @@ export default function App() {
     }
   };
 
+  const handleCompleteProfileSubmit = async (e) => {
+    if (e) e.preventDefault();
+
+    let hasErr = false;
+    let aadhaarErr = '';
+    let phoneErr = '';
+
+    const cleanUsername = (completeProfileForm.username || '').trim() ||
+      (currentUser && currentUser.name && currentUser.name.trim() !== '' && currentUser.name.trim() !== 'User' ? currentUser.name.trim() : '') ||
+      (auth0User?.name || auth0User?.nickname || (auth0User?.email ? auth0User.email.split('@')[0] : 'User'));
+
+    const cleanAadhaarDigits = (completeProfileForm.aadhaarNumber || '').replace(/[\s-]+/g, '');
+    if (!cleanAadhaarDigits) {
+      aadhaarErr = 'Aadhaar number is mandatory';
+      hasErr = true;
+    } else if (!/^\d{12}$/.test(cleanAadhaarDigits)) {
+      aadhaarErr = 'Aadhaar number must consist of exactly 12 numeric digits';
+      hasErr = true;
+    }
+
+    let formattedPhone = null;
+    if (completeProfileForm.phoneNumber && completeProfileForm.phoneNumber.trim()) {
+      const valPhone = validatePhoneNumber(completeProfileForm.countryCode, completeProfileForm.phoneNumber);
+      if (!valPhone.isValid) {
+        phoneErr = valPhone.error;
+        hasErr = true;
+      } else {
+        formattedPhone = `${completeProfileForm.countryCode}${valPhone.cleanDigits}`;
+      }
+    }
+
+    setCompleteProfileForm(prev => ({
+      ...prev,
+      aadhaarError: aadhaarErr,
+      phoneError: phoneErr
+    }));
+
+    if (hasErr) return;
+
+    setCompleteProfileForm(prev => ({ ...prev, isSubmitting: true }));
+    try {
+      const payload = {
+        username: cleanUsername,
+        aadhaarNumber: cleanAadhaarDigits,
+        phone: formattedPhone
+      };
+
+      const res = await fetchApi('/user/complete-profile', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok && res.data) {
+        setCurrentUser(res.data);
+        showToast('Profile completed successfully! Welcome to Padips.', 'success');
+        setCompleteProfileForm({
+          username: '',
+          aadhaarNumber: '',
+          countryCode: '+91',
+          phoneNumber: '',
+          aadhaarError: '',
+          usernameError: '',
+          phoneError: '',
+          isSubmitting: false
+        });
+      } else {
+        const errMsg = res.data?.message || 'Failed to complete profile';
+        if (errMsg.toLowerCase().includes('aadhaar')) {
+          setCompleteProfileForm(prev => ({ ...prev, aadhaarError: errMsg }));
+        } else if (errMsg.toLowerCase().includes('username')) {
+          setCompleteProfileForm(prev => ({ ...prev, usernameError: errMsg }));
+        } else if (errMsg.toLowerCase().includes('phone') || errMsg.toLowerCase().includes('mobile')) {
+          setCompleteProfileForm(prev => ({ ...prev, phoneError: errMsg }));
+        }
+        showToast(errMsg, 'error');
+      }
+    } catch (err) {
+      console.error('Error submitting complete profile:', err);
+      showToast('An error occurred while saving your profile', 'error');
+    } finally {
+      setCompleteProfileForm(prev => ({ ...prev, isSubmitting: false }));
+    }
+  };
+
   // Bank Account Profile Functions & Helpers
   const formatIfsc = (val) => {
     return (val || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 11).toUpperCase();
@@ -1767,17 +1880,66 @@ export default function App() {
   if (!isAuthenticated) {
     const handleSignupSubmit = (e) => {
       if (e) e.preventDefault();
-      if (!signupUsername.trim()) {
-        setSignupError('Please enter a username');
-        return;
+
+      let hasErr = false;
+      let userErr = '';
+      let aadhErr = '';
+      let phErr = '';
+
+      const cleanUser = (signupForm.username || '').trim();
+      if (!cleanUser) {
+        userErr = 'Username is mandatory';
+        hasErr = true;
       }
-      setSignupError('');
-      sessionStorage.setItem('auth0_pending_username', signupUsername.trim());
+
+      const cleanAadhaar = (signupForm.aadhaarNumber || '').replace(/[\s-]+/g, '');
+      if (!cleanAadhaar) {
+        aadhErr = 'Aadhaar number is mandatory';
+        hasErr = true;
+      } else if (!/^\d{12}$/.test(cleanAadhaar)) {
+        aadhErr = 'Aadhaar number must consist of exactly 12 numeric digits';
+        hasErr = true;
+      }
+
+      let formattedPhone = '';
+      if (signupForm.phoneNumber && signupForm.phoneNumber.trim()) {
+        const valPhone = validatePhoneNumber(signupForm.countryCode, signupForm.phoneNumber);
+        if (!valPhone.isValid) {
+          phErr = valPhone.error;
+          hasErr = true;
+        } else {
+          formattedPhone = `${signupForm.countryCode}${valPhone.cleanDigits}`;
+        }
+      }
+
+      setSignupForm(prev => ({
+        ...prev,
+        usernameError: userErr,
+        aadhaarError: aadhErr,
+        phoneError: phErr,
+        generalError: ''
+      }));
+
+      if (hasErr) return;
+
+      // Persist signup credentials in sessionStorage across Auth0 Universal Login redirect
+      sessionStorage.setItem('auth0_pending_username', cleanUser);
+      sessionStorage.setItem('auth0_pending_aadhaar', cleanAadhaar);
+      if (formattedPhone) {
+        sessionStorage.setItem('auth0_pending_phone', formattedPhone);
+      } else {
+        sessionStorage.removeItem('auth0_pending_phone');
+      }
+
       loginWithRedirect({
         authorizationParams: {
           screen_hint: 'signup'
         }
       });
+    };
+
+    const handleDirectLogin = () => {
+      loginWithRedirect();
     };
 
     return (
@@ -1805,7 +1967,7 @@ export default function App() {
                 cursor: 'pointer',
                 fontSize: '14px'
               }}
-              onClick={() => { setAuthMode('signin'); setSignupError(''); }}
+              onClick={() => setAuthMode('signin')}
             >
               Sign In
             </button>
@@ -1822,7 +1984,7 @@ export default function App() {
                 cursor: 'pointer',
                 fontSize: '14px'
               }}
-              onClick={() => { setAuthMode('signup'); setSignupError(''); }}
+              onClick={() => setAuthMode('signup')}
             >
               Sign Up
             </button>
@@ -1830,11 +1992,6 @@ export default function App() {
 
           <div className="auth-header">
             <h2>{authMode === 'signin' ? 'Sign in to portal' : 'Create your account'}</h2>
-            <p className="text-muted" style={{ fontSize: '13px' }}>
-              {authMode === 'signin'
-                ? 'Access your library cards, book catalog, and more'
-                : 'Choose a username and register'}
-            </p>
           </div>
 
           {auth0Error && (
@@ -1843,18 +2000,12 @@ export default function App() {
             </div>
           )}
 
-          {signupError && (
-            <div className="alert alert-danger mb-4" style={{ padding: '8px 12px', fontSize: '13px' }}>
-              {signupError}
-            </div>
-          )}
-
           {authMode === 'signin' ? (
             <div>
               <button
                 type="button"
                 className="btn btn-primary btn-block btn-lg mb-3"
-                onClick={() => loginWithRedirect()}
+                onClick={handleDirectLogin}
               >
                 <span className="btn-text">Sign In</span>
               </button>
@@ -1864,7 +2015,7 @@ export default function App() {
                   <button
                     type="button"
                     style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                    onClick={() => { setAuthMode('signup'); setSignupError(''); }}
+                    onClick={() => setAuthMode('signup')}
                   >
                     Register
                   </button>
@@ -1873,35 +2024,116 @@ export default function App() {
             </div>
           ) : (
             <form onSubmit={handleSignupSubmit}>
-              <div className="form-group mb-4" style={{ textAlign: 'left' }}>
-                <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+              {signupForm.generalError && (
+                <div className="alert alert-danger mb-3" style={{ fontSize: '13px', padding: '10px 14px' }}>
+                  {signupForm.generalError}
+                </div>
+              )}
+
+              <div className="form-group mb-3" style={{ textAlign: 'left' }}>
+                <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600 }}>
                   Username <span style={{ color: 'var(--accent-primary)' }}>*</span>
                 </label>
                 <input
                   type="text"
-                  className="form-input"
+                  className={`form-input ${signupForm.usernameError ? 'border-danger' : ''}`}
                   style={{
                     width: '100%',
                     padding: '10px 14px',
                     borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-medium)',
+                    border: signupForm.usernameError ? '1px solid #ef4444' : '1px solid var(--border-medium)',
                     background: 'var(--bg-input)',
                     color: 'var(--text-main)',
                     fontSize: '14px'
                   }}
-                  placeholder="e.g. thani"
-                  value={signupUsername}
-                  onChange={(e) => setSignupUsername(e.target.value)}
+                  placeholder="e.g. johndoe"
+                  value={signupForm.username}
+                  onChange={(e) => setSignupForm({ ...signupForm, username: e.target.value, usernameError: '', generalError: '' })}
                   autoFocus
                   required
                 />
+                {signupForm.usernameError && (
+                  <small className="text-danger" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                    {signupForm.usernameError}
+                  </small>
+                )}
+              </div>
+
+              <div className="form-group mb-3" style={{ textAlign: 'left' }}>
+                <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600 }}>
+                  Aadhaar Number <span style={{ color: 'var(--accent-primary)' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  maxLength={14}
+                  className={`form-input ${signupForm.aadhaarError ? 'border-danger' : ''}`}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    border: signupForm.aadhaarError ? '1px solid #ef4444' : '1px solid var(--border-medium)',
+                    background: 'var(--bg-input)',
+                    color: 'var(--text-main)',
+                    fontSize: '14px',
+                    fontFamily: 'monospace',
+                    letterSpacing: '1px'
+                  }}
+                  placeholder="1234 5678 9012"
+                  value={signupForm.aadhaarNumber}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/[^\d]/g, '').slice(0, 12);
+                    const formatted = raw.replace(/(\d{4})(?=\d)/g, '$1 ');
+                    setSignupForm({ ...signupForm, aadhaarNumber: formatted, aadhaarError: '', generalError: '' });
+                  }}
+                  required
+                />
+                {signupForm.aadhaarError && (
+                  <small className="text-danger" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                    {signupForm.aadhaarError}
+                  </small>
+                )}
+              </div>
+
+              <div className="form-group mb-4" style={{ textAlign: 'left' }}>
+                <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600 }}>
+                  Mobile Number
+                </label>
+                <div className={`phone-input-control ${signupForm.phoneError ? 'has-error' : ''}`}>
+                  <select
+                    className="phone-country-select"
+                    value={signupForm.countryCode}
+                    onChange={e => setSignupForm({ ...signupForm, countryCode: e.target.value, phoneError: '' })}
+                  >
+                    {COUNTRY_CODES.map(c => (
+                      <option key={`signup-${c.code}-${c.dial}`} value={c.dial}>
+                        {c.code} {c.dial}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="tel"
+                    className="phone-number-field"
+                    placeholder="98765 43210"
+                    value={signupForm.phoneNumber}
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^\d\s-]/g, '');
+                      setSignupForm(prev => ({ ...prev, phoneNumber: val, phoneError: '', generalError: '' }));
+                    }}
+                  />
+                </div>
+                {signupForm.phoneError && (
+                  <small className="text-danger" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                    {signupForm.phoneError}
+                  </small>
+                )}
               </div>
 
               <button
                 type="submit"
                 className="btn btn-primary btn-block btn-lg mb-3"
+                disabled={signupForm.isSubmitting}
               >
-                <span className="btn-text">Continue to Sign Up</span>
+                <span className="btn-text">Sign Up with Auth0</span>
               </button>
 
               <div style={{ textAlign: 'center', marginTop: '16px' }}>
@@ -1910,7 +2142,7 @@ export default function App() {
                   <button
                     type="button"
                     style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                    onClick={() => { setAuthMode('signin'); setSignupError(''); }}
+                    onClick={() => setAuthMode('signin')}
                   >
                     Sign In
                   </button>
@@ -2251,6 +2483,130 @@ export default function App() {
               <span>Sign Out</span>
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Render Complete Profile Page before Dashboard if user has not linked their Aadhaar
+  const isProfileIncomplete = currentUser && !currentUser.aadhaarLast4;
+
+  if (isProfileIncomplete) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card" style={{ maxWidth: '480px', width: '100%', padding: '36px 32px' }}>
+          <div className="auth-brand" style={{ marginBottom: '16px' }}>
+            <div className="brand-icon">
+              <BookOpen size={28} />
+            </div>
+            <h1 className="brand-title">Padips</h1>
+            <p className="brand-subtitle">Library Management System</p>
+          </div>
+
+          <div className="auth-header" style={{ marginBottom: '20px' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '6px' }}>Complete Your Profile</h2>
+            <p className="text-muted" style={{ fontSize: '13px', margin: 0 }}>
+              Please provide your details to finish setting up your library account before accessing the portal.
+            </p>
+          </div>
+
+          <form onSubmit={handleCompleteProfileSubmit}>
+
+            <div className="form-group mb-3" style={{ textAlign: 'left' }}>
+              <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600 }}>
+                Aadhaar Number <span style={{ color: 'var(--accent-primary)' }}>*</span>
+              </label>
+              <input
+                type="text"
+                maxLength={14}
+                className={`form-input ${completeProfileForm.aadhaarError ? 'border-danger' : ''}`}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: completeProfileForm.aadhaarError ? '1px solid #ef4444' : '1px solid var(--border-medium)',
+                  background: 'var(--bg-input)',
+                  color: 'var(--text-main)',
+                  fontSize: '14px',
+                  fontFamily: 'monospace',
+                  letterSpacing: '1px'
+                }}
+                placeholder="1234 5678 9012"
+                value={completeProfileForm.aadhaarNumber}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^\d]/g, '').slice(0, 12);
+                  const formatted = raw.replace(/(\d{4})(?=\d)/g, '$1 ');
+                  setCompleteProfileForm({ ...completeProfileForm, aadhaarNumber: formatted, aadhaarError: '' });
+                }}
+                required
+              />
+              {completeProfileForm.aadhaarError && (
+                <small className="text-danger" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                  {completeProfileForm.aadhaarError}
+                </small>
+              )}
+            </div>
+
+            <div className="form-group mb-4" style={{ textAlign: 'left' }}>
+              <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600 }}>
+                Mobile Number <span className="text-muted" style={{ fontWeight: 'normal', fontSize: '12px' }}>(Optional)</span>
+              </label>
+              <div className={`phone-input-control ${completeProfileForm.phoneError ? 'has-error' : ''}`}>
+                <select
+                  className="phone-country-select"
+                  value={completeProfileForm.countryCode}
+                  onChange={e => setCompleteProfileForm({ ...completeProfileForm, countryCode: e.target.value, phoneError: '' })}
+                >
+                  {COUNTRY_CODES.map(c => (
+                    <option key={`comp-prof-${c.code}-${c.dial}`} value={c.dial}>
+                      {c.code} {c.dial}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="tel"
+                  className="phone-number-field"
+                  placeholder="98765 43210"
+                  value={completeProfileForm.phoneNumber}
+                  onChange={e => {
+                    const val = e.target.value.replace(/[^\d\s-]/g, '');
+                    setCompleteProfileForm(prev => ({ ...prev, phoneNumber: val, phoneError: '' }));
+                  }}
+                />
+              </div>
+              {completeProfileForm.phoneError && (
+                <small className="text-danger" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                  {completeProfileForm.phoneError}
+                </small>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="btn btn-primary btn-block btn-lg mb-3"
+              disabled={completeProfileForm.isSubmitting}
+            >
+              {completeProfileForm.isSubmitting ? (
+                <>
+                  <RefreshCw size={14} className="spin" />
+                  <span>Saving Profile...</span>
+                </>
+              ) : (
+                <span className="btn-text">Save & Proceed to Dashboard</span>
+              )}
+            </button>
+
+            <div style={{ textAlign: 'center', marginTop: '12px' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={handleSignOut}
+                style={{ fontSize: '13px', color: 'var(--text-muted)' }}
+              >
+                Sign Out
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     );
@@ -2853,6 +3209,7 @@ export default function App() {
                           <th width="60">ID</th>
                           <th>Member Name</th>
                           <th>Email Address</th>
+                          <th width="150">Aadhaar (UIDAI)</th>
                           <th width="150">Phone Number</th>
                           <th width="140">Status</th>
                           <th width="130">Reward Points</th>
@@ -2861,13 +3218,22 @@ export default function App() {
                       </thead>
                       <tbody>
                         {members.length === 0 ? (
-                          <tr><td colSpan="7" className="empty-cell">No members found.</td></tr>
+                          <tr><td colSpan="8" className="empty-cell">No members found.</td></tr>
                         ) : (
                           members.map((m, idx) => (
                             <tr key={m.id ?? m.uuid ?? m.email ?? `member-${idx}`}>
                               <td>#{m.id || '—'}</td>
                               <td><strong>{m.name || m.username}</strong></td>
                               <td>{m.email}</td>
+                              <td>
+                                {m.aadhaarLast4 ? (
+                                  <span style={{ fontFamily: 'monospace', fontSize: '12px', background: 'var(--bg-subtle)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.5px' }}>
+                                    XXXX XXXX {m.aadhaarLast4}
+                                  </span>
+                                ) : (
+                                  <span className="text-subtle" style={{ fontSize: '12px' }}>—</span>
+                                )}
+                              </td>
                               <td>
                                 {m.phone ? (
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', fontWeight: '500' }}>
@@ -4810,6 +5176,26 @@ export default function App() {
                       Select your country code and enter mobile digits (e.g. US +1 555 555 5555).
                     </small>
                   )}
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Aadhaar Number (UIDAI)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    disabled
+                    readOnly
+                    value={currentUser?.aadhaarLast4 ? `XXXX XXXX ${currentUser.aadhaarLast4}` : 'Not Linked'}
+                    style={{
+                      background: 'var(--bg-subtle)',
+                      color: 'var(--text-muted)',
+                      fontFamily: 'monospace',
+                      letterSpacing: '1px',
+                      cursor: 'not-allowed'
+                    }}
+                  />
+                  <small className="text-muted" style={{ display: 'block', marginTop: '4px', fontSize: '12px' }}>
+                    Aadhaar numbers are securely encrypted and masked.
+                  </small>
                 </div>
                 <div className="form-group mb-4">
                   <label className="form-label">Account Role & Points</label>

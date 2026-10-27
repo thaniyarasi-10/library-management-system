@@ -19,6 +19,8 @@ public interface UserRepository extends JpaRepository<User, String> {
     Optional<User> findByEmail(String email);
     Optional<User> findByUuid(String uuid);
     Optional<User> findById(Long id);
+    Optional<User> findByAadhaarHash(String aadhaarHash);
+    boolean existsByAadhaarHash(String aadhaarHash);
     List<User> findBySalesforceSyncStatus(SalesforceSyncStatus salesforceSyncStatus);
     List<User> findByReactivationRequestStatusIsNotNull();
 

@@ -33,7 +33,8 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Implementation of {@link MembershipService} handling S3 agreement templates, OpenHTMLtoPDF rendering,
+ * Implementation of {@link MembershipService} handling S3 agreement templates,
+ * OpenHTMLtoPDF rendering,
  * and lifecycle transitions for library memberships.
  */
 @Service
@@ -76,7 +77,8 @@ public class MembershipServiceImpl implements MembershipService {
     }
 
     /**
-     * Submits a membership application in PENDING status and returns the populated agreement HTML.
+     * Submits a membership application in PENDING status and returns the populated
+     * agreement HTML.
      *
      * @param email The user's email address
      * @return Application response containing UUID and agreement HTML
@@ -122,17 +124,21 @@ public class MembershipServiceImpl implements MembershipService {
                 .replace("{{membershipId}}", "PENDING")
                 .replace("{{START_DATE}}", LocalDate.now().toString())
                 .replace("{{applicationDate}}", LocalDate.now().toString())
-                .replace("{{EXPIRY_DATE}}", "N/A (Pending Activation)");
+                .replace("{{EXPIRY_DATE}}", "N/A (Pending Activation)")
+                .replace("{{SIGNED_DATE}}", LocalDate.now().toString())
+                .replace("{{signedDate}}", LocalDate.now().toString())
+                .replace("{{signed date}}", LocalDate.now().toString());
 
         return new MembershipApplicationResponse(saved.getUuid(), saved.getMembershipId(), agreementHtml);
     }
 
     /**
-     * Validates signature PNG, embeds Base64 image into agreement, renders PDF, uploads to S3, and activates membership.
+     * Validates signature PNG, embeds Base64 image into agreement, renders PDF,
+     * uploads to S3, and activates membership.
      *
      * @param membershipUuid Application UUID
-     * @param file Signature image
-     * @param email User email
+     * @param file           Signature image
+     * @param email          User email
      * @return Activated membership response DTO
      */
     @Override
@@ -182,6 +188,9 @@ public class MembershipServiceImpl implements MembershipService {
             String signatureHtml = "<img class=\"signature-img\" src=\"data:image/png;base64," + base64Signature
                     + "\" />";
 
+            LocalDateTime signedAt = LocalDateTime.now();
+            String signedDateText = signedAt.toLocalDate().toString();
+
             String filledHtml = templateHtml
                     .replace("{{MEMBER_NAME}}", user.getName())
                     .replace("{{memberName}}", user.getName())
@@ -192,6 +201,9 @@ public class MembershipServiceImpl implements MembershipService {
                     .replace("{{START_DATE}}", membership.getCreatedAt().toLocalDate().toString())
                     .replace("{{applicationDate}}", membership.getCreatedAt().toLocalDate().toString())
                     .replace("{{EXPIRY_DATE}}", LocalDate.now().plusYears(1).toString())
+                    .replace("{{SIGNED_DATE}}", signedDateText)
+                    .replace("{{signedDate}}", signedDateText)
+                    .replace("{{signed date}}", signedDateText)
                     .replace("{{signaturePlaceholder}}", signatureHtml)
                     .replace("<div class=\"signature-placeholder\">\n            Signature\n        </div>",
                             signatureHtml)
@@ -206,7 +218,7 @@ public class MembershipServiceImpl implements MembershipService {
 
             membership.setStatus(MembershipStatus.PENDING);
             membership.setSigned(true);
-            membership.setSignedAt(LocalDateTime.now());
+            membership.setSignedAt(signedAt);
             membership.setSignedPdfKey(pdfKey);
 
             Membership updated = membershipRepository.save(membership);
@@ -285,7 +297,7 @@ public class MembershipServiceImpl implements MembershipService {
      * Generates populated HTML representation of the agreement for review.
      *
      * @param membershipUuid Unique UUID
-     * @param email User email
+     * @param email          User email
      * @return Formatted HTML agreement
      */
     @Override
@@ -301,9 +313,15 @@ public class MembershipServiceImpl implements MembershipService {
 
         String html = getAgreementTemplate();
         log.info("Fetched template from S3");
-        String membershipIdText = Objects.nonNull(membership.getMembershipId()) ? membership.getMembershipId().toString()
+        String membershipIdText = Objects.nonNull(membership.getMembershipId())
+                ? membership.getMembershipId().toString()
                 : "PENDING";
-        String startDateText = Objects.nonNull(membership.getCreatedAt()) ? membership.getCreatedAt().toLocalDate().toString()
+        String startDateText = Objects.nonNull(membership.getCreatedAt())
+                ? membership.getCreatedAt().toLocalDate().toString()
+                : LocalDate.now().toString();
+
+        String signedDateText = Objects.nonNull(membership.getSignedAt())
+                ? membership.getSignedAt().toLocalDate().toString()
                 : LocalDate.now().toString();
 
         return html
@@ -315,14 +333,17 @@ public class MembershipServiceImpl implements MembershipService {
                 .replace("{{membershipId}}", membershipIdText)
                 .replace("{{START_DATE}}", startDateText)
                 .replace("{{applicationDate}}", startDateText)
-                .replace("{{EXPIRY_DATE}}", "N/A (Pending Activation)");
+                .replace("{{EXPIRY_DATE}}", "N/A (Pending Activation)")
+                .replace("{{SIGNED_DATE}}", signedDateText)
+                .replace("{{signedDate}}", signedDateText)
+                .replace("{{signed date}}", signedDateText);
     }
 
     /**
      * Downloads the stored signed agreement PDF from S3.
      *
      * @param membershipId Numeric ID
-     * @param email User email
+     * @param email        User email
      * @return PDF byte array
      */
     @Override
@@ -354,7 +375,8 @@ public class MembershipServiceImpl implements MembershipService {
         log.info("Checking active membership for user: {} in DATABASE", userUuid);
         return membershipRepository.findTopByUserUuidOrderByCreatedAtDesc(userUuid)
                 .map(membership -> membership.getStatus() == MembershipStatus.ACTIVE
-                        && (Objects.isNull(membership.getExpiryDate()) || !membership.getExpiryDate().isBefore(LocalDate.now())))
+                        && (Objects.isNull(membership.getExpiryDate())
+                                || !membership.getExpiryDate().isBefore(LocalDate.now())))
                 .orElse(false);
     }
 
@@ -402,7 +424,8 @@ public class MembershipServiceImpl implements MembershipService {
     }
 
     /**
-     * Activates a pending, signed membership for one year following successful payment verification.
+     * Activates a pending, signed membership for one year following successful
+     * payment verification.
      *
      * @param userUuid The user's unique UUID
      * @return The updated active {@link MembershipResponseDto}

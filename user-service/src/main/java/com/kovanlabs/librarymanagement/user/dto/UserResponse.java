@@ -14,6 +14,9 @@ public record UserResponse(
         boolean reactivationRequested,
         boolean hasPendingFines,
         Double pendingFineAmount,
-        String reactivationRequestStatus
+        String reactivationRequestStatus,
+        String aadhaarLast4,
+        String hashAadhar,
+        boolean isProfileComplete
 ) implements Serializable {
 }

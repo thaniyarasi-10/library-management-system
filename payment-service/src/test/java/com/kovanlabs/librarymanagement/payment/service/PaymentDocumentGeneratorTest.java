@@ -312,4 +312,29 @@ class PaymentDocumentGeneratorTest {
         assertNotNull(pdfBytes);
         assertTrue(pdfBytes.length > 0);
     }
+
+    @Test
+    void testGeneratePdf_withMaskedAadhaar() throws Exception {
+        User userWithAadhaar = User.builder()
+                .uuid(UUID.randomUUID().toString())
+                .name("Aadhaar Member")
+                .email("aadhaar.member@example.com")
+                .aadhaarLast4("4321")
+                .build();
+
+        Payment payment = Payment.builder()
+                .uuid(UUID.randomUUID().toString())
+                .paymentType(PaymentType.MEMBERSHIP)
+                .transactionType(TransactionType.PAYMENT)
+                .amount(50000L)
+                .status(PaymentStatus.SUCCESS)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        String docNumber = generator.generateDocumentNumber(payment);
+        byte[] pdfBytes = generator.generatePdf(payment, userWithAadhaar, List.of(), docNumber);
+
+        assertNotNull(pdfBytes);
+        assertTrue(pdfBytes.length > 0);
+    }
 }

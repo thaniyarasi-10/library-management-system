@@ -123,4 +123,12 @@
         </sql>
     </changeSet>
 
+    <changeSet id="27-add-aadhaar-columns-to-user" author="thani">
+        <addColumn tableName="user">
+            <column name="aadhaar_last4" type="varchar(4)"/>
+            <column name="aadhaar_hash" type="varchar(64)"/>
+        </addColumn>
+        <addUniqueConstraint tableName="user" columnNames="aadhaar_hash" constraintName="uk_user_aadhaar_hash"/>
+    </changeSet>
+
 </databaseChangeLog>

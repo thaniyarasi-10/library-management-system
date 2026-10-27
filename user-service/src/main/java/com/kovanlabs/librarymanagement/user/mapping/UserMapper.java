@@ -36,6 +36,9 @@ public interface UserMapper {
     @Mapping(target = "reactivationRequestStatus", expression = "java((Objects.nonNull(user) && Objects.nonNull(user.getReactivationRequestStatus())) ? user.getReactivationRequestStatus().name() : null)")
     @Mapping(target = "hasPendingFines", constant = "false")
     @Mapping(target = "pendingFineAmount", expression = "java(0.0)")
+    @Mapping(target = "aadhaarLast4", source = "aadhaarLast4")
+    @Mapping(target = "hashAadhar", source = "aadhaarHash")
+    @Mapping(target = "isProfileComplete", expression = "java(Objects.nonNull(user) && Objects.nonNull(user.getName()) && !user.getName().isBlank() && Objects.nonNull(user.getAadhaarLast4()) && !user.getAadhaarLast4().isBlank() && Objects.nonNull(user.getAadhaarHash()) && !user.getAadhaarHash().isBlank())")
     UserResponse mapToResponse(User user);
 
     /**
@@ -53,6 +56,9 @@ public interface UserMapper {
     @Mapping(target = "reactivationRequestStatus", expression = "java((Objects.nonNull(user) && Objects.nonNull(user.getReactivationRequestStatus())) ? user.getReactivationRequestStatus().name() : null)")
     @Mapping(target = "hasPendingFines", constant = "false")
     @Mapping(target = "pendingFineAmount", expression = "java(0.0)")
+    @Mapping(target = "aadhaarLast4", source = "user.aadhaarLast4")
+    @Mapping(target = "hashAadhar", source = "user.aadhaarHash")
+    @Mapping(target = "isProfileComplete", expression = "java(Objects.nonNull(user) && Objects.nonNull(user.getName()) && !user.getName().isBlank() && Objects.nonNull(user.getAadhaarLast4()) && !user.getAadhaarLast4().isBlank() && Objects.nonNull(user.getAadhaarHash()) && !user.getAadhaarHash().isBlank())")
     UserResponse mapUserAndReward(User user, Integer rewardPoints);
 
     /**
@@ -81,6 +87,9 @@ public interface UserMapper {
     @Mapping(target = "reactivationRequestStatus", expression = "java((Objects.nonNull(user) && Objects.nonNull(user.getReactivationRequestStatus())) ? user.getReactivationRequestStatus().name() : null)")
     @Mapping(target = "hasPendingFines", source = "hasPendingFines")
     @Mapping(target = "pendingFineAmount", source = "pendingFineAmount")
+    @Mapping(target = "aadhaarLast4", source = "user.aadhaarLast4")
+    @Mapping(target = "hashAadhar", source = "user.aadhaarHash")
+    @Mapping(target = "isProfileComplete", expression = "java(Objects.nonNull(user) && Objects.nonNull(user.getName()) && !user.getName().isBlank() && Objects.nonNull(user.getAadhaarLast4()) && !user.getAadhaarLast4().isBlank() && Objects.nonNull(user.getAadhaarHash()) && !user.getAadhaarHash().isBlank())")
     UserResponse mapUserWithFines(User user, Integer rewardPoints, boolean hasPendingFines, Double pendingFineAmount);
 
     default UserResponse mapToResponse(User user, Integer rewardPoints, boolean hasPendingFines, Double pendingFineAmount) {
@@ -195,6 +204,9 @@ public interface UserMapper {
     @Mapping(target = "reactivationRequested", expression = "java(\"PENDING\".equalsIgnoreCase(contact.getReactivationRequestStatus()))")
     @Mapping(target = "hasPendingFines", constant = "false")
     @Mapping(target = "pendingFineAmount", expression = "java(0.0)")
+    @Mapping(target = "aadhaarLast4", ignore = true)
+    @Mapping(target = "hashAadhar", ignore = true)
+    @Mapping(target = "isProfileComplete", constant = "true")
     UserResponse toUserResponse(ContactSObject contact);
 
     /**
