@@ -50,20 +50,20 @@ class BookControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/books/{id} when book exists should return 200 OK and BookResponse")
+    @DisplayName("GET /api/books/{uuid} when book exists should return 200 OK and BookResponse")
     void getBookById_WhenBookExists_ShouldReturn200OkAndBook() throws Exception {
         BookResponse response = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884", null, 5, 0, 5);
 
-        when(bookService.getBookById(id1)).thenReturn(response);
+        when(bookService.getBookByUuid(uuid1)).thenReturn(response);
 
-        mockMvc.perform(get("/api/books/" + id1)
+        mockMvc.perform(get("/api/books/" + uuid1)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("Clean Code"))
                 .andExpect(jsonPath("$.author").value("Robert C. Martin"))
                 .andExpect(jsonPath("$.isbn").value("9780132350884"));
 
-        verify(bookService, times(1)).getBookById(id1);
+        verify(bookService, times(1)).getBookByUuid(uuid1);
     }
 
     @Test
@@ -93,14 +93,14 @@ class BookControllerTest {
     }
 
     @Test
-    @DisplayName("DELETE /api/books/{id} when book exists should return 204 No Content")
+    @DisplayName("DELETE /api/books/{uuid} when book exists should return 204 No Content")
     void deleteBook_WhenBookExists_ShouldReturn204NoContent() throws Exception {
-        doNothing().when(bookService).deleteBook(id1);
+        doNothing().when(bookService).deleteBook(uuid1);
 
-        mockMvc.perform(delete("/api/books/" + id1))
+        mockMvc.perform(delete("/api/books/" + uuid1))
                 .andExpect(status().isNoContent());
 
-        verify(bookService, times(1)).deleteBook(id1);
+        verify(bookService, times(1)).deleteBook(uuid1);
     }
 
     @Test
@@ -132,14 +132,14 @@ class BookControllerTest {
     }
 
     @Test
-    @DisplayName("PUT /api/books/{id} should update book")
+    @DisplayName("PUT /api/books/{uuid} should update book")
     void updateBook_ShouldReturnUpdatedBook() throws Exception {
         BookResponse response = new BookResponse(uuid1, id1, "Clean Code", "Robert C. Martin", "9780132350884", null, 5, 0, 5);
-        when(bookService.updateBook(eq(id1), any(BookRequest.class))).thenReturn(response);
+        when(bookService.updateBook(eq(uuid1), any(BookRequest.class))).thenReturn(response);
 
         String body = "{\"title\":\"Clean Code\",\"author\":\"Robert C. Martin\",\"isbn\":\"9780132350884\",\"totalBookCount\":5}";
 
-        mockMvc.perform(put("/api/books/" + id1)
+        mockMvc.perform(put("/api/books/" + uuid1)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk())
@@ -147,22 +147,22 @@ class BookControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/books/{id}/cover should upload cover image")
+    @DisplayName("POST /api/books/{uuid}/cover should upload cover image")
     void uploadCover_ShouldReturnMessage() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "cover.jpg", "image/jpeg", "content".getBytes());
-        when(bookService.uploadBookCover(id1, file)).thenReturn("Book cover updated");
+        when(bookService.uploadBookCover(uuid1, file)).thenReturn("Book cover updated");
 
-        mockMvc.perform(multipart("/api/books/" + id1 + "/cover").file(file))
+        mockMvc.perform(multipart("/api/books/" + uuid1 + "/cover").file(file))
                 .andExpect(status().isOk())
                 .andExpect(content().string("Book cover updated"));
     }
 
     @Test
-    @DisplayName("GET /api/books/{id}/cover should return image url")
+    @DisplayName("GET /api/books/{uuid}/cover should return image url")
     void getBookCover_ShouldReturnUrl() throws Exception {
-        when(bookService.getImageCoverById(id1)).thenReturn("http://s3.com/cover.jpg");
+        when(bookService.getImageCoverByUuid(uuid1)).thenReturn("http://s3.com/cover.jpg");
 
-        mockMvc.perform(get("/api/books/" + id1 + "/cover"))
+        mockMvc.perform(get("/api/books/" + uuid1 + "/cover"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("http://s3.com/cover.jpg"));
     }

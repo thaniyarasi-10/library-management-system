@@ -45,43 +45,43 @@ public interface BookService {
     PagedResponse<BookResponse> searchBooks(String query, int page, int size, String sortBy, String sortDir);
 
     /**
-     * Retrieves a book by its database ID with caching support.
+     * Retrieves a book by its UUID with caching support.
      *
-     * @param id The book ID
+     * @param uuid The book UUID
      * @return The {@link BookResponse} DTO
      */
-    BookResponse getBookById(Long id);
+    BookResponse getBookByUuid(String uuid);
 
     /**
      * Updates an existing book record.
      *
-     * @param id The book ID
+     * @param uuid The book UUID
      * @param request The updated book payload
      * @return The updated {@link BookResponse} DTO
      */
-    BookResponse updateBook(Long id, BookRequest request);
+    BookResponse updateBook(String uuid, BookRequest request);
 
     /**
      * Deletes a book record from the system.
      *
-     * @param id The book ID to delete
+     * @param uuid The book UUID to delete
      */
-    void deleteBook(Long id);
+    void deleteBook(String uuid);
 
     /**
      * Uploads a cover image for a book to AWS S3.
      *
-     * @param bookId The book ID
+     * @param uuid The book UUID
      * @param file The multipart image file
      * @return Status message
      */
-    String uploadBookCover(Long bookId, MultipartFile file);
+    String uploadBookCover(String uuid, MultipartFile file);
 
     /**
-     * Retrieves the image cover URL for a specific book ID.
+     * Retrieves the image cover URL for a specific book UUID.
      *
-     * @param id The book ID
+     * @param uuid The book UUID
      * @return The cover image URL
      */
-    String getImageCoverById(Long id);
+    String getImageCoverByUuid(String uuid);
 }

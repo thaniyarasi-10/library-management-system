@@ -627,17 +627,17 @@ export default function App() {
     });
     if (res.ok) {
       const createdBook = res.data;
-      if (bookForm.coverFile && createdBook?.id) {
+      if (bookForm.coverFile && (createdBook?.uuid || createdBook?.id)) {
         const formData = new FormData();
         formData.append('file', bookForm.coverFile);
-        await fetchApi(`/books/${createdBook.id}/cover`, {
+        await fetchApi(`/books/${createdBook.uuid || createdBook.id}/cover`, {
           method: 'POST',
           body: formData
         });
       }
       showToast('Book added to inventory successfully', 'success');
       setActiveModal(null);
-      setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
+      setBookForm({ id: '', uuid: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
       loadBooks(booksPage, bookSearchQuery);
     } else {
       showToast(res.data?.message || 'Failed to create book', 'error');
@@ -646,7 +646,8 @@ export default function App() {
 
   const handleEditBookSubmit = async (e) => {
     e.preventDefault();
-    const res = await fetchApi(`/books/${bookForm.id}`, {
+    const bookIdentifier = bookForm.uuid || bookForm.id;
+    const res = await fetchApi(`/books/${bookIdentifier}`, {
       method: 'PUT',
       body: JSON.stringify({
         title: bookForm.title,
@@ -659,14 +660,14 @@ export default function App() {
       if (bookForm.coverFile) {
         const formData = new FormData();
         formData.append('file', bookForm.coverFile);
-        await fetchApi(`/books/${bookForm.id}/cover`, {
+        await fetchApi(`/books/${bookIdentifier}/cover`, {
           method: 'POST',
           body: formData
         });
       }
       showToast('Book updated successfully', 'success');
       setActiveModal(null);
-      setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
+      setBookForm({ id: '', uuid: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
       loadBooks(booksPage, bookSearchQuery);
     } else {
       showToast(res.data?.message || 'Failed to update book', 'error');
@@ -3055,6 +3056,7 @@ export default function App() {
                                   <button className="btn btn-secondary btn-sm" onClick={() => {
                                     setBookForm({
                                       id: b.id,
+                                      uuid: b.uuid,
                                       title: b.title,
                                       author: b.author,
                                       isbn: b.isbn,
@@ -3065,7 +3067,7 @@ export default function App() {
                                     });
                                     setActiveModal('editBook');
                                   }}>Edit</button>
-                                  <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBook(b.id, b.title)}>Del</button>
+                                  <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBook(b.uuid || b.id, b.title)}>Del</button>
                                 </div>
                               ) : (
                                 avail <= 0 ? (

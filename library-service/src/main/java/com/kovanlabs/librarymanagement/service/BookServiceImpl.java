@@ -170,33 +170,31 @@ public class BookServiceImpl implements BookService {
     }
 
     /**
-     * Retrieves a book by ID with Redis caching.
+     * Retrieves a book by UUID with Redis caching.
      *
-     * @param id The book ID
+     * @param uuid The book UUID
      * @return {@link BookResponse} DTO
      */
     @Override
     @Cacheable(value = "books", key = "#p0")
-    public BookResponse getBookById(Long id) {
-        log.info("CACHE MISS - Fetching book {} from DATABASE", id);
-        Book book = bookRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
+    public BookResponse getBookByUuid(String uuid) {
+        log.info("CACHE MISS - Fetching book {} from DATABASE", uuid);
+        Book book = findBookEntity(uuid);
         return BookMapper.INSTANCE.mapToResponse(book);
     }
 
     /**
      * Updates an existing book and triggers synchronization with Salesforce.
      *
-     * @param id      The book ID
+     * @param uuid    The book UUID
      * @param request The updated book payload
      * @return Updated {@link BookResponse}
      */
     @Override
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
-    public BookResponse updateBook(Long id, BookRequest request) {
-        Book book = bookRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
+    public BookResponse updateBook(String uuid, BookRequest request) {
+        Book book = findBookEntity(uuid);
         book.setTitle(request.title());
         book.setAuthor(request.author());
         book.setIsbn(request.isbn());
@@ -230,33 +228,30 @@ public class BookServiceImpl implements BookService {
     }
 
     /**
-     * Deletes a book by ID and evicts all book caches.
+     * Deletes a book by UUID and evicts all book caches.
      *
-     * @param id The book ID to delete
+     * @param uuid The book UUID to delete
      */
     @Override
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
-    public void deleteBook(Long id) {
-        Book book = bookRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
+    public void deleteBook(String uuid) {
+        Book book = findBookEntity(uuid);
         bookRepository.delete(book);
     }
 
     /**
      * Uploads a book cover image to AWS S3 and updates the book entity.
      *
-     * @param bookId The book ID
-     * @param file   The multipart image file
+     * @param uuid The book UUID
+     * @param file The multipart image file
      * @return Status message
      */
+    @Override
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
-    public String uploadBookCover(Long bookId, MultipartFile file) {
-
-        Book book = bookRepository.findById(bookId)
-                .orElseThrow(
-                        () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
+    public String uploadBookCover(String uuid, MultipartFile file) {
+        Book book = findBookEntity(uuid);
 
         try {
             S3UploadResponse response = s3Service.uploadFile(file);
@@ -274,15 +269,29 @@ public class BookServiceImpl implements BookService {
     }
 
     /**
-     * Retrieves the cover image URL for a book by its ID.
+     * Retrieves the cover image URL for a book by its UUID.
      *
-     * @param id The book ID
+     * @param uuid The book UUID
      * @return The cover image URL
      */
-    public String getImageCoverById(Long id) {
-        Book book = bookRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Book not found"));
-
+    @Override
+    public String getImageCoverByUuid(String uuid) {
+        Book book = findBookEntity(uuid);
         return book.getCoverImageUrl();
+    }
+
+    private Book findBookEntity(String uuid) {
+        if (Objects.isNull(uuid) || uuid.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Book UUID must not be empty");
+        }
+        return bookRepository.findByUuid(uuid)
+                .or(() -> {
+                    try {
+                        return bookRepository.findById(Long.parseLong(uuid));
+                    } catch (NumberFormatException e) {
+                        return Optional.empty();
+                    }
+                })
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with UUID: " + uuid));
     }
 }
