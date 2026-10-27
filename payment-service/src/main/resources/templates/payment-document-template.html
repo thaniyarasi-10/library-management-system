@@ -184,7 +184,6 @@
                 <div class="info-item"><span class="info-label">Date &amp; Time:</span> <span class="info-value">{{TRANSACTION_DATE}}</span></div>
                 <div class="info-item"><span class="info-label">Razorpay Order ID:</span> <span class="info-value" style="font-family: monospace;">{{ORDER_ID}}</span></div>
                 <div class="info-item"><span class="info-label">Payment ID:</span> <span class="info-value" style="font-family: monospace;">{{PAYMENT_ID}}</span></div>
-                {{REFUND_INFO_ITEM}}
             </td>
         </tr>
     </table>
@@ -216,11 +215,20 @@
 
     <div class="totals-table-wrapper">
         <table class="totals-table">
-            {{TOTALS_SECTION}}
+            <tr>
+                <td><strong>Subtotal:</strong></td>
+                <td style="text-align: right;">₹{{SUBTOTAL}}</td>
+            </tr>
+            <tr>
+                <td><strong>Taxes &amp; Fees:</strong></td>
+                <td style="text-align: right;">₹{{TAXES}}</td>
+            </tr>
+            <tr class="grand-total-row">
+                <td><strong>Total Paid (INR):</strong></td>
+                <td style="text-align: right; color: #16a34a;">₹{{TOTAL_PAID}}</td>
+            </tr>
         </table>
     </div>
-
-    {{REFUNDS_SECTION}}
 
     <div class="footer">
         <div>This is an official, computer-generated document from Padips Library Management System.</div>
