@@ -12,7 +12,7 @@ import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.database.repository.BorrowRepository;
 import com.kovanlabs.librarymanagement.database.repository.UserRepository;
-import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -58,7 +58,7 @@ class BorrowServiceImplTest {
     private RewardService rewardService;
 
     @Mock
-    private SalesforceSyncImpl salesforceSyncService;
+    private SalesforceSync salesforceSyncService;
 
     @InjectMocks
     private BorrowServiceImpl borrowService;

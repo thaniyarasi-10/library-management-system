@@ -9,7 +9,7 @@ import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
-import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,7 +43,7 @@ class BookServiceImplTest {
     private S3Service s3Service;
 
     @Mock
-    private SalesforceSyncImpl salesforceSyncService;
+    private SalesforceSync salesforceSyncService;
 
     @InjectMocks
     private BookServiceImpl bookService;

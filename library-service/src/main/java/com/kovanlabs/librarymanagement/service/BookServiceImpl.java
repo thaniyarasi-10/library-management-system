@@ -9,7 +9,7 @@ import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
-import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -27,6 +27,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -42,7 +43,7 @@ public class BookServiceImpl implements BookService {
 
     private final BookRepository bookRepository;
     private final S3Service s3Service;
-    private final SalesforceSyncImpl salesforceSyncService;
+    private final SalesforceSync salesforceSyncService;
 
     /**
      * Creates a new book record, saves it to the database, and synchronizes with
@@ -57,25 +58,24 @@ public class BookServiceImpl implements BookService {
     public BookResponse createBook(BookRequest request) {
         Book book = BookMapper.INSTANCE.mapToEntity(request);
         Book savedBook = bookRepository.save(book);
-        BookResponse response = BookMapper.INSTANCE.mapToResponse(savedBook);
 
         if (Objects.nonNull(salesforceSyncService)) {
             try {
-                salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(response));
+                salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(savedBook));
                 savedBook.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
-                bookRepository.save(savedBook);
+                savedBook = bookRepository.save(savedBook);
             } catch (Exception e) {
                 int retryCount = savedBook.getSalesforceRetryCount() + 1;
                 savedBook.setSalesforceRetryCount(retryCount);
                 savedBook.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
-                bookRepository.save(savedBook);
+                savedBook = bookRepository.save(savedBook);
                 log.error(
                         "Salesforce dual-write failed for book creation [Book ID: {}, UUID: {}, Operation: CREATE, RetryCount: {}]: {}",
                         savedBook.getId(), savedBook.getUuid(), retryCount, e.getMessage());
             }
         }
 
-        return response;
+        return BookMapper.INSTANCE.mapToResponse(savedBook);
     }
 
     /**
@@ -205,26 +205,25 @@ public class BookServiceImpl implements BookService {
         book.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
 
         Book updatedBook = bookRepository.save(book);
-        BookResponse response = BookMapper.INSTANCE.mapToResponse(updatedBook);
 
         if (Objects.nonNull(salesforceSyncService)) {
             try {
-                salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(response));
+                salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(updatedBook));
                 updatedBook.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
                 updatedBook.setSalesforceRetryCount(0);
-                bookRepository.save(updatedBook);
+                updatedBook = bookRepository.save(updatedBook);
             } catch (Exception e) {
                 int retryCount = updatedBook.getSalesforceRetryCount() + 1;
                 updatedBook.setSalesforceRetryCount(retryCount);
                 updatedBook.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
-                bookRepository.save(updatedBook);
+                updatedBook = bookRepository.save(updatedBook);
                 log.error(
                         "Salesforce dual-write failed for book update [Book ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
                         updatedBook.getId(), updatedBook.getUuid(), retryCount, e.getMessage());
             }
         }
 
-        return response;
+        return BookMapper.INSTANCE.mapToResponse(updatedBook);
     }
 
     /**

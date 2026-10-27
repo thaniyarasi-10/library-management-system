@@ -635,6 +635,7 @@ export default function App() {
           body: formData
         });
       }
+      
       showToast('Book added to inventory successfully', 'success');
       setActiveModal(null);
       setBookForm({ id: '', uuid: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
