@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { jwtDecode } from 'jwt-decode';
 import {
@@ -110,8 +111,42 @@ export default function App() {
   });
   const userFetchedRef = useRef(false);
 
-  // Navigation
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  // URL-based navigation
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Map between URL paths and internal page names
+  const PATH_TO_PAGE = {
+    '/': 'dashboard',
+    '/dashboard': 'dashboard',
+    '/books': 'books',
+    '/members': 'members',
+    '/borrow': 'borrow',
+    '/fines': 'fines',
+    '/membership': 'membership',
+    '/payments': 'payments',
+    '/donations': 'donations',
+  };
+
+  const PAGE_TO_PATH = {
+    'dashboard': '/',
+    'books': '/books',
+    'members': '/members',
+    'borrow': '/borrow',
+    'fines': '/fines',
+    'membership': '/membership',
+    'payments': '/payments',
+    'donations': '/donations',
+  };
+
+  // Derive current page from URL; fall back to 'dashboard' for unknown paths
+  const currentPage = PATH_TO_PAGE[location.pathname] || 'dashboard';
+
+  // Navigate by page name -- drop-in replacement for all setCurrentPage calls
+  const setCurrentPage = useCallback((page) => {
+    const path = PAGE_TO_PATH[page] || '/';
+    navigate(path);
+  }, [navigate]);
 
   // Data states
   const [dashboardStats, setDashboardStats] = useState({ books: 0, members: 0 });
