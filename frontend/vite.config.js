@@ -15,5 +15,9 @@ export default defineConfig({
         secure: false,
       }
     }
+  },
+  preview: {
+    // Serve index.html for all routes so React Router handles them
+    port: 3000,
   }
 })

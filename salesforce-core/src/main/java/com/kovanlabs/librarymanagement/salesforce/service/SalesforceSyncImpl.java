@@ -17,8 +17,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
-
 /**
  * Service for synchronizing User, Book, and Borrow entities with Salesforce SObjects.
  * <p>
@@ -144,7 +142,7 @@ public class SalesforceSyncImpl implements SalesforceSync {
         String soql = new SOQLBuilder<>()
                 .select(ContactFields.EXTERNAL_USER_UUID, ContactFields.LEGACY_USER_ID, ContactFields.LAST_NAME, ContactFields.EMAIL, ContactFields.ROLE, ContactFields.PHONE,
                         ContactFields.STATUS, ContactFields.LAST_LOGIN_AT, ContactFields.REACTIVATION_REQUEST_STATUS, ContactFields.INACTIVITY_WARNING_SENT_AT,
-                        ContactFields.REWARD)
+                        ContactFields.REWARD, ContactFields.DEACTIVATED_AT, ContactFields.AADHAR_HASH, ContactFields.AADHAR_LAST4)
                 .from(SObject.CONTACT)
                 .whereNotNull(ContactSObject.EXTERNAL_ID_FIELD)
                 .build();

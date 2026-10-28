@@ -74,6 +74,8 @@ public interface BookMapper {
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
     @Mapping(target = "totalBookCount", source = "totalBookCount")
     @Mapping(target = "borrowedBookCount", source = "borrowedBookCount")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "errors", ignore = true)
     BookSObject toBookSObject(BookResponse dto);
 
     /**

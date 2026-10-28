@@ -173,6 +173,8 @@ public class AccountDeactivationService {
                 freshUser.getEmail(), freshUser.getId(), REACTIVATION_DEADLINE_DAYS);
         freshUser.setStatus(AccountStatus.PERMANENTLY_DEACTIVATED);
         freshUser.setReactivationRequestStatus(null);
+        freshUser.setSalesforceRetryCount(0);
+        freshUser.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
         User savedUser = userRepository.save(freshUser);
         syncUserToSalesforce(savedUser);
         notifyPermanentDeactivation(savedUser.getUuid());
@@ -218,9 +220,12 @@ public class AccountDeactivationService {
      */
     public void syncUserToSalesforce(User user) {
         if (Objects.nonNull(salesforceSyncDelegate) && Objects.nonNull(user) && Objects.nonNull(user.getUuid())) {
+            user.setSalesforceRetryCount(0);
+            user.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
             try {
                 salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(user));
                 user.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                user.setSalesforceRetryCount(0);
                 userRepository.save(user);
             } catch (Exception e) {
                 int retryCount = user.getSalesforceRetryCount() + 1;

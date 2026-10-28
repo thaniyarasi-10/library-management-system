@@ -83,7 +83,7 @@ class BorrowMappingTest {
 
         assertNotNull(responses);
         assertEquals(2, responses.size());
-        assertEquals(BorrowStatus.BORROWED, responses.get(0).status());
+        assertEquals(BorrowStatus.BORROWED, responses.getFirst().status());
         assertEquals(BorrowStatus.RETURNED, responses.get(1).status());
     }
 
@@ -199,7 +199,7 @@ class BorrowMappingTest {
 
         assertNotNull(responses);
         assertEquals(2, responses.size());
-        assertEquals(BorrowStatus.BORROWED, responses.get(0).status());
+        assertEquals(BorrowStatus.BORROWED, responses.getFirst().status());
         assertEquals(BorrowStatus.RETURNED, responses.get(1).status());
     }
 

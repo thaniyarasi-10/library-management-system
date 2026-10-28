@@ -230,6 +230,9 @@ class SalesforceSyncServiceTest {
         record1.put(ContactFields.EXTERNAL_USER_UUID, validUuid.toString());
         record1.put(ContactFields.LEGACY_USER_ID, "100");
         record1.put(ContactFields.REWARD, 50);
+        record1.put(ContactFields.DEACTIVATED_AT, "2026-10-27T10:00:00");
+        record1.put(ContactFields.AADHAR_HASH, "hash999");
+        record1.put(ContactFields.AADHAR_LAST4, "9999");
 
         when(clientService.query(anyString())).thenReturn(root);
 
@@ -237,10 +240,13 @@ class SalesforceSyncServiceTest {
 
         assertNotNull(contacts);
         assertEquals(1, contacts.size());
-        assertEquals(validUuid.toString(), contacts.get(0).getExternalUserUuid());
-        assertEquals(100L, contacts.get(0).getLegacyUserId());
-        assertEquals("Smith", contacts.get(0).getLastName());
-        assertEquals(50, contacts.get(0).getReward());
+        assertEquals(validUuid.toString(), contacts.getFirst().getExternalUserUuid());
+        assertEquals(100L, contacts.getFirst().getLegacyUserId());
+        assertEquals("Smith", contacts.getFirst().getLastName());
+        assertEquals(50, contacts.getFirst().getReward());
+        assertEquals("2026-10-27T10:00:00", contacts.getFirst().getDeactivatedAt());
+        assertEquals("hash999", contacts.getFirst().getAadharHash());
+        assertEquals("9999", contacts.getFirst().getAadharLast4());
     }
 
     // --- getTotalBooksFromSalesforce() tests ---
@@ -284,9 +290,9 @@ class SalesforceSyncServiceTest {
 
         assertNotNull(res);
         assertEquals(1, res.size());
-        assertEquals(uuid.toString(), res.get(0).getExternalBookUuid());
-        assertEquals("Clean Code", res.get(0).getTitle());
-        assertEquals("Uncle Bob", res.get(0).getAuthor());
+        assertEquals(uuid.toString(), res.getFirst().getExternalBookUuid());
+        assertEquals("Clean Code", res.getFirst().getTitle());
+        assertEquals("Uncle Bob", res.getFirst().getAuthor());
     }
 
     // --- fetchBorrowsFromSalesforce() tests ---
@@ -308,8 +314,8 @@ class SalesforceSyncServiceTest {
 
         assertNotNull(res);
         assertEquals(1, res.size());
-        assertEquals(uuid.toString(), res.get(0).getExternalBorrowUuid());
-        assertEquals("BORROWED", res.get(0).getBorrowStatus());
+        assertEquals(uuid.toString(), res.getFirst().getExternalBorrowUuid());
+        assertEquals("BORROWED", res.getFirst().getBorrowStatus());
     }
 
     @Test
@@ -330,8 +336,8 @@ class SalesforceSyncServiceTest {
 
         assertNotNull(res);
         assertEquals(1, res.size());
-        assertEquals(1, res.get(0).getErrors().size());
-        assertEquals("Salesforce partial failure", res.get(0).getErrors().get(0));
+        assertEquals(1, res.getFirst().getErrors().size());
+        assertEquals("Salesforce partial failure", res.getFirst().getErrors().getFirst());
     }
 
     @Test
@@ -372,8 +378,8 @@ class SalesforceSyncServiceTest {
 
         assertNotNull(contacts);
         assertEquals(1, contacts.size());
-        assertEquals(1, contacts.get(0).getErrors().size());
-        assertEquals("Contact SOQL partial error", contacts.get(0).getErrors().get(0));
+        assertEquals(1, contacts.getFirst().getErrors().size());
+        assertEquals("Contact SOQL partial error", contacts.getFirst().getErrors().getFirst());
     }
 
     @Test
@@ -421,8 +427,8 @@ class SalesforceSyncServiceTest {
 
         assertNotNull(res);
         assertEquals(1, res.size());
-        assertEquals(1, res.get(0).getErrors().size());
-        assertEquals("Borrow SOQL warning", res.get(0).getErrors().get(0));
+        assertEquals(1, res.getFirst().getErrors().size());
+        assertEquals("Borrow SOQL warning", res.getFirst().getErrors().getFirst());
     }
 
     // --- SalesforceSync default methods tests ---
@@ -490,6 +496,6 @@ class SalesforceSyncServiceTest {
         List<ContactSObject> list = salesforceSyncService.toSObjectList(root, ContactSObject.class);
         assertNotNull(list);
         assertEquals(1, list.size());
-        assertEquals("InList", list.get(0).getLastName());
+        assertEquals("InList", list.getFirst().getLastName());
     }
 }

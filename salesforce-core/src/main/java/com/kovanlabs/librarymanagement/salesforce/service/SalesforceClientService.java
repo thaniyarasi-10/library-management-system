@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
@@ -99,9 +100,8 @@ public class SalesforceClientService {
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                     .body(params)
                     .retrieve()
-                    .onStatus(HttpStatusCode::isError, (req, res) -> {
-                        log.error("[SALESFORCE AUTH] Authentication returned error status: {}", res.getStatusCode());
-                    })
+                    .onStatus(HttpStatusCode::isError, (req, res) ->
+                        log.error("[SALESFORCE AUTH] Authentication returned error status: {}", res.getStatusCode()))
                     .body(String.class);
 
             if (Objects.nonNull(responseBody) && !responseBody.isBlank()) {
@@ -134,7 +134,7 @@ public class SalesforceClientService {
      */
     public static boolean isUnauthorizedOrExpired(Throwable t) {
         if (Objects.isNull(t)) return false;
-        if (t instanceof org.springframework.web.client.HttpStatusCodeException httpEx) {
+        if (t instanceof HttpStatusCodeException httpEx) {
             if (httpEx.getStatusCode().value() == 401) {
                 return true;
             }
@@ -187,8 +187,12 @@ public class SalesforceClientService {
 
     private JsonNode executeQuery(String soql) throws Exception {
         String token = getAccessToken();
+        if (Objects.isNull(token)) {
+            log.warn("[SALESFORCE QUERY] Failed to obtain access token or instance URL for SOQL: {}", soql);
+            return null;
+        }
         String host = getInstanceUrl();
-        if (Objects.isNull(token) || Objects.isNull(host)) {
+        if (Objects.isNull(host)) {
             log.warn("[SALESFORCE QUERY] Failed to obtain access token or instance URL for SOQL: {}", soql);
             return null;
         }
@@ -265,8 +269,11 @@ public class SalesforceClientService {
     private void executeUpsert(String sObjectName, String externalIdFieldName, String externalIdValue,
             Map<String, Object> fields) throws Exception {
         String token = getAccessToken();
+        if (Objects.isNull(token)) {
+            throw new SalesforceSyncException("Unable to obtain Salesforce access token or instance URL");
+        }
         String host = getInstanceUrl();
-        if (Objects.isNull(token) || Objects.isNull(host)) {
+        if (Objects.isNull(host)) {
             throw new SalesforceSyncException("Unable to obtain Salesforce access token or instance URL");
         }
 
@@ -333,8 +340,11 @@ public class SalesforceClientService {
 
     private void executeDelete(String sObjectName, String externalIdFieldName, String externalIdValue) {
         String token = getAccessToken();
+        if (Objects.isNull(token)) {
+            throw new SalesforceSyncException("Unable to obtain Salesforce access token or instance URL");
+        }
         String host = getInstanceUrl();
-        if (Objects.isNull(token) || Objects.isNull(host)) {
+        if (Objects.isNull(host)) {
             throw new SalesforceSyncException("Unable to obtain Salesforce access token or instance URL");
         }
 

@@ -12,8 +12,13 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
 
 import java.util.Map;
@@ -132,7 +137,7 @@ class SalesforceClientServiceTest {
     void authenticate_whenAuthCallFails_resetsTokenAndUrl() {
         mockValidConfig();
         mockServer
-                .expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                .expect(ExpectedCount.manyTimes(),
                         requestTo("https://login.salesforce.com/services/oauth2/token"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withServerError());
@@ -242,7 +247,7 @@ class SalesforceClientServiceTest {
                 "https://mock.salesforce.com/services/data/v58.0/sobjects/Book__c/External_Book_UUID__c/uuid-123"))
                 .andExpect(method(HttpMethod.PATCH))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer mock-access-token"))
-                .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED));
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
 
         // 2. Re-authentication OAuth call
         String authResponseBody = "{\"access_token\":\"new-mock-access-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
@@ -272,7 +277,7 @@ class SalesforceClientServiceTest {
                 "https://mock.salesforce.com/services/data/v58.0/query?q=SELECT%20Name%20FROM%20Book__c"))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer mock-access-token"))
-                .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED));
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
 
         // 2. Re-authentication
         String authResponseBody = "{\"access_token\":\"new-mock-access-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
@@ -345,7 +350,7 @@ class SalesforceClientServiceTest {
                 "https://mock.salesforce.com/services/data/v58.0/sobjects/Contact/External_User_UUID__c/uuid-123"))
                 .andExpect(method(HttpMethod.DELETE))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer mock-access-token"))
-                .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED));
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
 
         // 2. Re-authentication OAuth call
         String authResponseBody = "{\"access_token\":\"new-mock-access-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
@@ -372,7 +377,7 @@ class SalesforceClientServiceTest {
         mockServer.expect(requestTo(
                 "https://mock.salesforce.com/services/data/v58.0/sobjects/Contact/External_User_UUID__c/uuid-123"))
                 .andExpect(method(HttpMethod.DELETE))
-                .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED));
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
 
         String authResponseBody = "{\"access_token\":\"new-mock-access-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
         mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
@@ -396,7 +401,7 @@ class SalesforceClientServiceTest {
         mockServer.expect(requestTo(
                 "https://mock.salesforce.com/services/data/v58.0/sobjects/Book__c/External_Book_UUID__c/uuid-123"))
                 .andExpect(method(HttpMethod.PATCH))
-                .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED));
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
 
         String authResponseBody = "{\"access_token\":\"new-mock-access-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
         mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
@@ -420,7 +425,7 @@ class SalesforceClientServiceTest {
         mockServer.expect(requestTo(
                 "https://mock.salesforce.com/services/data/v58.0/query?q=SELECT%20Name%20FROM%20Book__c"))
                 .andExpect(method(HttpMethod.GET))
-                .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED));
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
 
         String authResponseBody = "{\"access_token\":\"new-mock-access-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
         mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
@@ -448,12 +453,12 @@ class SalesforceClientServiceTest {
 
     @Test
     void isUnauthorizedOrExpired_extendedBranches() {
-        org.springframework.web.client.HttpStatusCodeException ex401 =
-                new org.springframework.web.client.HttpClientErrorException(org.springframework.http.HttpStatus.UNAUTHORIZED);
+        HttpStatusCodeException ex401 =
+                new HttpClientErrorException(HttpStatus.UNAUTHORIZED);
         assertTrue(SalesforceClientService.isUnauthorizedOrExpired(ex401));
 
-        org.springframework.web.client.HttpStatusCodeException ex500 =
-                new org.springframework.web.client.HttpServerErrorException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR);
+        HttpStatusCodeException ex500 =
+                new HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR);
         assertFalse(SalesforceClientService.isUnauthorizedOrExpired(ex500));
 
         assertTrue(SalesforceClientService.isUnauthorizedOrExpired(new RuntimeException("Error 401 occurred")));
@@ -506,6 +511,7 @@ class SalesforceClientServiceTest {
 
         assertEquals("mock-access-token", clientService.getAccessToken());
 
+        mockServer.reset();
         String authResponseBody = "{\"access_token\":\"refreshed-token\",\"instance_url\":\"https://mock.salesforce.com\"}";
         mockServer.expect(requestTo("https://login.salesforce.com/services/oauth2/token"))
                 .andExpect(method(HttpMethod.POST))

@@ -48,33 +48,33 @@ public class BookController {
         return bookService.searchBooks(query, page, size, sortBy, sortDir);
     }
 
-    @GetMapping("/{id}")
-    public BookResponse getBookById(@PathVariable("id") Long id) {
-        return bookService.getBookById(id);
+    @GetMapping("/{uuid}")
+    public BookResponse getBookByUuid(@PathVariable("uuid") String uuid) {
+        return bookService.getBookByUuid(uuid);
     }
 
-    @PutMapping("/{id}")
-    public BookResponse updateBook(@PathVariable("id") Long id, @Valid @RequestBody BookRequest request) {
-        return bookService.updateBook(id, request);
+    @PutMapping("/{uuid}")
+    public BookResponse updateBook(@PathVariable("uuid") String uuid, @Valid @RequestBody BookRequest request) {
+        return bookService.updateBook(uuid, request);
     }
 
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/{uuid}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteBook(@PathVariable("id") Long id) {
-        bookService.deleteBook(id);
+    public void deleteBook(@PathVariable("uuid") String uuid) {
+        bookService.deleteBook(uuid);
     }
 
-    @PostMapping("/{bookId}/cover")
+    @PostMapping("/{uuid}/cover")
     public ResponseEntity<String> uploadCover(
-            @PathVariable("bookId") Long bookId,
+            @PathVariable("uuid") String uuid,
             @RequestParam("file") MultipartFile file)
             throws IOException {
-        String key = bookService.uploadBookCover(bookId, file);
+        String key = bookService.uploadBookCover(uuid, file);
         return ResponseEntity.ok(key);
     }
 
-    @GetMapping("/{bookId}/cover")
-    public ResponseEntity<String> getBookCover(@PathVariable("bookId") Long bookId) {
-        return ResponseEntity.ok(bookService.getImageCoverById(bookId));
+    @GetMapping("/{uuid}/cover")
+    public ResponseEntity<String> getBookCover(@PathVariable("uuid") String uuid) {
+        return ResponseEntity.ok(bookService.getImageCoverByUuid(uuid));
     }
 }

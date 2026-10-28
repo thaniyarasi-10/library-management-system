@@ -6,9 +6,10 @@ import com.kovanlabs.librarymanagement.dto.BookRequest;
 import com.kovanlabs.librarymanagement.dto.BookResponse;
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.Book;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
-import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,7 +43,7 @@ class BookServiceImplTest {
     private S3Service s3Service;
 
     @Mock
-    private SalesforceSyncImpl salesforceSyncService;
+    private SalesforceSync salesforceSyncService;
 
     @InjectMocks
     private BookServiceImpl bookService;
@@ -245,49 +246,85 @@ class BookServiceImplTest {
     }
 
     @Test
-    @DisplayName("getBookById when book exists should return book response")
-    void getBookById_whenBookExists_shouldReturnBookResponse() {
-        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+    @DisplayName("getBookByUuid when book exists should return book response")
+    void getBookByUuid_whenBookExists_shouldReturnBookResponse() {
+        when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
 
-        BookResponse response = bookService.getBookById(1L);
+        BookResponse response = bookService.getBookByUuid(uuid1);
 
         assertNotNull(response);
         assertEquals("Clean Code", response.title());
     }
 
     @Test
-    @DisplayName("getBookById when book not found should throw ResponseStatusException")
-    void getBookById_whenBookNotFound_shouldThrowResponseStatusException() {
-        when(bookRepository.findById(99L)).thenReturn(Optional.empty());
+    @DisplayName("getBookByUuid when book not found should throw ResponseStatusException")
+    void getBookByUuid_whenBookNotFound_shouldThrowResponseStatusException() {
+        when(bookRepository.findByUuid("non-existent-uuid")).thenReturn(Optional.empty());
 
-        assertThrows(ResponseStatusException.class, () -> bookService.getBookById(99L));
+        assertThrows(ResponseStatusException.class, () -> bookService.getBookByUuid("non-existent-uuid"));
+    }
+
+    @Test
+    @DisplayName("getBookByUuid when uuid is null or blank should throw BAD_REQUEST")
+    void getBookByUuid_whenBlank_shouldThrowBadRequest() {
+        assertThrows(ResponseStatusException.class, () -> bookService.getBookByUuid(null));
+        assertThrows(ResponseStatusException.class, () -> bookService.getBookByUuid("   "));
+    }
+
+    @Test
+    @DisplayName("getBookByUuid when numeric string should fallback to findById")
+    void getBookByUuid_whenNumeric_shouldFallbackToFindById() {
+        when(bookRepository.findByUuid("1")).thenReturn(Optional.empty());
+        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+
+        BookResponse response = bookService.getBookByUuid("1");
+
+        assertNotNull(response);
+        assertEquals("Clean Code", response.title());
     }
 
     @Test
     @DisplayName("updateBook when book exists should update fields and sync with Salesforce")
     void updateBook_whenBookExists_shouldUpdateAndReturnResponse() {
         BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 12);
-        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
         when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BookResponse response = bookService.updateBook(1L, updateRequest);
+        BookResponse response = bookService.updateBook(uuid1, updateRequest);
 
         assertEquals("Clean Architecture", response.title());
         assertEquals("9780134494166", response.isbn());
         assertEquals(12, book1.getTotalBookCount());
         assertEquals(12, response.totalBookCount());
         verify(salesforceSyncService).syncBook(any());
-        assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.SUCCESS, book1.getSalesforceSyncStatus());
+        assertEquals(SalesforceSyncStatus.SUCCESS, book1.getSalesforceSyncStatus());
+        assertEquals(0, book1.getSalesforceRetryCount());
+    }
+
+    @Test
+    @DisplayName("updateBook when prior retry count > 0 should reset retry count to 0 and set SUCCESS")
+    void updateBook_whenPriorRetryCountNonZero_shouldResetRetryCountAndSetSuccess() {
+        book1.setSalesforceRetryCount(3);
+        book1.setSalesforceSyncStatus(SalesforceSyncStatus.FAILED);
+        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 12);
+        when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
+        when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        BookResponse response = bookService.updateBook(uuid1, updateRequest);
+
+        assertNotNull(response);
+        assertEquals(SalesforceSyncStatus.SUCCESS, book1.getSalesforceSyncStatus());
+        assertEquals(0, book1.getSalesforceRetryCount());
     }
 
     @Test
     @DisplayName("updateBook when request totalBookCount is null should keep existing totalBookCount")
     void updateBook_withNullTotalBookCount_shouldKeepExisting() {
         BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", null);
-        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
         when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BookResponse response = bookService.updateBook(1L, updateRequest);
+        BookResponse response = bookService.updateBook(uuid1, updateRequest);
 
         assertEquals(5, book1.getTotalBookCount());
         assertEquals(5, response.totalBookCount());
@@ -298,10 +335,10 @@ class BookServiceImplTest {
     void updateBook_whenSalesforceIsNull_shouldUpdateWithoutSync() {
         BookServiceImpl serviceWithoutSf = new BookServiceImpl(bookRepository, s3Service, null);
         BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 10);
-        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
         when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BookResponse response = serviceWithoutSf.updateBook(1L, updateRequest);
+        BookResponse response = serviceWithoutSf.updateBook(uuid1, updateRequest);
 
         assertNotNull(response);
         assertEquals("Clean Architecture", response.title());
@@ -312,51 +349,53 @@ class BookServiceImplTest {
     @DisplayName("updateBook when book not found should throw ResponseStatusException")
     void updateBook_whenBookNotFound_shouldThrowResponseStatusException() {
         BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 10);
-        when(bookRepository.findById(99L)).thenReturn(Optional.empty());
+        when(bookRepository.findByUuid("non-existent-uuid")).thenReturn(Optional.empty());
 
-        assertThrows(ResponseStatusException.class, () -> bookService.updateBook(99L, updateRequest));
+        assertThrows(ResponseStatusException.class, () -> bookService.updateBook("non-existent-uuid", updateRequest));
     }
 
     @Test
-    @DisplayName("updateBook when Salesforce fails should still return response and mark pending")
+    @DisplayName("updateBook when Salesforce fails should still return response and mark pending with retry count 1")
     void updateBook_whenSalesforceFails_shouldStillReturnResponseAndMarkPending() {
+        book1.setSalesforceRetryCount(3);
+        book1.setSalesforceSyncStatus(SalesforceSyncStatus.FAILED);
         BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 10);
-        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
         when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new RuntimeException("SF update error")).when(salesforceSyncService).syncBook(any());
 
-        BookResponse response = bookService.updateBook(1L, updateRequest);
+        BookResponse response = bookService.updateBook(uuid1, updateRequest);
 
         assertEquals("Clean Architecture", response.title());
-        assertEquals(com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus.PENDING, book1.getSalesforceSyncStatus());
+        assertEquals(SalesforceSyncStatus.PENDING, book1.getSalesforceSyncStatus());
         assertEquals(1, book1.getSalesforceRetryCount());
     }
 
     @Test
     @DisplayName("deleteBook when book exists should delete")
     void deleteBook_whenBookExists_shouldDelete() {
-        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
 
-        assertDoesNotThrow(() -> bookService.deleteBook(1L));
+        assertDoesNotThrow(() -> bookService.deleteBook(uuid1));
         verify(bookRepository, times(1)).delete(book1);
     }
 
     @Test
     @DisplayName("deleteBook when book not found should throw ResponseStatusException")
     void deleteBook_whenBookNotFound_shouldThrowResponseStatusException() {
-        when(bookRepository.findById(99L)).thenReturn(Optional.empty());
+        when(bookRepository.findByUuid("non-existent-uuid")).thenReturn(Optional.empty());
 
-        assertThrows(ResponseStatusException.class, () -> bookService.deleteBook(99L));
+        assertThrows(ResponseStatusException.class, () -> bookService.deleteBook("non-existent-uuid"));
     }
 
     @Test
     @DisplayName("uploadBookCover should upload and save key and url")
     void uploadBookCover_shouldUploadAndSaveKey() throws IOException {
         MockMultipartFile file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "bytes".getBytes());
-        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
         when(s3Service.uploadFile(file)).thenReturn(new S3UploadResponse("key123", "http://s3.com/key123"));
 
-        String result = bookService.uploadBookCover(1L, file);
+        String result = bookService.uploadBookCover(uuid1, file);
 
         assertEquals("Book cover updated", result);
         verify(bookRepository, times(1)).save(book1);
@@ -366,36 +405,36 @@ class BookServiceImplTest {
     @DisplayName("uploadBookCover when book not found should throw ResponseStatusException")
     void uploadBookCover_whenBookNotFound_shouldThrowResponseStatusException() {
         MockMultipartFile file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "bytes".getBytes());
-        when(bookRepository.findById(99L)).thenReturn(Optional.empty());
+        when(bookRepository.findByUuid("non-existent-uuid")).thenReturn(Optional.empty());
 
-        assertThrows(ResponseStatusException.class, () -> bookService.uploadBookCover(99L, file));
+        assertThrows(ResponseStatusException.class, () -> bookService.uploadBookCover("non-existent-uuid", file));
     }
 
     @Test
     @DisplayName("uploadBookCover when S3 fails should throw RuntimeException")
     void uploadBookCover_whenS3Fails_shouldThrowRuntimeException() throws IOException {
         MockMultipartFile file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "bytes".getBytes());
-        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+        when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
         when(s3Service.uploadFile(file)).thenThrow(new IOException("S3 failure"));
 
-        assertThrows(RuntimeException.class, () -> bookService.uploadBookCover(1L, file));
+        assertThrows(RuntimeException.class, () -> bookService.uploadBookCover(uuid1, file));
     }
 
     @Test
-    @DisplayName("getImageCoverById should return url")
-    void getImageCoverById_shouldReturnUrl() {
-        when(bookRepository.findById(1L)).thenReturn(Optional.of(book1));
+    @DisplayName("getImageCoverByUuid should return url")
+    void getImageCoverByUuid_shouldReturnUrl() {
+        when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
 
-        String url = bookService.getImageCoverById(1L);
+        String url = bookService.getImageCoverByUuid(uuid1);
 
         assertEquals("http://s3.com/cover.jpg", url);
     }
 
     @Test
-    @DisplayName("getImageCoverById when not found should throw RuntimeException")
-    void getImageCoverById_whenNotFound_shouldThrowRuntimeException() {
-        when(bookRepository.findById(99L)).thenReturn(Optional.empty());
+    @DisplayName("getImageCoverByUuid when not found should throw ResponseStatusException")
+    void getImageCoverByUuid_whenNotFound_shouldThrowResponseStatusException() {
+        when(bookRepository.findByUuid("non-existent-uuid")).thenReturn(Optional.empty());
 
-        assertThrows(RuntimeException.class, () -> bookService.getImageCoverById(99L));
+        assertThrows(ResponseStatusException.class, () -> bookService.getImageCoverByUuid("non-existent-uuid"));
     }
 }

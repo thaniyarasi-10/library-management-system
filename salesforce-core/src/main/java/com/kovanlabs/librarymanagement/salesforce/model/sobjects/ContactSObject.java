@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.kovanlabs.librarymanagement.salesforce.constant.fields.ContactFields;
-import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
@@ -50,4 +49,13 @@ public class ContactSObject extends SObjectBase {
 
     @JsonProperty(ContactFields.REWARD)
     private Integer reward;
+
+    @JsonProperty(ContactFields.DEACTIVATED_AT)
+    private String deactivatedAt;
+
+    @JsonProperty(ContactFields.AADHAR_HASH)
+    private String aadharHash;
+
+    @JsonProperty(ContactFields.AADHAR_LAST4)
+    private String aadharLast4;
 }

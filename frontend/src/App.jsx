@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { jwtDecode } from 'jwt-decode';
 import {
@@ -110,8 +111,42 @@ export default function App() {
   });
   const userFetchedRef = useRef(false);
 
-  // Navigation
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  // URL-based navigation
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Map between URL paths and internal page names
+  const PATH_TO_PAGE = {
+    '/': 'dashboard',
+    '/dashboard': 'dashboard',
+    '/books': 'books',
+    '/members': 'members',
+    '/borrow': 'borrow',
+    '/fines': 'fines',
+    '/membership': 'membership',
+    '/payments': 'payments',
+    '/donations': 'donations',
+  };
+
+  const PAGE_TO_PATH = {
+    'dashboard': '/',
+    'books': '/books',
+    'members': '/members',
+    'borrow': '/borrow',
+    'fines': '/fines',
+    'membership': '/membership',
+    'payments': '/payments',
+    'donations': '/donations',
+  };
+
+  // Derive current page from URL; fall back to 'dashboard' for unknown paths
+  const currentPage = PATH_TO_PAGE[location.pathname] || 'dashboard';
+
+  // Navigate by page name -- drop-in replacement for all setCurrentPage calls
+  const setCurrentPage = useCallback((page) => {
+    const path = PAGE_TO_PATH[page] || '/';
+    navigate(path);
+  }, [navigate]);
 
   // Data states
   const [dashboardStats, setDashboardStats] = useState({ books: 0, members: 0 });
@@ -627,17 +662,18 @@ export default function App() {
     });
     if (res.ok) {
       const createdBook = res.data;
-      if (bookForm.coverFile && createdBook?.id) {
+      if (bookForm.coverFile && (createdBook?.uuid || createdBook?.id)) {
         const formData = new FormData();
         formData.append('file', bookForm.coverFile);
-        await fetchApi(`/books/${createdBook.id}/cover`, {
+        await fetchApi(`/books/${createdBook.uuid || createdBook.id}/cover`, {
           method: 'POST',
           body: formData
         });
       }
+      
       showToast('Book added to inventory successfully', 'success');
       setActiveModal(null);
-      setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
+      setBookForm({ id: '', uuid: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
       loadBooks(booksPage, bookSearchQuery);
     } else {
       showToast(res.data?.message || 'Failed to create book', 'error');
@@ -646,7 +682,8 @@ export default function App() {
 
   const handleEditBookSubmit = async (e) => {
     e.preventDefault();
-    const res = await fetchApi(`/books/${bookForm.id}`, {
+    const bookIdentifier = bookForm.uuid || bookForm.id;
+    const res = await fetchApi(`/books/${bookIdentifier}`, {
       method: 'PUT',
       body: JSON.stringify({
         title: bookForm.title,
@@ -659,14 +696,14 @@ export default function App() {
       if (bookForm.coverFile) {
         const formData = new FormData();
         formData.append('file', bookForm.coverFile);
-        await fetchApi(`/books/${bookForm.id}/cover`, {
+        await fetchApi(`/books/${bookIdentifier}/cover`, {
           method: 'POST',
           body: formData
         });
       }
       showToast('Book updated successfully', 'success');
       setActiveModal(null);
-      setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
+      setBookForm({ id: '', uuid: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
       loadBooks(booksPage, bookSearchQuery);
     } else {
       showToast(res.data?.message || 'Failed to update book', 'error');
@@ -3055,6 +3092,7 @@ export default function App() {
                                   <button className="btn btn-secondary btn-sm" onClick={() => {
                                     setBookForm({
                                       id: b.id,
+                                      uuid: b.uuid,
                                       title: b.title,
                                       author: b.author,
                                       isbn: b.isbn,
@@ -3065,7 +3103,7 @@ export default function App() {
                                     });
                                     setActiveModal('editBook');
                                   }}>Edit</button>
-                                  <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBook(b.id, b.title)}>Del</button>
+                                  <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBook(b.uuid || b.id, b.title)}>Del</button>
                                 </div>
                               ) : (
                                 avail <= 0 ? (
@@ -4000,66 +4038,6 @@ export default function App() {
                         </span>
                       </div>
                     </div>
-
-                    {/* Saved Bank Details Card */}
-                    {paymentProfile ? (
-                      <div className="amazon-payment-box mt-4">
-                        <div className="amazon-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Landmark size={18} color="var(--accent-primary)" />
-                            <span>Linked Refund Bank Account</span>
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-link btn-sm"
-                            style={{ fontSize: '12px', padding: 0, color: 'var(--accent-primary)', textDecoration: 'underline' }}
-                            onClick={() => openPaymentProfileModal(true)}
-                          >
-                            Edit Bank Details
-                          </button>
-                        </div>
-
-                        <div className="saved-profile-card" style={{ marginBottom: 0 }}>
-                          <div className="saved-profile-info">
-                            <div className="saved-profile-icon">
-                              <Landmark size={20} />
-                            </div>
-                            <div className="saved-profile-details">
-                              <strong className="saved-profile-title">
-                                {paymentProfile.bankName}
-                              </strong>
-                              <span className="saved-profile-sub">
-                                {paymentProfile.accountHolderName} • A/C: {paymentProfile.maskedAccountNumber || '••••••••'} • IFSC: {paymentProfile.ifscCode}
-                              </span>
-                              <div className="bank-detail-badge">
-                                <ShieldCheck size={12} />
-                                <span>Security deposit & dues refunds routed directly to this verified bank account</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="amazon-payment-box mt-4" style={{ textAlign: 'left' }}>
-                        <div className="amazon-section-title">
-                          <Landmark size={18} color="var(--accent-primary)" />
-                          <span>Bank Refund Account</span>
-                        </div>
-                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                          Add your bank account details for direct security deposit refunds and automated settlements.
-                        </p>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => openPaymentProfileModal(true)}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                        >
-                          <Plus size={14} />
-                          <span>Add Bank Account Details</span>
-                        </button>
-                      </div>
-                    )}
-
                     <button
                       className="btn btn-primary btn-block mt-6"
                       disabled={isProcessingPayment}

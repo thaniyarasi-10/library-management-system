@@ -90,6 +90,8 @@ public class BorrowServiceImpl implements BorrowService {
         }
 
         book.setBorrowedBookCount(borrowedBookCount + 1);
+        book.setSalesforceRetryCount(0);
+        book.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
         Book updatedBook = bookRepository.save(book);
 
         syncBookToSalesforce(updatedBook);
@@ -124,12 +126,16 @@ public class BorrowServiceImpl implements BorrowService {
         if (Objects.nonNull(book)) {
             int borrowedCount = Objects.nonNull(book.getBorrowedBookCount()) ? book.getBorrowedBookCount() : 0;
             book.setBorrowedBookCount(Math.max(0, borrowedCount - 1));
+            book.setSalesforceRetryCount(0);
+            book.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
             Book updatedBook = bookRepository.save(book);
             syncBookToSalesforce(updatedBook);
         }
 
         borrow.setReturnedDate(LocalDate.now());
         borrow.setStatus(BorrowStatus.RETURNED);
+        borrow.setSalesforceRetryCount(0);
+        borrow.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
         Borrow updatedBorrow = borrowRepository.save(borrow);
 
         syncBorrowToSalesforce(updatedBorrow, "UPDATE");
@@ -212,6 +218,7 @@ public class BorrowServiceImpl implements BorrowService {
             try {
                 salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(book));
                 book.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                book.setSalesforceRetryCount(0);
                 bookRepository.save(book);
             } catch (Exception e) {
                 int retryCount = book.getSalesforceRetryCount() + 1;
@@ -229,6 +236,7 @@ public class BorrowServiceImpl implements BorrowService {
             try {
                 salesforceSyncService.syncBorrow(BorrowMapper.INSTANCE.toBorrowSObject(borrow));
                 borrow.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                borrow.setSalesforceRetryCount(0);
                 borrowRepository.save(borrow);
             } catch (Exception e) {
                 int retryCount = borrow.getSalesforceRetryCount() + 1;

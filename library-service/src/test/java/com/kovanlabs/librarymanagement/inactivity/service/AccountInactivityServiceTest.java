@@ -314,7 +314,8 @@ class AccountInactivityServiceTest {
                 .name("SF Fail User")
                 .status(AccountStatus.ACTIVE)
                 .lastLoginAt(LocalDateTime.now().minusDays(35))
-                .salesforceRetryCount(0)
+                .salesforceRetryCount(3)
+                .salesforceSyncStatus(SalesforceSyncStatus.FAILED)
                 .build();
 
         doThrow(new RuntimeException("SF timeout")).when(salesforceSyncDelegate).syncContact(any());

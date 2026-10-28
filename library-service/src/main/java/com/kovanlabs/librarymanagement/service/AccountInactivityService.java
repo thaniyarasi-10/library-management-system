@@ -48,8 +48,6 @@ public class AccountInactivityService {
 
     public static final int WARNING_THRESHOLD_DAYS = INACTIVITY_DAYS - WARNING_DAYS_BEFORE;
 
-    public static final int REACTIVATION_DEADLINE_DAYS = 10;
-
     private final NotificationFactory notificationFactory;
     private final UserRepository userRepository;
     private final RewardRepository rewardRepository;
@@ -267,9 +265,12 @@ public class AccountInactivityService {
      */
     private void syncUserToSalesforce(User user) {
         if (Objects.nonNull(salesforceSyncDelegate) && Objects.nonNull(user) && Objects.nonNull(user.getUuid())) {
+            user.setSalesforceRetryCount(0);
+            user.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
             try {
                 salesforceSyncDelegate.syncContact(UserMapper.INSTANCE.toContactSObject(user));
                 user.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
+                user.setSalesforceRetryCount(0);
                 userRepository.save(user);
             } catch (Exception e) {
                 int retryCount = user.getSalesforceRetryCount() + 1;

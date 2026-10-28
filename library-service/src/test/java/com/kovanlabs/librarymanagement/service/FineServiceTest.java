@@ -293,8 +293,8 @@ class FineServiceTest {
         var dtos = fineService.getAllFinesDto();
         assertNotNull(dtos);
         assertEquals(1, dtos.size());
-        assertEquals("Test Book", dtos.get(0).bookTitle());
-        assertEquals("Test User", dtos.get(0).userName());
+        assertEquals("Test Book", dtos.getFirst().bookTitle());
+        assertEquals("Test User", dtos.getFirst().userName());
     }
 
     @Test

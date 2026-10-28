@@ -9,7 +9,7 @@ import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
 import com.kovanlabs.librarymanagement.database.entity.Book;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
-import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSyncImpl;
+import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -27,10 +27,12 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * Implementation of {@link BookService} with Redis caching, S3 cover image management,
+ * Implementation of {@link BookService} with Redis caching, S3 cover image
+ * management,
  * and dual-write/read operations integrated with Salesforce SObjects.
  */
 @Service
@@ -41,10 +43,11 @@ public class BookServiceImpl implements BookService {
 
     private final BookRepository bookRepository;
     private final S3Service s3Service;
-    private final SalesforceSyncImpl salesforceSyncService;
+    private final SalesforceSync salesforceSyncService;
 
     /**
-     * Creates a new book record, saves it to the database, and synchronizes with Salesforce.
+     * Creates a new book record, saves it to the database, and synchronizes with
+     * Salesforce.
      *
      * @param request Book payload
      * @return Created {@link BookResponse}
@@ -55,32 +58,33 @@ public class BookServiceImpl implements BookService {
     public BookResponse createBook(BookRequest request) {
         Book book = BookMapper.INSTANCE.mapToEntity(request);
         Book savedBook = bookRepository.save(book);
-        BookResponse response = BookMapper.INSTANCE.mapToResponse(savedBook);
 
         if (Objects.nonNull(salesforceSyncService)) {
             try {
-                salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(response));
+                salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(savedBook));
                 savedBook.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
-                bookRepository.save(savedBook);
+                savedBook = bookRepository.save(savedBook);
             } catch (Exception e) {
                 int retryCount = savedBook.getSalesforceRetryCount() + 1;
                 savedBook.setSalesforceRetryCount(retryCount);
                 savedBook.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
-                bookRepository.save(savedBook);
-                log.error("Salesforce dual-write failed for book creation [Book ID: {}, UUID: {}, Operation: CREATE, RetryCount: {}]: {}",
+                savedBook = bookRepository.save(savedBook);
+                log.error(
+                        "Salesforce dual-write failed for book creation [Book ID: {}, UUID: {}, Operation: CREATE, RetryCount: {}]: {}",
                         savedBook.getId(), savedBook.getUuid(), retryCount, e.getMessage());
             }
         }
 
-        return response;
+        return BookMapper.INSTANCE.mapToResponse(savedBook);
     }
 
     /**
-     * Retrieves paginated books from Salesforce SOQL if configured, otherwise falls back to MySQL.
+     * Retrieves paginated books from Salesforce SOQL if configured, otherwise falls
+     * back to MySQL.
      *
-     * @param page Zero-based page number
-     * @param size Number of items per page
-     * @param sortBy Field name to sort by
+     * @param page    Zero-based page number
+     * @param size    Number of items per page
+     * @param sortBy  Field name to sort by
      * @param sortDir Sort direction ("asc" or "desc")
      * @return {@link PagedResponse} of {@link BookResponse}
      */
@@ -94,12 +98,15 @@ public class BookServiceImpl implements BookService {
 
                 if (Objects.nonNull(sfBookModels) && !sfBookModels.isEmpty()) {
                     for (var sfBook : sfBookModels) {
-                        if (Objects.nonNull(sfBook) && Objects.nonNull(sfBook.getErrors()) && !sfBook.getErrors().isEmpty()) {
-                            log.warn("Salesforce error for Book [UUID: {}]: {}", sfBook.getExternalBookUuid(), sfBook.getErrors());
+                        if (Objects.nonNull(sfBook) && Objects.nonNull(sfBook.getErrors())
+                                && !sfBook.getErrors().isEmpty()) {
+                            log.warn("Salesforce error for Book [UUID: {}]: {}", sfBook.getExternalBookUuid(),
+                                    sfBook.getErrors());
                         }
                     }
                     List<BookResponse> sfBooks = BookMapper.INSTANCE.toBookResponseList(sfBookModels);
-                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL", sfBooks.size());
+                    log.info("[DATA SOURCE: SALESFORCE] Successfully fetched {} books from Salesforce SOQL",
+                            sfBooks.size());
                     int totalPages = (int) Math.ceil((double) totalBooks / size);
                     return new PagedResponse<>(
                             sfBooks,
@@ -107,11 +114,11 @@ public class BookServiceImpl implements BookService {
                             size,
                             totalBooks,
                             totalPages,
-                            page >= totalPages - 1
-                    );
+                            page >= totalPages - 1);
                 }
             } catch (Exception e) {
-                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for books, falling back to MySQL: {}", e.getMessage());
+                log.warn("[DATA SOURCE: SALESFORCE] Salesforce SOQL read failed for books, falling back to MySQL: {}",
+                        e.getMessage());
             }
         }
 
@@ -130,17 +137,16 @@ public class BookServiceImpl implements BookService {
                 booksPage.getSize(),
                 booksPage.getTotalElements(),
                 booksPage.getTotalPages(),
-                booksPage.isLast()
-        );
+                booksPage.isLast());
     }
 
     /**
      * Searches books matching the search query in MySQL with pagination.
      *
-     * @param query Search query
-     * @param page Page index
-     * @param size Page size
-     * @param sortBy Sort field
+     * @param query   Search query
+     * @param page    Page index
+     * @param size    Page size
+     * @param sortBy  Sort field
      * @param sortDir Sort direction
      * @return {@link PagedResponse} of matching {@link BookResponse} items
      */
@@ -160,93 +166,91 @@ public class BookServiceImpl implements BookService {
                 booksPage.getSize(),
                 booksPage.getTotalElements(),
                 booksPage.getTotalPages(),
-                booksPage.isLast()
-        );
+                booksPage.isLast());
     }
 
     /**
-     * Retrieves a book by ID with Redis caching.
+     * Retrieves a book by UUID with Redis caching.
      *
-     * @param id The book ID
+     * @param uuid The book UUID
      * @return {@link BookResponse} DTO
      */
     @Override
     @Cacheable(value = "books", key = "#p0")
-    public BookResponse getBookById(Long id) {
-        log.info("CACHE MISS - Fetching book {} from DATABASE", id);
-        Book book = bookRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
+    public BookResponse getBookByUuid(String uuid) {
+        log.info("CACHE MISS - Fetching book {} from DATABASE", uuid);
+        Book book = findBookEntity(uuid);
         return BookMapper.INSTANCE.mapToResponse(book);
     }
 
     /**
      * Updates an existing book and triggers synchronization with Salesforce.
      *
-     * @param id The book ID
+     * @param uuid    The book UUID
      * @param request The updated book payload
      * @return Updated {@link BookResponse}
      */
     @Override
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
-    public BookResponse updateBook(Long id, BookRequest request) {
-        Book book = bookRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
-        
+    public BookResponse updateBook(String uuid, BookRequest request) {
+        Book book = findBookEntity(uuid);
         book.setTitle(request.title());
         book.setAuthor(request.author());
         book.setIsbn(request.isbn());
         if (Objects.nonNull(request.totalBookCount())) {
             book.setTotalBookCount(request.totalBookCount());
         }
-        
+        book.setSalesforceRetryCount(0);
+        book.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
+
         Book updatedBook = bookRepository.save(book);
-        BookResponse response = BookMapper.INSTANCE.mapToResponse(updatedBook);
 
         if (Objects.nonNull(salesforceSyncService)) {
             try {
-                salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(response));
+                salesforceSyncService.syncBook(BookMapper.INSTANCE.toBookSObject(updatedBook));
                 updatedBook.setSalesforceSyncStatus(SalesforceSyncStatus.SUCCESS);
-                bookRepository.save(updatedBook);
+                updatedBook.setSalesforceRetryCount(0);
+                updatedBook = bookRepository.save(updatedBook);
             } catch (Exception e) {
                 int retryCount = updatedBook.getSalesforceRetryCount() + 1;
                 updatedBook.setSalesforceRetryCount(retryCount);
                 updatedBook.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
-                bookRepository.save(updatedBook);
-                log.error("Salesforce dual-write failed for book update [Book ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
+                updatedBook = bookRepository.save(updatedBook);
+                log.error(
+                        "Salesforce dual-write failed for book update [Book ID: {}, UUID: {}, Operation: UPDATE, RetryCount: {}]: {}",
                         updatedBook.getId(), updatedBook.getUuid(), retryCount, e.getMessage());
             }
         }
 
-        return response;
+        return BookMapper.INSTANCE.mapToResponse(updatedBook);
     }
 
     /**
-     * Deletes a book by ID and evicts all book caches.
+     * Deletes a book by UUID and evicts all book caches.
      *
-     * @param id The book ID to delete
+     * @param uuid The book UUID to delete
      */
     @Override
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
-    public void deleteBook(Long id) {
-        Book book = bookRepository.findById(id)                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + id));
+    public void deleteBook(String uuid) {
+        Book book = findBookEntity(uuid);
         bookRepository.delete(book);
     }
 
     /**
      * Uploads a book cover image to AWS S3 and updates the book entity.
      *
-     * @param bookId The book ID
+     * @param uuid The book UUID
      * @param file The multipart image file
      * @return Status message
      */
+    @Override
     @Transactional
     @CacheEvict(value = "books", allEntries = true)
-    public String uploadBookCover(Long bookId, MultipartFile file)  {
-
-        Book book = bookRepository.findById(bookId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with ID: " + bookId));
+    public String uploadBookCover(String uuid, MultipartFile file) {
+        Book book = findBookEntity(uuid);
 
         try {
             S3UploadResponse response = s3Service.uploadFile(file);
@@ -264,15 +268,29 @@ public class BookServiceImpl implements BookService {
     }
 
     /**
-     * Retrieves the cover image URL for a book by its ID.
+     * Retrieves the cover image URL for a book by its UUID.
      *
-     * @param id The book ID
+     * @param uuid The book UUID
      * @return The cover image URL
      */
-    public String getImageCoverById(Long id){
-        Book book = bookRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Book not found"));
-
+    @Override
+    public String getImageCoverByUuid(String uuid) {
+        Book book = findBookEntity(uuid);
         return book.getCoverImageUrl();
+    }
+
+    private Book findBookEntity(String uuid) {
+        if (Objects.isNull(uuid) || uuid.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Book UUID must not be empty");
+        }
+        return bookRepository.findByUuid(uuid)
+                .or(() -> {
+                    try {
+                        return bookRepository.findById(Long.parseLong(uuid));
+                    } catch (NumberFormatException e) {
+                        return Optional.empty();
+                    }
+                })
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found with UUID: " + uuid));
     }
 }

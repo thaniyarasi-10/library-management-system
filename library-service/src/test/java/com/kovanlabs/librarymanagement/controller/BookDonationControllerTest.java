@@ -96,7 +96,7 @@ class BookDonationControllerTest {
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertNotNull(result.getBody());
         assertEquals(1, result.getBody().size());
-        assertEquals(donationId, result.getBody().get(0).id());
+        assertEquals(donationId, result.getBody().getFirst().id());
         verify(bookDonationService).getMyDonations("donor@example.com");
     }
 

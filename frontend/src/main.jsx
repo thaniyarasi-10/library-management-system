@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { Auth0Provider } from '@auth0/auth0-react'
+import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './styles.css'
 
@@ -10,16 +11,20 @@ const audience = import.meta.env.VITE_AUTH0_AUDIENCE || '';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <Auth0Provider
-      domain={domain}
-      clientId={clientId}
-      authorizationParams={{
-        redirect_uri: window.location.origin,
-        audience: audience || undefined,
-        scope: 'openid profile email'
-      }}
-    >
-      <App />
-    </Auth0Provider>
+    <BrowserRouter>
+      <Auth0Provider
+        domain={domain}
+        clientId={clientId}
+        authorizationParams={{
+          redirect_uri: window.location.origin,
+          audience: audience || undefined,
+          scope: 'openid profile email'
+        }}
+        cacheLocation="localstorage"
+        useRefreshTokens={true}
+      >
+        <App />
+      </Auth0Provider>
+    </BrowserRouter>
   </React.StrictMode>,
 )

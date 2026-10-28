@@ -56,7 +56,7 @@ class BookMapperTest {
 
         assertNotNull(responses);
         assertEquals(2, responses.size());
-        assertEquals("Book 1", responses.get(0).title());
+        assertEquals("Book 1", responses.getFirst().title());
         assertEquals("Book 2", responses.get(1).title());
     }
 
