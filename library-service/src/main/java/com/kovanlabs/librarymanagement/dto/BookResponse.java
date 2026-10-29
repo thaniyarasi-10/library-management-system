@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.dto;
 
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import java.io.Serializable;
 
 public record BookResponse(
@@ -11,7 +12,7 @@ public record BookResponse(
         String coverImageUrl,
         Integer totalBookCount,
         Integer borrowedBookCount,
-        Integer availableBookCount
+        Integer availableBookCount,
+        BookCategory category
 ) implements Serializable {
 }
-

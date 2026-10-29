@@ -1,8 +1,9 @@
 package com.kovanlabs.librarymanagement.mapping;
 
+import com.kovanlabs.librarymanagement.database.entity.Book;
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import com.kovanlabs.librarymanagement.dto.BookRequest;
 import com.kovanlabs.librarymanagement.dto.BookResponse;
-import com.kovanlabs.librarymanagement.database.entity.Book;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
@@ -12,7 +13,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class BookMapperTest {
+class BookMappingTest {
 
     private BookMapper bookMapper;
 
@@ -30,6 +31,7 @@ class BookMapperTest {
                 .title("Effective Java")
                 .author("Joshua Bloch")
                 .isbn("978-0134685991")
+                .category(BookCategory.TECHNOLOGY)
                 .build();
 
         BookResponse response = bookMapper.mapToResponse(book);
@@ -40,6 +42,7 @@ class BookMapperTest {
         assertEquals("Effective Java", response.title());
         assertEquals("Joshua Bloch", response.author());
         assertEquals("978-0134685991", response.isbn());
+        assertEquals(BookCategory.TECHNOLOGY, response.category());
     }
 
     @Test
@@ -49,15 +52,17 @@ class BookMapperTest {
 
     @Test
     void testMapToResponse_BookList() {
-        Book book1 = Book.builder().id(1L).title("Book 1").build();
-        Book book2 = Book.builder().id(2L).title("Book 2").build();
+        Book book1 = Book.builder().id(1L).title("Book 1").category(BookCategory.FICTION).build();
+        Book book2 = Book.builder().id(2L).title("Book 2").category(BookCategory.SCIENCE).build();
 
         List<BookResponse> responses = bookMapper.mapToResponse(List.of(book1, book2));
 
         assertNotNull(responses);
         assertEquals(2, responses.size());
         assertEquals("Book 1", responses.getFirst().title());
+        assertEquals(BookCategory.FICTION, responses.getFirst().category());
         assertEquals("Book 2", responses.get(1).title());
+        assertEquals(BookCategory.SCIENCE, responses.get(1).category());
     }
 
     @Test
@@ -68,7 +73,7 @@ class BookMapperTest {
 
     @Test
     void testMapToEntity_BookRequest() {
-        BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "978-0132350884", 1);
+        BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "978-0132350884", 1, BookCategory.TECHNOLOGY);
 
         Book book = bookMapper.mapToEntity(request);
 
@@ -76,6 +81,7 @@ class BookMapperTest {
         assertEquals("Clean Code", book.getTitle());
         assertEquals("Robert C. Martin", book.getAuthor());
         assertEquals("978-0132350884", book.getIsbn());
+        assertEquals(BookCategory.TECHNOLOGY, book.getCategory());
     }
 
     @Test
@@ -86,7 +92,7 @@ class BookMapperTest {
     @Test
     void testToBookSObject_and_toBookResponse() {
         String uuid = UUID.randomUUID().toString();
-        BookResponse dto = new BookResponse(uuid, 1L, "Clean Architecture", "Uncle Bob", "1234567890", "http://img.png", 15, 5, 10);
+        BookResponse dto = new BookResponse(uuid, 1L, "Clean Architecture", "Uncle Bob", "1234567890", "http://img.png", 15, 5, 10, BookCategory.TECHNOLOGY);
 
         var sObject = bookMapper.toBookSObject(dto);
         assertNotNull(sObject);
@@ -95,6 +101,7 @@ class BookMapperTest {
         assertEquals("Clean Architecture", sObject.getName());
         assertEquals(15, sObject.getTotalBookCount());
         assertEquals(5, sObject.getBorrowedBookCount());
+        assertEquals("Technology", sObject.getCategory());
 
         BookResponse mappedBack = bookMapper.toBookResponse(sObject);
         assertNotNull(mappedBack);
@@ -104,6 +111,7 @@ class BookMapperTest {
         assertEquals(15, mappedBack.totalBookCount());
         assertEquals(5, mappedBack.borrowedBookCount());
         assertEquals(10, mappedBack.availableBookCount());
+        assertEquals(BookCategory.TECHNOLOGY, mappedBack.category());
     }
 
     @Test
@@ -117,6 +125,7 @@ class BookMapperTest {
                 .coverImageUrl("http://img.png")
                 .totalBookCount(25)
                 .borrowedBookCount(5)
+                .category(BookCategory.TECHNOLOGY)
                 .build();
 
         var sObject = bookMapper.toBookSObject(book);
@@ -129,6 +138,7 @@ class BookMapperTest {
         assertEquals("http://img.png", sObject.getCoverImageUrl());
         assertEquals(25, sObject.getTotalBookCount());
         assertEquals(5, sObject.getBorrowedBookCount());
+        assertEquals("Technology", sObject.getCategory());
 
         assertNull(bookMapper.toBookSObject((Book) null));
     }
@@ -138,15 +148,19 @@ class BookMapperTest {
         var s1 = com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject.builder()
                 .externalBookUuid(UUID.randomUUID().toString())
                 .title("Title 1")
+                .category("Fiction")
                 .build();
         var s2 = com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject.builder()
                 .externalBookUuid(UUID.randomUUID().toString())
                 .title("Title 2")
+                .category("Science")
                 .build();
 
         List<BookResponse> responses = bookMapper.toBookResponseList(List.of(s1, s2));
         assertNotNull(responses);
         assertEquals(2, responses.size());
+        assertEquals(BookCategory.FICTION, responses.getFirst().category());
+        assertEquals(BookCategory.SCIENCE, responses.get(1).category());
     }
 
     @Test

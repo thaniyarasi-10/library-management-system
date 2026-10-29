@@ -95,4 +95,13 @@
         </addColumn>
     </changeSet>
 
+
+    <changeSet id="24-add-category-to-book" author="thani">
+        <addColumn tableName="book">
+            <column name="category" type="varchar(50)">
+                <constraints nullable="false" />
+            </column>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

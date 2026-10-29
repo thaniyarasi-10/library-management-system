@@ -23,6 +23,21 @@ const COUNTRY_CODES = [
   { code: 'AE', dial: '+971', name: 'UAE', min: 9, max: 9, regex: /^5\d{8}$/, hint: '9 digits starting with 5' }
 ];
 
+const BOOK_CATEGORIES = [
+  'FICTION',
+  'NON_FICTION',
+  'TECHNOLOGY',
+  'SCIENCE',
+  'HISTORY',
+  'BIOGRAPHY',
+  'PHILOSOPHY',
+  'MYSTERY_THRILLER',
+  'SELF_HELP',
+  'CHILDREN'
+];
+
+const getCategoryLabel = (cat) => cat || '—';
+
 const validatePhoneNumber = (countryCodeDial, localDigits) => {
   const cleanDigits = (localDigits || '').replace(/\D/g, '');
   if (!cleanDigits) {
@@ -157,6 +172,7 @@ export default function App() {
   const [booksPage, setBooksPage] = useState(0);
   const [booksTotalPages, setBooksTotalPages] = useState(1);
   const [bookSearchQuery, setBookSearchQuery] = useState('');
+  const [bookCategoryFilter, setBookCategoryFilter] = useState('');
 
   // Members page
   const [members, setMembers] = useState([]);
@@ -243,7 +259,7 @@ export default function App() {
   const [confirmConfig, setConfirmConfig] = useState({ title: '', message: '', actionBtnText: 'Confirm', onConfirm: null });
 
   // Form models
-  const [bookForm, setBookForm] = useState({ id: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
+  const [bookForm, setBookForm] = useState({ id: '', title: '', author: '', isbn: '', category: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
   const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [profileForm, setProfileForm] = useState({ name: '', email: '', countryCode: '+1', phoneNumber: '', phoneError: '' });
   const [promptPhoneForm, setPromptPhoneForm] = useState({ countryCode: '+1', phoneNumber: '', phoneError: '', isSubmitting: false });
@@ -550,7 +566,7 @@ export default function App() {
     if (currentPage === 'dashboard') {
       loadDashboard();
     } else if (currentPage === 'books') {
-      loadBooks(booksPage, bookSearchQuery);
+      loadBooks(booksPage, bookSearchQuery, bookCategoryFilter);
     } else if (currentPage === 'members') {
       if (userRole === 'ADMIN') loadMembers(membersPage, memberSearchQuery, memberSortBy, memberSortDir);
     } else if (currentPage === 'borrow') {
@@ -565,7 +581,7 @@ export default function App() {
     } else if (currentPage === 'donations') {
       loadDonations();
     }
-  }, [currentPage, isAuthenticated, currentUser, userRole, booksPage, membersPage, memberSearchQuery, memberSortBy, memberSortDir, paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch]);
+  }, [currentPage, isAuthenticated, currentUser, userRole, booksPage, bookCategoryFilter, membersPage, memberSearchQuery, memberSortBy, memberSortDir, paymentHistoryPage, paymentHistoryType, paymentHistoryStatus, paymentHistorySearch]);
 
   // Load fines for deactivated user so pending fines can be reviewed and paid
   useEffect(() => {
@@ -630,10 +646,10 @@ export default function App() {
   };
 
   // Books Loader
-  const loadBooks = async (page = 0, query = '') => {
-    let url = `/books?page=${page}&size=10`;
+  const loadBooks = async (page = 0, query = '', category = '') => {
+    const params = new URLSearchParams(); params.append('page', page); params.append('size', '10'); if (category) params.append('category', category); let url = `/books?${params.toString()}`;
     if (query) {
-      url = `/books/search?query=${encodeURIComponent(query)}&page=${page}&size=10`;
+      url = `/books/search?${params.toString()}&query=${encodeURIComponent(query)}`;
     }
     const res = await fetchApi(url);
     if (res.ok && res.data) {
@@ -646,7 +662,7 @@ export default function App() {
   const handleBookSearch = (e) => {
     e.preventDefault();
     setBooksPage(0);
-    loadBooks(0, bookSearchQuery);
+    loadBooks(0, bookSearchQuery, bookCategoryFilter);
   };
 
   const handleCreateBookSubmit = async (e) => {
@@ -657,6 +673,7 @@ export default function App() {
         title: bookForm.title,
         author: bookForm.author,
         isbn: bookForm.isbn,
+        category: bookForm.category,
         totalBookCount: Number(bookForm.totalBookCount) || 1
       })
     });
@@ -673,8 +690,8 @@ export default function App() {
       
       showToast('Book added to inventory successfully', 'success');
       setActiveModal(null);
-      setBookForm({ id: '', uuid: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
-      loadBooks(booksPage, bookSearchQuery);
+      setBookForm({ id: '', uuid: '', title: '', author: '', isbn: '', category: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
+      loadBooks(booksPage, bookSearchQuery, bookCategoryFilter);
     } else {
       showToast(res.data?.message || 'Failed to create book', 'error');
     }
@@ -689,6 +706,7 @@ export default function App() {
         title: bookForm.title,
         author: bookForm.author,
         isbn: bookForm.isbn,
+        category: bookForm.category,
         totalBookCount: Number(bookForm.totalBookCount) || 1
       })
     });
@@ -703,8 +721,8 @@ export default function App() {
       }
       showToast('Book updated successfully', 'success');
       setActiveModal(null);
-      setBookForm({ id: '', uuid: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
-      loadBooks(booksPage, bookSearchQuery);
+      setBookForm({ id: '', uuid: '', title: '', author: '', isbn: '', category: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
+      loadBooks(booksPage, bookSearchQuery, bookCategoryFilter);
     } else {
       showToast(res.data?.message || 'Failed to update book', 'error');
     }
@@ -719,7 +737,7 @@ export default function App() {
         const res = await fetchApi(`/books/${bookId}`, { method: 'DELETE' });
         if (res.ok) {
           showToast('Book deleted', 'success');
-          loadBooks(booksPage, bookSearchQuery);
+          loadBooks(booksPage, bookSearchQuery, bookCategoryFilter);
         } else {
           showToast(res.data?.message || 'Failed to delete book', 'error');
         }
@@ -2899,7 +2917,7 @@ export default function App() {
                       <p className="section-desc">Frequently performed librarian tasks</p>
                     </div>
                     <div className="quick-actions-row">
-                      <button className="quick-action-btn" onClick={() => { setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1 }); setActiveModal('createBook'); }}>
+                      <button className="quick-action-btn" onClick={() => { setBookForm({ id: '', title: '', author: '', isbn: '', category: '', totalBookCount: 1 }); setActiveModal('createBook'); }}>
                         <div className="qa-icon">+</div>
                         <div className="qa-text">
                           <span className="qa-title">Add New Book</span>
@@ -3021,12 +3039,18 @@ export default function App() {
                       onChange={(e) => setBookSearchQuery(e.target.value)}
                     />
                   </div>
+                  <select className="form-input" style={{ maxWidth: '170px' }} value={bookCategoryFilter} onChange={(e) => { const newCat = e.target.value; setBookCategoryFilter(newCat); setBooksPage(0); loadBooks(0, bookSearchQuery, newCat); }}>
+                    <option value="">All Categories</option>
+                    {BOOK_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
                   <button type="submit" className="btn btn-secondary">Search</button>
-                  <button type="button" className="btn btn-ghost" onClick={() => { setBookSearchQuery(''); loadBooks(0, ''); }}>Clear</button>
+                  <button type="button" className="btn btn-ghost" onClick={() => { setBookSearchQuery(''); setBookCategoryFilter(''); setBooksPage(0); loadBooks(0, '', ''); }}>Clear</button>
                 </form>
 
                 {userRole === 'ADMIN' && (
-                  <button className="btn btn-primary" onClick={() => { setBookForm({ id: '', title: '', author: '', isbn: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' }); setActiveModal('createBook'); }}>
+                  <button className="btn btn-primary" onClick={() => { setBookForm({ id: '', title: '', author: '', isbn: '', category: '', totalBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' }); setActiveModal('createBook'); }}>
                     <Plus size={16} />
                     <span>Add Book</span>
                   </button>
@@ -3040,6 +3064,7 @@ export default function App() {
                       <th width="70">Cover</th>
                       <th>Title & Metadata</th>
                       <th>Author</th>
+                      <th>Category</th>
                       <th>ISBN</th>
                       {userRole === 'ADMIN' ? (
                         <>
@@ -3055,7 +3080,7 @@ export default function App() {
                   </thead>
                   <tbody>
                     {books.length === 0 ? (
-                      <tr><td colSpan={userRole === 'ADMIN' ? 8 : 6} className="empty-cell">No books found in catalog.</td></tr>
+                      <tr><td colSpan={userRole === 'ADMIN' ? 9 : 7} className="empty-cell">No books found in catalog.</td></tr>
                     ) : (
                       books.map((b, idx) => {
                         const total = b.totalBookCount ?? b.total_book_count ?? 0;
@@ -3072,6 +3097,7 @@ export default function App() {
                             </td>
                             <td><strong>{b.title}</strong></td>
                             <td>{b.author}</td>
+                            <td><span className="badge category-badge" style={{ padding: '3px 8px', borderRadius: '4px', fontSize: '12px', background: 'var(--surface-color)', border: '1px solid var(--border-color)', fontWeight: 500 }}>{getCategoryLabel(b.category)}</span></td>
                             <td><code>{b.isbn}</code></td>
                             {userRole === 'ADMIN' ? (
                               <>
@@ -3096,6 +3122,7 @@ export default function App() {
                                       title: b.title,
                                       author: b.author,
                                       isbn: b.isbn,
+                                      category: b.category || '',
                                       totalBookCount: b.totalBookCount ?? b.total_book_count ?? 1,
                                       coverFile: null,
                                       coverPreview: '',
@@ -5385,6 +5412,15 @@ export default function App() {
                   <input type="text" className="form-input" required value={bookForm.isbn} onChange={e => setBookForm({ ...bookForm, isbn: e.target.value })} placeholder="e.g. 9780201633610" />
                 </div>
                 <div className="form-group mb-4">
+                  <label className="form-label">Category <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <select className="form-input" required value={bookForm.category} onChange={e => setBookForm({ ...bookForm, category: e.target.value })}>
+                    <option value="">Select a Category</option>
+                    {BOOK_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group mb-4">
                   <label className="form-label">Total Book Count (Copies) <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
                   <input type="number" min="1" className="form-input" required value={bookForm.totalBookCount} onChange={e => setBookForm({ ...bookForm, totalBookCount: e.target.value })} />
                 </div>
@@ -5441,6 +5477,15 @@ export default function App() {
                 <div className="form-group mb-4">
                   <label className="form-label">ISBN Number <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
                   <input type="text" className="form-input" required value={bookForm.isbn} onChange={e => setBookForm({ ...bookForm, isbn: e.target.value })} />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Category <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <select className="form-input" required value={bookForm.category} onChange={e => setBookForm({ ...bookForm, category: e.target.value })}>
+                    <option value="">Select a Category</option>
+                    {BOOK_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="form-group mb-4">
                   <label className="form-label">Total Book Count (Copies) <span style={{ color: 'var(--accent-primary)' }}>*</span></label>

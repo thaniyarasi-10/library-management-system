@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.database.repository;
 
 import com.kovanlabs.librarymanagement.database.entity.Book;
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -21,8 +22,13 @@ public interface BookRepository extends JpaRepository<Book, String> {
     List<Book> findBySalesforceSyncStatus(SalesforceSyncStatus salesforceSyncStatus);
 
     @Query("SELECT b FROM Book b WHERE " +
-           "LOWER(b.title) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(b.author) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(b.isbn) LIKE LOWER(CONCAT('%', :query, '%'))")
-    Page<Book> searchBooks(@Param("query") String query, Pageable pageable);
+           "(:category IS NULL OR b.category = :category) AND " +
+           "(:query IS NULL OR :query = '' OR " +
+           " LOWER(b.title) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           " LOWER(b.author) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           " LOWER(b.isbn) LIKE LOWER(CONCAT('%', :query, '%')))")
+    Page<Book> searchBooks(@Param("query") String query, @Param("category") BookCategory category, Pageable pageable);
+
+    @Query("SELECT b FROM Book b WHERE :category IS NULL OR b.category = :category")
+    Page<Book> findByCategory(@Param("category") BookCategory category, Pageable pageable);
 }

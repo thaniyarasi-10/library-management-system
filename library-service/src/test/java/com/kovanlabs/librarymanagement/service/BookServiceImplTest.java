@@ -2,12 +2,13 @@ package com.kovanlabs.librarymanagement.service;
 
 import com.kovanlabs.librarymanagement.aws.s3.dto.S3UploadResponse;
 import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
-import com.kovanlabs.librarymanagement.dto.BookRequest;
-import com.kovanlabs.librarymanagement.dto.BookResponse;
 import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.database.entity.Book;
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import com.kovanlabs.librarymanagement.database.repository.BookRepository;
+import com.kovanlabs.librarymanagement.dto.BookRequest;
+import com.kovanlabs.librarymanagement.dto.BookResponse;
 import com.kovanlabs.librarymanagement.salesforce.model.sobjects.BookSObject;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +32,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -65,6 +67,7 @@ class BookServiceImplTest {
                 .coverImageUrl("http://s3.com/cover.jpg")
                 .totalBookCount(5)
                 .borrowedBookCount(1)
+                .category(BookCategory.TECHNOLOGY)
                 .salesforceRetryCount(0)
                 .build();
 
@@ -76,6 +79,7 @@ class BookServiceImplTest {
                 .isbn("9780134685991")
                 .totalBookCount(3)
                 .borrowedBookCount(0)
+                .category(BookCategory.TECHNOLOGY)
                 .salesforceRetryCount(0)
                 .build();
     }
@@ -83,13 +87,14 @@ class BookServiceImplTest {
     @Test
     @DisplayName("createBook should save and dual-write to Salesforce")
     void createBook_shouldSaveAndReturnBookResponse() {
-        BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "9780132350884", 5);
+        BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "9780132350884", 5, BookCategory.TECHNOLOGY);
         when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
 
         BookResponse response = bookService.createBook(request);
 
         assertNotNull(response);
         assertEquals("Clean Code", response.title());
+        assertEquals(BookCategory.TECHNOLOGY, response.category());
         verify(salesforceSyncService).syncBook(any(BookSObject.class));
         verify(bookRepository, times(2)).save(any(Book.class));
     }
@@ -98,20 +103,21 @@ class BookServiceImplTest {
     @DisplayName("createBook when Salesforce is null should still create book in database")
     void createBook_whenSalesforceIsNull_shouldCreateBook() {
         BookServiceImpl serviceWithoutSf = new BookServiceImpl(bookRepository, s3Service, null);
-        BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "9780132350884", 5);
+        BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "9780132350884", 5, BookCategory.TECHNOLOGY);
         when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
 
         BookResponse response = serviceWithoutSf.createBook(request);
 
         assertNotNull(response);
         assertEquals("Clean Code", response.title());
+        assertEquals(BookCategory.TECHNOLOGY, response.category());
         verify(bookRepository, times(1)).save(any(Book.class));
     }
 
     @Test
     @DisplayName("createBook when Salesforce fails should still return response and mark pending")
     void createBook_whenSalesforceFails_shouldStillReturnResponseAndMarkPending() {
-        BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "9780132350884", 5);
+        BookRequest request = new BookRequest("Clean Code", "Robert C. Martin", "9780132350884", 5, BookCategory.TECHNOLOGY);
         when(bookRepository.save(any(Book.class))).thenAnswer(inv -> inv.getArgument(0));
         doThrow(new RuntimeException("SF Error")).when(salesforceSyncService).syncBook(any(BookSObject.class));
 
@@ -119,6 +125,7 @@ class BookServiceImplTest {
 
         assertNotNull(response);
         assertEquals("Clean Code", response.title());
+        assertEquals(BookCategory.TECHNOLOGY, response.category());
         verify(bookRepository, times(2)).save(any(Book.class));
     }
 
@@ -134,18 +141,33 @@ class BookServiceImplTest {
                 .coverImageUrl("http://s3.com/cover.jpg")
                 .totalBookCount(5)
                 .borrowedBookCount(0)
+                .category("Technology")
                 .errors(null)
                 .build();
         when(salesforceSyncService.fetchBooksFromSalesforce(2, 0)).thenReturn(List.of(sfBook));
         when(salesforceSyncService.getTotalBooksFromSalesforce()).thenReturn(10L);
 
-        PagedResponse<BookResponse> response = bookService.getAllBooks(0, 2, "title", "asc");
+        PagedResponse<BookResponse> response = bookService.getAllBooks(0, 2, "title", "asc", null);
 
         assertNotNull(response);
         assertEquals(1, response.content().size());
         assertEquals(10L, response.totalElements());
         assertEquals(5, response.totalPages());
         assertFalse(response.last());
+    }
+
+    @Test
+    @DisplayName("getAllBooks with category should filter by category from MySQL")
+    void getAllBooks_withCategory_shouldFilterFromMySQL() {
+        Page<Book> bookPage = new PageImpl<>(List.of(book1), PageRequest.of(0, 10, Sort.by("title").ascending()), 1);
+        when(bookRepository.findByCategory(eq(BookCategory.TECHNOLOGY), any(Pageable.class))).thenReturn(bookPage);
+
+        PagedResponse<BookResponse> response = bookService.getAllBooks(0, 10, "title", "asc", BookCategory.TECHNOLOGY);
+
+        assertNotNull(response);
+        assertEquals(1, response.content().size());
+        assertEquals(BookCategory.TECHNOLOGY, response.content().getFirst().category());
+        verify(bookRepository).findByCategory(eq(BookCategory.TECHNOLOGY), any(Pageable.class));
     }
 
     @Test
@@ -170,7 +192,7 @@ class BookServiceImplTest {
         when(salesforceSyncService.fetchBooksFromSalesforce(10, 0)).thenReturn(list);
         when(salesforceSyncService.getTotalBooksFromSalesforce()).thenReturn(2L);
 
-        PagedResponse<BookResponse> response = bookService.getAllBooks(0, 10, "title", "asc");
+        PagedResponse<BookResponse> response = bookService.getAllBooks(0, 10, "title", "asc", null);
 
         assertNotNull(response);
     }
@@ -180,16 +202,16 @@ class BookServiceImplTest {
     void getAllBooks_whenSfReturnsEmptyOrNull_shouldFallbackToMySQL() {
         when(salesforceSyncService.fetchBooksFromSalesforce(10, 0)).thenReturn(List.of());
         Page<Book> bookPage = new PageImpl<>(List.of(book1), PageRequest.of(0, 10, Sort.by("title").ascending()), 1);
-        when(bookRepository.findAll(any(Pageable.class))).thenReturn(bookPage);
+        when(bookRepository.findByCategory(isNull(), any(Pageable.class))).thenReturn(bookPage);
 
-        PagedResponse<BookResponse> response = bookService.getAllBooks(0, 10, "title", "asc");
+        PagedResponse<BookResponse> response = bookService.getAllBooks(0, 10, "title", "asc", null);
 
         assertNotNull(response);
         assertEquals(1, response.content().size());
 
         // Test with null
         when(salesforceSyncService.fetchBooksFromSalesforce(10, 0)).thenReturn(null);
-        PagedResponse<BookResponse> responseNull = bookService.getAllBooks(0, 10, "title", "asc");
+        PagedResponse<BookResponse> responseNull = bookService.getAllBooks(0, 10, "title", "asc", null);
         assertNotNull(responseNull);
     }
 
@@ -198,13 +220,13 @@ class BookServiceImplTest {
     void getAllBooks_whenSalesforceIsNull_shouldFetchFromMySQLWithDescSort() {
         BookServiceImpl serviceWithoutSf = new BookServiceImpl(bookRepository, s3Service, null);
         Page<Book> bookPage = new PageImpl<>(List.of(book1), PageRequest.of(0, 10, Sort.by("title").descending()), 1);
-        when(bookRepository.findAll(any(Pageable.class))).thenReturn(bookPage);
+        when(bookRepository.findByCategory(isNull(), any(Pageable.class))).thenReturn(bookPage);
 
-        PagedResponse<BookResponse> response = serviceWithoutSf.getAllBooks(0, 10, "title", "desc");
+        PagedResponse<BookResponse> response = serviceWithoutSf.getAllBooks(0, 10, "title", "desc", null);
 
         assertNotNull(response);
         assertEquals(1, response.content().size());
-        verify(bookRepository).findAll(any(Pageable.class));
+        verify(bookRepository).findByCategory(isNull(), any(Pageable.class));
     }
 
     @Test
@@ -212,9 +234,9 @@ class BookServiceImplTest {
     void getAllBooks_paginated_salesforceFailureFallbackToMySQL() {
         when(salesforceSyncService.fetchBooksFromSalesforce(10, 0)).thenThrow(new RuntimeException("SF Down"));
         Page<Book> bookPage = new PageImpl<>(List.of(book1), PageRequest.of(0, 10, Sort.by("title").ascending()), 1);
-        when(bookRepository.findAll(any(Pageable.class))).thenReturn(bookPage);
+        when(bookRepository.findByCategory(isNull(), any(Pageable.class))).thenReturn(bookPage);
 
-        PagedResponse<BookResponse> response = bookService.getAllBooks(0, 10, "title", "asc");
+        PagedResponse<BookResponse> response = bookService.getAllBooks(0, 10, "title", "asc", null);
 
         assertNotNull(response);
         assertEquals(1, response.content().size());
@@ -222,27 +244,48 @@ class BookServiceImplTest {
     }
 
     @Test
-    @DisplayName("searchBooks with desc sort should return paged response")
+    @DisplayName("searchBooks with desc sort without category should return paged response")
     void searchBooks_withDescSort_shouldReturnPagedResponse() {
         Page<Book> bookPage = new PageImpl<>(List.of(book1), PageRequest.of(0, 10, Sort.by("title").descending()), 1);
-        when(bookRepository.searchBooks(eq("Clean"), any(Pageable.class))).thenReturn(bookPage);
+        when(bookRepository.searchBooks(eq("Clean"), isNull(), any(Pageable.class))).thenReturn(bookPage);
 
-        PagedResponse<BookResponse> response = bookService.searchBooks("Clean", 0, 10, "title", "desc");
+        PagedResponse<BookResponse> response = bookService.searchBooks("Clean", null, 0, 10, "title", "desc");
 
         assertNotNull(response);
         assertEquals(1, response.content().size());
     }
 
     @Test
-    @DisplayName("searchBooks with asc sort should return paged response")
+    @DisplayName("searchBooks with asc sort without category should return paged response")
     void searchBooks_withAscSort_shouldReturnPagedResponse() {
         Page<Book> bookPage = new PageImpl<>(List.of(book1), PageRequest.of(0, 10, Sort.by("title").ascending()), 1);
-        when(bookRepository.searchBooks(eq("Clean"), any(Pageable.class))).thenReturn(bookPage);
+        when(bookRepository.searchBooks(eq("Clean"), isNull(), any(Pageable.class))).thenReturn(bookPage);
 
-        PagedResponse<BookResponse> response = bookService.searchBooks("Clean", 0, 10, "title", "asc");
+        PagedResponse<BookResponse> response = bookService.searchBooks("Clean", null, 0, 10, "title", "asc");
 
         assertNotNull(response);
         assertEquals(1, response.content().size());
+    }
+
+    @Test
+    @DisplayName("searchBooks with category should filter by query and category")
+    void searchBooks_withCategory_shouldReturnPagedResponse() {
+        Page<Book> bookPage = new PageImpl<>(List.of(book1), PageRequest.of(0, 10, Sort.by("title").ascending()), 1);
+        when(bookRepository.searchBooks(eq("Clean"), eq(BookCategory.TECHNOLOGY), any(Pageable.class))).thenReturn(bookPage);
+
+        PagedResponse<BookResponse> response = bookService.searchBooks("Clean", BookCategory.TECHNOLOGY, 0, 10, "title", "asc");
+
+        assertNotNull(response);
+        assertEquals(1, response.content().size());
+        verify(bookRepository).searchBooks(eq("Clean"), eq(BookCategory.TECHNOLOGY), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("getAllCategories should return all categories")
+    void getAllCategories_shouldReturnAllCategories() {
+        List<BookCategory> categories = bookService.getAllCategories();
+        assertNotNull(categories);
+        assertEquals(BookCategory.values().length, categories.size());
     }
 
     @Test
@@ -286,7 +329,7 @@ class BookServiceImplTest {
     @Test
     @DisplayName("updateBook when book exists should update fields and sync with Salesforce")
     void updateBook_whenBookExists_shouldUpdateAndReturnResponse() {
-        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 12);
+        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 12, BookCategory.TECHNOLOGY);
         when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
         when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -296,6 +339,7 @@ class BookServiceImplTest {
         assertEquals("9780134494166", response.isbn());
         assertEquals(12, book1.getTotalBookCount());
         assertEquals(12, response.totalBookCount());
+        assertEquals(BookCategory.TECHNOLOGY, response.category());
         verify(salesforceSyncService).syncBook(any());
         assertEquals(SalesforceSyncStatus.SUCCESS, book1.getSalesforceSyncStatus());
         assertEquals(0, book1.getSalesforceRetryCount());
@@ -306,7 +350,7 @@ class BookServiceImplTest {
     void updateBook_whenPriorRetryCountNonZero_shouldResetRetryCountAndSetSuccess() {
         book1.setSalesforceRetryCount(3);
         book1.setSalesforceSyncStatus(SalesforceSyncStatus.FAILED);
-        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 12);
+        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 12, BookCategory.TECHNOLOGY);
         when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
         when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -320,7 +364,7 @@ class BookServiceImplTest {
     @Test
     @DisplayName("updateBook when request totalBookCount is null should keep existing totalBookCount")
     void updateBook_withNullTotalBookCount_shouldKeepExisting() {
-        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", null);
+        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", null, BookCategory.TECHNOLOGY);
         when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
         when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -334,7 +378,7 @@ class BookServiceImplTest {
     @DisplayName("updateBook when Salesforce is null should update without syncing")
     void updateBook_whenSalesforceIsNull_shouldUpdateWithoutSync() {
         BookServiceImpl serviceWithoutSf = new BookServiceImpl(bookRepository, s3Service, null);
-        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 10);
+        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 10, BookCategory.TECHNOLOGY);
         when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
         when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -348,7 +392,7 @@ class BookServiceImplTest {
     @Test
     @DisplayName("updateBook when book not found should throw ResponseStatusException")
     void updateBook_whenBookNotFound_shouldThrowResponseStatusException() {
-        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 10);
+        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 10, BookCategory.TECHNOLOGY);
         when(bookRepository.findByUuid("non-existent-uuid")).thenReturn(Optional.empty());
 
         assertThrows(ResponseStatusException.class, () -> bookService.updateBook("non-existent-uuid", updateRequest));
@@ -359,7 +403,7 @@ class BookServiceImplTest {
     void updateBook_whenSalesforceFails_shouldStillReturnResponseAndMarkPending() {
         book1.setSalesforceRetryCount(3);
         book1.setSalesforceSyncStatus(SalesforceSyncStatus.FAILED);
-        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 10);
+        BookRequest updateRequest = new BookRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 10, BookCategory.TECHNOLOGY);
         when(bookRepository.findByUuid(uuid1)).thenReturn(Optional.of(book1));
         when(bookRepository.save(any(Book.class))).thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new RuntimeException("SF update error")).when(salesforceSyncService).syncBook(any());

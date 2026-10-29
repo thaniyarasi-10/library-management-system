@@ -1,9 +1,11 @@
 package com.kovanlabs.librarymanagement.controller;
 
+import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import com.kovanlabs.librarymanagement.dto.BookRequest;
 import com.kovanlabs.librarymanagement.dto.BookResponse;
-import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import com.kovanlabs.librarymanagement.service.BookService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,9 +14,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.UUID;
-
-import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping({"/api/books", "/books"})
@@ -31,21 +30,28 @@ public class BookController {
 
     @GetMapping
     public PagedResponse<BookResponse> getAllBooks(
+            @RequestParam(name = "category", required = false) BookCategory category,
             @RequestParam(name = "page", defaultValue = "0", required = false) int page,
             @RequestParam(name = "size", defaultValue = "10", required = false) int size,
             @RequestParam(name = "sortBy", defaultValue = "id", required = false) String sortBy,
             @RequestParam(name = "sortDir", defaultValue = "asc", required = false) String sortDir) {
-        return bookService.getAllBooks(page, size, sortBy, sortDir);
+        return bookService.getAllBooks(page, size, sortBy, sortDir, category);
     }
 
     @GetMapping("/search")
     public PagedResponse<BookResponse> searchBooks(
-            @RequestParam(name = "query") String query,
+            @RequestParam(name = "query", defaultValue = "", required = false) String query,
+            @RequestParam(name = "category", required = false) BookCategory category,
             @RequestParam(name = "page", defaultValue = "0", required = false) int page,
             @RequestParam(name = "size", defaultValue = "10", required = false) int size,
             @RequestParam(name = "sortBy", defaultValue = "id", required = false) String sortBy,
             @RequestParam(name = "sortDir", defaultValue = "asc", required = false) String sortDir) {
-        return bookService.searchBooks(query, page, size, sortBy, sortDir);
+        return bookService.searchBooks(query, category, page, size, sortBy, sortDir);
+    }
+
+    @GetMapping("/categories")
+    public List<BookCategory> getCategories() {
+        return bookService.getAllCategories();
     }
 
     @GetMapping("/{uuid}")

@@ -1,14 +1,15 @@
 package com.kovanlabs.librarymanagement.service;
 
+import com.kovanlabs.librarymanagement.aws.s3.dto.S3UploadResponse;
+import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
+import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.database.entity.Book;
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
+import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
+import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.dto.BookRequest;
 import com.kovanlabs.librarymanagement.dto.BookResponse;
 import com.kovanlabs.librarymanagement.mapping.BookMapper;
-import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
-import com.kovanlabs.librarymanagement.aws.s3.dto.S3UploadResponse;
-import com.kovanlabs.librarymanagement.aws.s3.service.S3Service;
-import com.kovanlabs.librarymanagement.database.entity.Book;
-import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
-import com.kovanlabs.librarymanagement.database.repository.BookRepository;
 import com.kovanlabs.librarymanagement.salesforce.service.SalesforceSync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -79,18 +80,23 @@ public class BookServiceImpl implements BookService {
     }
 
     /**
-     * Retrieves paginated books from Salesforce SOQL if configured, otherwise falls
-     * back to MySQL.
+     * Retrieves paginated books optionally filtered by category.
+     * When category is null, returns all books (from Salesforce if configured, otherwise MySQL).
      *
-     * @param page    Zero-based page number
-     * @param size    Number of items per page
-     * @param sortBy  Field name to sort by
-     * @param sortDir Sort direction ("asc" or "desc")
+     * @param page     Zero-based page number
+     * @param size     Number of items per page
+     * @param sortBy   Field name to sort by
+     * @param sortDir  Sort direction ("asc" or "desc")
+     * @param category Optional book category filter (null returns all)
      * @return {@link PagedResponse} of {@link BookResponse}
      */
     @Override
-    public PagedResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDir) {
-        if (Objects.nonNull(salesforceSyncService)) {
+    public PagedResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDir, BookCategory category) {
+        Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
+                : Sort.by(sortBy).descending();
+        Pageable pageable = PageRequest.of(page, size, sort);
+
+        if (Objects.isNull(category) && Objects.nonNull(salesforceSyncService)) {
             try {
                 int offset = page * size;
                 var sfBookModels = salesforceSyncService.fetchBooksFromSalesforce(size, offset);
@@ -122,11 +128,8 @@ public class BookServiceImpl implements BookService {
             }
         }
 
-        log.info("[DATA SOURCE: MYSQL] Fetching paged books (page={}, size={}) from MySQL database", page, size);
-        Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
-                : Sort.by(sortBy).descending();
-        Pageable pageable = PageRequest.of(page, size, sort);
-        Page<Book> booksPage = bookRepository.findAll(pageable);
+        log.info("[DATA SOURCE: MYSQL] Fetching paged books (page={}, size={}, category={}) from MySQL database", page, size, category);
+        Page<Book> booksPage = bookRepository.findByCategory(category, pageable);
         List<BookResponse> content = booksPage.getContent().stream()
                 .map(BookMapper.INSTANCE::mapToResponse)
                 .collect(Collectors.toList());
@@ -141,21 +144,24 @@ public class BookServiceImpl implements BookService {
     }
 
     /**
-     * Searches books matching the search query in MySQL with pagination.
+     * Searches books matching the search query and optional category in MySQL with pagination.
+     * When category is null, searches across all books; otherwise filters by category.
      *
-     * @param query   Search query
-     * @param page    Page index
-     * @param size    Page size
-     * @param sortBy  Sort field
-     * @param sortDir Sort direction
+     * @param query    Search query
+     * @param category Optional category filter
+     * @param page     Page index
+     * @param size     Page size
+     * @param sortBy   Sort field
+     * @param sortDir  Sort direction
      * @return {@link PagedResponse} of matching {@link BookResponse} items
      */
     @Override
-    public PagedResponse<BookResponse> searchBooks(String query, int page, int size, String sortBy, String sortDir) {
+    public PagedResponse<BookResponse> searchBooks(String query, BookCategory category, int page, int size, String sortBy, String sortDir) {
         Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
-        Page<Book> booksPage = bookRepository.searchBooks(query, pageable);
+        Page<Book> booksPage = bookRepository.searchBooks(query, category, pageable);
+
         List<BookResponse> content = booksPage.getContent().stream()
                 .map(BookMapper.INSTANCE::mapToResponse)
                 .collect(Collectors.toList());
@@ -167,6 +173,16 @@ public class BookServiceImpl implements BookService {
                 booksPage.getTotalElements(),
                 booksPage.getTotalPages(),
                 booksPage.isLast());
+    }
+
+    /**
+     * Retrieves all available book categories.
+     *
+     * @return List of all {@link BookCategory} enum constants
+     */
+    @Override
+    public List<BookCategory> getAllCategories() {
+        return List.of(BookCategory.values());
     }
 
     /**
@@ -200,6 +216,9 @@ public class BookServiceImpl implements BookService {
         book.setIsbn(request.isbn());
         if (Objects.nonNull(request.totalBookCount())) {
             book.setTotalBookCount(request.totalBookCount());
+        }
+        if (Objects.nonNull(request.category())) {
+            book.setCategory(request.category());
         }
         book.setSalesforceRetryCount(0);
         book.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
