@@ -1,6 +1,7 @@
 package com.kovanlabs.librarymanagement.mapping;
 
 import com.kovanlabs.librarymanagement.database.entity.Book;
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import com.kovanlabs.librarymanagement.dto.BookRequest;
 import com.kovanlabs.librarymanagement.dto.BookResponse;
 import com.kovanlabs.librarymanagement.salesforce.enums.SObject;
@@ -16,7 +17,7 @@ import java.util.Objects;
  * MapStruct mapper for Book entity conversions, DTO transformations,
  * and Salesforce Book SObject mappings.
  */
-@Mapper(imports = {SObject.class, SObjectAttributes.class, Objects.class})
+@Mapper(imports = {SObject.class, SObjectAttributes.class, Objects.class, BookCategory.class})
 public interface BookMapper {
 
     BookMapper INSTANCE = Mappers.getMapper(BookMapper.class);
@@ -74,6 +75,7 @@ public interface BookMapper {
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
     @Mapping(target = "totalBookCount", source = "totalBookCount")
     @Mapping(target = "borrowedBookCount", source = "borrowedBookCount")
+    @Mapping(target = "category", expression = "java(Objects.nonNull(dto.category()) ? dto.category().getDisplayName() : null)")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     BookSObject toBookSObject(BookResponse dto);
@@ -93,6 +95,7 @@ public interface BookMapper {
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
     @Mapping(target = "totalBookCount", source = "totalBookCount")
     @Mapping(target = "borrowedBookCount", source = "borrowedBookCount")
+    @Mapping(target = "category", expression = "java(Objects.nonNull(book.getCategory()) ? book.getCategory().getDisplayName() : null)")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "errors", ignore = true)
     BookSObject toBookSObject(Book book);
@@ -111,6 +114,7 @@ public interface BookMapper {
     @Mapping(target = "coverImageUrl", source = "coverImageUrl")
     @Mapping(target = "totalBookCount", source = "totalBookCount")
     @Mapping(target = "borrowedBookCount", source = "borrowedBookCount")
+    @Mapping(target = "category", expression = "java(BookCategory.fromValue(sObject.getCategory()))")
     @Mapping(target = "availableBookCount", expression = "java((Objects.nonNull(sObject.getTotalBookCount()) ? sObject.getTotalBookCount() : 0) - (Objects.nonNull(sObject.getBorrowedBookCount()) ? sObject.getBorrowedBookCount() : 0))")
     BookResponse toBookResponse(BookSObject sObject);
 

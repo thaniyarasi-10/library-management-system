@@ -18,7 +18,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         authorizationParams={{
           redirect_uri: window.location.origin,
           audience: audience || undefined,
-          scope: 'openid profile email'
+          scope: 'openid profile email offline_access'
         }}
         cacheLocation="localstorage"
         useRefreshTokens={true}
@@ -26,5 +26,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <App />
       </Auth0Provider>
     </BrowserRouter>
-  </React.StrictMode>,
+  </React.StrictMode>
 )

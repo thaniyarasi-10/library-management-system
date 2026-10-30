@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.database.entity;
 
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -39,6 +40,10 @@ public class Book extends BaseEntity {
     @Column(name = "borrowed_book_count", nullable = false)
     @Builder.Default
     private Integer borrowedBookCount = 0;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", nullable = false)
+    private BookCategory category;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "salesforce_sync_status", nullable = false)

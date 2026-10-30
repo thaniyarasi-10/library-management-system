@@ -40,4 +40,7 @@ public class BookSObject extends SObjectBase {
 
     @JsonProperty(BookFields.BORROWED_BOOK_COUNT)
     private Integer borrowedBookCount;
+
+    @JsonProperty(BookFields.CATEGORY)
+    private String category;
 }

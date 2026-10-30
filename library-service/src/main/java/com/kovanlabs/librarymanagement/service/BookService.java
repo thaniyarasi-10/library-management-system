@@ -1,12 +1,12 @@
 package com.kovanlabs.librarymanagement.service;
 
+import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import com.kovanlabs.librarymanagement.dto.BookRequest;
 import com.kovanlabs.librarymanagement.dto.BookResponse;
-import com.kovanlabs.librarymanagement.database.dto.PagedResponse;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
-import java.util.UUID;
 
 /**
  * Service interface for book catalog management, search, cover storage, and caching.
@@ -22,27 +22,38 @@ public interface BookService {
     BookResponse createBook(BookRequest request);
 
     /**
-     * Retrieves a paginated and sorted list of books.
+     * Retrieves a paginated and sorted list of books optionally filtered by category.
+     * When category is null, returns all books.
      *
      * @param page Zero-based page number
      * @param size Number of records per page
      * @param sortBy Field name to sort by
      * @param sortDir Sort direction ("asc" or "desc")
+     * @param category Optional book category filter (null returns all)
      * @return {@link PagedResponse} containing {@link BookResponse} items
      */
-    PagedResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDir);
+    PagedResponse<BookResponse> getAllBooks(int page, int size, String sortBy, String sortDir, BookCategory category);
 
     /**
-     * Searches books by matching title or author keywords with pagination.
+     * Searches books by matching title, author, or ISBN keywords with optional category filter and pagination.
+     * When category is null, searches across all books; otherwise filters by category.
      *
      * @param query Search keyword
+     * @param category Optional book category filter (null searches all categories)
      * @param page Page index
      * @param size Page size
      * @param sortBy Sort field
      * @param sortDir Sort direction
      * @return {@link PagedResponse} of matching {@link BookResponse} items
      */
-    PagedResponse<BookResponse> searchBooks(String query, int page, int size, String sortBy, String sortDir);
+    PagedResponse<BookResponse> searchBooks(String query, BookCategory category, int page, int size, String sortBy, String sortDir);
+
+    /**
+     * Retrieves all available book categories.
+     *
+     * @return List of all {@link BookCategory} enum constants
+     */
+    List<BookCategory> getAllCategories();
 
     /**
      * Retrieves a book by its UUID with caching support.
