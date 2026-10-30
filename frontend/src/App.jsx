@@ -249,8 +249,8 @@ export default function App() {
   // Book Donations
   const [donations, setDonations] = useState([]);
   const [donationFilter, setDonationFilter] = useState('ALL');
-  const [donationForm, setDonationForm] = useState({ title: '', author: '', isbn: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
-  const [editDonationForm, setEditDonationForm] = useState({ id: null, title: '', author: '', isbn: '', donatedBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
+  const [donationForm, setDonationForm] = useState({ title: '', author: '', isbn: '', category: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
+  const [editDonationForm, setEditDonationForm] = useState({ id: null, title: '', author: '', isbn: '', category: '', donatedBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
   const [isSubmittingDonation, setIsSubmittingDonation] = useState(false);
   const [rejectionModal, setRejectionModal] = useState({ open: false, donationId: null, reason: '' });
 
@@ -767,6 +767,7 @@ export default function App() {
         formData.append('title', donationForm.title);
         formData.append('author', donationForm.author);
         formData.append('isbn', donationForm.isbn);
+        formData.append('category', donationForm.category);
         formData.append('donatedBookCount', Number(donationForm.donatedBookCount) || 1);
         formData.append('file', donationForm.coverFile);
         res = await fetchApi('/donations', {
@@ -778,6 +779,7 @@ export default function App() {
           title: donationForm.title,
           author: donationForm.author,
           isbn: donationForm.isbn,
+          category: donationForm.category,
           donatedBookCount: Number(donationForm.donatedBookCount) || 1
         };
         res = await fetchApi('/donations', {
@@ -788,7 +790,7 @@ export default function App() {
       if (res.ok) {
         showToast('Thank you! Your donation request has been submitted for review.', 'success');
         setActiveModal(null);
-        setDonationForm({ title: '', author: '', isbn: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
+        setDonationForm({ title: '', author: '', isbn: '', category: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
         loadDonations();
         refreshUserProfile();
       } else {
@@ -805,6 +807,7 @@ export default function App() {
       title: donation.title || '',
       author: donation.author || '',
       isbn: donation.isbn || '',
+      category: donation.category || '',
       donatedBookCount: donation.donatedBookCount || 1,
       coverFile: null,
       coverPreview: '',
@@ -824,6 +827,7 @@ export default function App() {
         formData.append('title', editDonationForm.title);
         formData.append('author', editDonationForm.author);
         formData.append('isbn', editDonationForm.isbn);
+        formData.append('category', editDonationForm.category);
         formData.append('donatedBookCount', Number(editDonationForm.donatedBookCount) || 1);
         formData.append('file', editDonationForm.coverFile);
         res = await fetchApi(`/donations/${editDonationForm.id}`, {
@@ -835,6 +839,7 @@ export default function App() {
           title: editDonationForm.title,
           author: editDonationForm.author,
           isbn: editDonationForm.isbn,
+          category: editDonationForm.category,
           donatedBookCount: Number(editDonationForm.donatedBookCount) || 1
         };
         res = await fetchApi(`/donations/${editDonationForm.id}`, {
@@ -4716,6 +4721,7 @@ export default function App() {
                           <th>Book Details</th>
                           <th>Donor Information</th>
                           <th>ISBN</th>
+                          <th>Category</th>
                           <th width="90">Copies</th>
                           <th width="120">Status</th>
                           <th width="120">Submitted</th>
@@ -4730,7 +4736,7 @@ export default function App() {
                           if (filtered.length === 0) {
                             return (
                               <tr>
-                                <td colSpan="9" className="empty-cell" style={{ padding: '40px 20px', textAlign: 'center' }}>
+                                <td colSpan="10" className="empty-cell" style={{ padding: '40px 20px', textAlign: 'center' }}>
                                   No donation requests found {donationFilter !== 'ALL' ? `with status "${donationFilter}"` : ''}.
                                 </td>
                               </tr>
@@ -4755,6 +4761,7 @@ export default function App() {
                                 <span className="text-muted" style={{ display: 'block', fontSize: '11px' }}>{d.userEmail}</span>
                               </td>
                               <td><code>{d.isbn}</code></td>
+                              <td><span className="badge category-badge" style={{ padding: '3px 8px', borderRadius: '4px', fontSize: '12px', background: 'var(--surface-color)', border: '1px solid var(--border-color)', fontWeight: 500 }}>{getCategoryLabel(d.category)}</span></td>
                               <td>
                                 <span className="text-muted" style={{ fontWeight: 500 }}>
                                   {d.donatedBookCount} {d.donatedBookCount === 1 ? 'copy' : 'copies'}
@@ -4826,7 +4833,7 @@ export default function App() {
                         className="btn btn-primary btn-lg"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: 'var(--radius-sm)' }}
                         onClick={() => {
-                          setDonationForm({ title: '', author: '', isbn: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
+                          setDonationForm({ title: '', author: '', isbn: '', category: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
                           setActiveModal('createDonation');
                         }}
                       >
@@ -4898,7 +4905,7 @@ export default function App() {
                         className="btn btn-primary"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
                         onClick={() => {
-                          setDonationForm({ title: '', author: '', isbn: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
+                          setDonationForm({ title: '', author: '', isbn: '', category: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
                           setActiveModal('createDonation');
                         }}
                       >
@@ -4915,6 +4922,7 @@ export default function App() {
                             <th width="70">Cover</th>
                             <th>Book Title & Author</th>
                             <th>ISBN</th>
+                            <th>Category</th>
                             <th width="90">Copies</th>
                             <th width="130">Status</th>
                             <th width="120">Submitted</th>
@@ -4937,6 +4945,7 @@ export default function App() {
                                 <span className="text-muted" style={{ display: 'block', fontSize: '12px' }}>by {d.author}</span>
                               </td>
                               <td><code>{d.isbn}</code></td>
+                              <td><span className="badge category-badge" style={{ padding: '3px 8px', borderRadius: '4px', fontSize: '12px', background: 'var(--surface-color)', border: '1px solid var(--border-color)', fontWeight: 500 }}>{getCategoryLabel(d.category)}</span></td>
                               <td>
                                 <span className="text-muted" style={{ fontWeight: 500 }}>
                                   {d.donatedBookCount} {d.donatedBookCount === 1 ? 'copy' : 'copies'}
@@ -5571,6 +5580,20 @@ export default function App() {
                   />
                 </div>
                 <div className="form-group mb-4">
+                  <label className="form-label">Category <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <select
+                    className="form-input"
+                    required
+                    value={donationForm.category}
+                    onChange={e => setDonationForm({ ...donationForm, category: e.target.value })}
+                  >
+                    <option value="">Select a Category</option>
+                    {BOOK_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group mb-4">
                   <label className="form-label">Number of Copies Donated <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
                   <input
                     type="number"
@@ -5654,6 +5677,20 @@ export default function App() {
                     value={editDonationForm.isbn}
                     onChange={e => setEditDonationForm({ ...editDonationForm, isbn: e.target.value })}
                   />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Category <span style={{ color: 'var(--accent-primary)' }}>*</span></label>
+                  <select
+                    className="form-input"
+                    required
+                    value={editDonationForm.category}
+                    onChange={e => setEditDonationForm({ ...editDonationForm, category: e.target.value })}
+                  >
+                    <option value="">Select a Category</option>
+                    {BOOK_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="form-group mb-4">
                   <label className="form-label">Number of Copies Donated <span style={{ color: 'var(--accent-primary)' }}>*</span></label>

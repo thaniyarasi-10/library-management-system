@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.dto;
 
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -13,6 +14,9 @@ public record BookDonationRequest(
 
         @NotBlank(message = "ISBN is required")
         String isbn,
+
+        @NotNull(message = "Category is required")
+        BookCategory category,
 
         @NotNull(message = "Donated book count is required")
         @Min(value = 1, message = "Donated book count must be at least 1")

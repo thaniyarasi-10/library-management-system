@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.database.entity;
 
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import com.kovanlabs.librarymanagement.database.enums.DonationStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -51,6 +52,10 @@ public class BookDonation extends BaseEntity {
 
     @Column(name = "donated_book_count", nullable = false)
     private Integer donatedBookCount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", nullable = false)
+    private BookCategory category;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 36)

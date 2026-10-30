@@ -84,6 +84,9 @@ public class BookDonationServiceImpl implements BookDonationService {
         if (Objects.isNull(request.isbn()) || request.isbn().trim().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Book ISBN is required");
         }
+        if (Objects.isNull(request.category())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Book category is required");
+        }
         if (Objects.isNull(request.donatedBookCount()) || request.donatedBookCount() <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Donated book count must be greater than 0");
         }
@@ -115,6 +118,7 @@ public class BookDonationServiceImpl implements BookDonationService {
                 .title(request.title().trim())
                 .author(request.author().trim())
                 .isbn(request.isbn().trim())
+                .category(request.category())
                 .coverImageUrl(coverImageUrl)
                 .coverImageKey(coverImageKey)
                 .donatedBookCount(request.donatedBookCount())
@@ -223,6 +227,9 @@ public class BookDonationServiceImpl implements BookDonationService {
         if (Objects.isNull(request.isbn()) || request.isbn().trim().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Book ISBN is required");
         }
+        if (Objects.isNull(request.category())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Book category is required");
+        }
         if (Objects.isNull(request.donatedBookCount()) || request.donatedBookCount() <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Donated book count must be greater than 0");
         }
@@ -260,6 +267,7 @@ public class BookDonationServiceImpl implements BookDonationService {
         donation.setTitle(request.title().trim());
         donation.setAuthor(request.author().trim());
         donation.setIsbn(request.isbn().trim());
+        donation.setCategory(request.category());
         donation.setDonatedBookCount(request.donatedBookCount());
 
         BookDonation savedDonation = bookDonationRepository.save(donation);
@@ -365,6 +373,9 @@ public class BookDonationServiceImpl implements BookDonationService {
             if (Objects.isNull(targetBook.getCoverImageKey()) && Objects.nonNull(donation.getCoverImageKey())) {
                 targetBook.setCoverImageKey(donation.getCoverImageKey());
             }
+            if (Objects.isNull(targetBook.getCategory()) && Objects.nonNull(donation.getCategory())) {
+                targetBook.setCategory(donation.getCategory());
+            }
             targetBook.setSalesforceRetryCount(0);
             targetBook.setSalesforceSyncStatus(SalesforceSyncStatus.PENDING);
             targetBook = bookRepository.save(targetBook);
@@ -375,6 +386,7 @@ public class BookDonationServiceImpl implements BookDonationService {
                     .title(donation.getTitle())
                     .author(donation.getAuthor())
                     .isbn(donation.getIsbn())
+                    .category(donation.getCategory())
                     .coverImageUrl(donation.getCoverImageUrl())
                     .coverImageKey(donation.getCoverImageKey())
                     .totalBookCount(count)

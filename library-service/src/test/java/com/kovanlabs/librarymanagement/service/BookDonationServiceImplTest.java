@@ -8,6 +8,7 @@ import com.kovanlabs.librarymanagement.database.entity.Reward;
 import com.kovanlabs.librarymanagement.database.entity.User;
 import com.kovanlabs.librarymanagement.database.entity.UserProvider;
 import com.kovanlabs.librarymanagement.database.enums.AccountStatus;
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import com.kovanlabs.librarymanagement.database.enums.DonationStatus;
 import com.kovanlabs.librarymanagement.database.enums.RoleEnum;
 import com.kovanlabs.librarymanagement.database.enums.SalesforceSyncStatus;
@@ -97,6 +98,7 @@ class BookDonationServiceImplTest {
                 .title("Clean Code")
                 .author("Robert C. Martin")
                 .isbn("9780132350884")
+                .category(BookCategory.TECHNOLOGY)
                 .totalBookCount(5)
                 .borrowedBookCount(1)
                 .salesforceSyncStatus(SalesforceSyncStatus.SUCCESS)
@@ -110,6 +112,7 @@ class BookDonationServiceImplTest {
                 .title("Clean Code")
                 .author("Robert C. Martin")
                 .isbn("9780132350884")
+                .category(BookCategory.TECHNOLOGY)
                 .donatedBookCount(3)
                 .status(DonationStatus.PENDING)
                 .createdAt(LocalDateTime.now())
@@ -123,7 +126,7 @@ class BookDonationServiceImplTest {
     @DisplayName("createDonation - Success with user found directly by providerId")
     void createDonation_success_directProviderId() {
         BookDonationRequest request = new BookDonationRequest(
-                "Clean Code", "Robert C. Martin", "9780132350884", 2
+                "Clean Code", "Robert C. Martin", "9780132350884", BookCategory.TECHNOLOGY, 2
         );
 
         UserProvider up = UserProvider.builder().providerId("google-oauth2|999").userUuid(standardUser.getUuid()).build();
@@ -152,7 +155,7 @@ class BookDonationServiceImplTest {
     @DisplayName("createDonation - Success with user found by email")
     void createDonation_success_userFoundByEmail() {
         BookDonationRequest request = new BookDonationRequest(
-                "Clean Code", "Robert C. Martin", "9780132350884", 2
+                "Clean Code", "Robert C. Martin", "9780132350884", BookCategory.TECHNOLOGY, 2
         );
 
         when(userProviderRepository.findByProviderId("user@example.com")).thenReturn(Optional.empty());
@@ -180,7 +183,7 @@ class BookDonationServiceImplTest {
     @DisplayName("createDonation - Success with user found by providerId with pipe (|)")
     void createDonation_success_userFoundByProviderWithPipe() {
         BookDonationRequest request = new BookDonationRequest(
-                "Design Patterns", "Gang of Four", "9780201633610", 1
+                "Design Patterns", "Gang of Four", "9780201633610", BookCategory.TECHNOLOGY, 1
         );
 
         UserProvider up = UserProvider.builder().providerId("auth0|12345").userUuid(standardUser.getUuid()).build();
@@ -199,7 +202,7 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("createDonation - Success when pipe prefix present but raw ID is empty, falls back to email")
     void createDonation_success_pipeWithEmptyRawId() {
-        BookDonationRequest request = new BookDonationRequest("Book", "Author", "ISBN1", 1);
+        BookDonationRequest request = new BookDonationRequest("Book", "Author", "ISBN1", BookCategory.TECHNOLOGY, 1);
         when(userProviderRepository.findByProviderId("auth0|")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("auth0|")).thenReturn(Optional.of(standardUser));
         when(bookDonationRepository.save(any(BookDonation.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -214,7 +217,7 @@ class BookDonationServiceImplTest {
     @DisplayName("createDonation - Success with user found by UUID")
     void createDonation_success_userFoundByUuid() {
         BookDonationRequest request = new BookDonationRequest(
-                "Refactoring", "Martin Fowler", "9780201485677", 4
+                "Refactoring", "Martin Fowler", "9780201485677", BookCategory.TECHNOLOGY, 4
         );
 
         when(userProviderRepository.findByProviderId(standardUser.getUuid())).thenReturn(Optional.empty());
@@ -240,13 +243,13 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("createDonation - Fails when title is null or blank")
     void createDonation_fails_missingTitle() {
-        BookDonationRequest reqNull = new BookDonationRequest(null, "Author", "ISBN123", 1);
+        BookDonationRequest reqNull = new BookDonationRequest(null, "Author", "ISBN123", BookCategory.TECHNOLOGY, 1);
         ResponseStatusException ex1 = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.createDonation(reqNull, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex1.getStatusCode());
         assertEquals("Book title is required", ex1.getReason());
 
-        BookDonationRequest reqBlank = new BookDonationRequest("   ", "Author", "ISBN123", 1);
+        BookDonationRequest reqBlank = new BookDonationRequest("   ", "Author", "ISBN123", BookCategory.TECHNOLOGY, 1);
         ResponseStatusException ex2 = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.createDonation(reqBlank, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex2.getStatusCode());
@@ -256,13 +259,13 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("createDonation - Fails when author is null or blank")
     void createDonation_fails_missingAuthor() {
-        BookDonationRequest reqNull = new BookDonationRequest("Title", null, "ISBN123", 1);
+        BookDonationRequest reqNull = new BookDonationRequest("Title", null, "ISBN123", BookCategory.TECHNOLOGY, 1);
         ResponseStatusException ex1 = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.createDonation(reqNull, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex1.getStatusCode());
         assertEquals("Book author is required", ex1.getReason());
 
-        BookDonationRequest reqBlank = new BookDonationRequest("Title", "   ", "ISBN123", 1);
+        BookDonationRequest reqBlank = new BookDonationRequest("Title", "   ", "ISBN123", BookCategory.TECHNOLOGY, 1);
         ResponseStatusException ex2 = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.createDonation(reqBlank, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex2.getStatusCode());
@@ -272,13 +275,13 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("createDonation - Fails when ISBN is null or blank")
     void createDonation_fails_missingIsbn() {
-        BookDonationRequest reqNull = new BookDonationRequest("Title", "Author", null, 1);
+        BookDonationRequest reqNull = new BookDonationRequest("Title", "Author", null, BookCategory.TECHNOLOGY, 1);
         ResponseStatusException ex1 = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.createDonation(reqNull, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex1.getStatusCode());
         assertEquals("Book ISBN is required", ex1.getReason());
 
-        BookDonationRequest reqBlank = new BookDonationRequest("Title", "Author", "   ", 1);
+        BookDonationRequest reqBlank = new BookDonationRequest("Title", "Author", "   ", BookCategory.TECHNOLOGY, 1);
         ResponseStatusException ex2 = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.createDonation(reqBlank, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex2.getStatusCode());
@@ -286,14 +289,24 @@ class BookDonationServiceImplTest {
     }
 
     @Test
+    @DisplayName("createDonation - Fails when category is null")
+    void createDonation_fails_missingCategory() {
+        BookDonationRequest reqNull = new BookDonationRequest("Title", "Author", "ISBN123", null, 1);
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> bookDonationService.createDonation(reqNull, null, "user@example.com"));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Book category is required", ex.getReason());
+    }
+
+    @Test
     @DisplayName("createDonation - Fails when donatedBookCount is null or <= 0")
     void createDonation_fails_invalidQuantity() {
-        BookDonationRequest requestNull = new BookDonationRequest("Title", "Author", "ISBN123", null);
+        BookDonationRequest requestNull = new BookDonationRequest("Title", "Author", "ISBN123", BookCategory.TECHNOLOGY, null);
         ResponseStatusException ex1 = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.createDonation(requestNull, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex1.getStatusCode());
 
-        BookDonationRequest requestZero = new BookDonationRequest("Title", "Author", "ISBN123", 0);
+        BookDonationRequest requestZero = new BookDonationRequest("Title", "Author", "ISBN123", BookCategory.TECHNOLOGY, 0);
         ResponseStatusException ex2 = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.createDonation(requestZero, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex2.getStatusCode());
@@ -302,7 +315,7 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("createDonation - Fails when user is not found")
     void createDonation_fails_userNotFound() {
-        BookDonationRequest request = new BookDonationRequest("Title", "Author", "ISBN123", 1);
+        BookDonationRequest request = new BookDonationRequest("Title", "Author", "ISBN123", BookCategory.TECHNOLOGY, 1);
         when(userProviderRepository.findByProviderId("unknown@example.com")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("unknown@example.com")).thenReturn(Optional.empty());
         when(userRepository.findByUuid("unknown@example.com")).thenReturn(Optional.empty());
@@ -315,7 +328,7 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("createDonation - Fails when user identifier is null or blank")
     void createDonation_fails_blankUserIdentifier() {
-        BookDonationRequest request = new BookDonationRequest("Title", "Author", "ISBN123", 1);
+        BookDonationRequest request = new BookDonationRequest("Title", "Author", "ISBN123", BookCategory.TECHNOLOGY, 1);
         ResponseStatusException exNull = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.createDonation(request, null, null));
         assertEquals(HttpStatus.BAD_REQUEST, exNull.getStatusCode());
@@ -568,6 +581,7 @@ class BookDonationServiceImplTest {
         when(bookRepository.findByIsbn("9781111222333")).thenReturn(Optional.empty());
         when(bookRepository.save(any(Book.class))).thenAnswer(inv -> {
             Book b = inv.getArgument(0);
+            assertEquals(BookCategory.TECHNOLOGY, b.getCategory());
             b.setUuid(UUID.randomUUID().toString());
             b.setId(55L);
             return b;
@@ -886,7 +900,7 @@ class BookDonationServiceImplTest {
     @DisplayName("createDonation - Success with cover image file upload")
     void createDonation_success_withCoverFile() throws IOException {
         BookDonationRequest request = new BookDonationRequest(
-                "Clean Code", "Robert C. Martin", "9780132350884", 2
+                "Clean Code", "Robert C. Martin", "9780132350884", BookCategory.TECHNOLOGY, 2
         );
         MockMultipartFile file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "image-content".getBytes());
         S3UploadResponse s3Res = new S3UploadResponse("covers/test.jpg", "https://s3.amazonaws.com/bucket/test.jpg");
@@ -907,7 +921,7 @@ class BookDonationServiceImplTest {
     @DisplayName("createDonation - Success when cover file is empty (ignored)")
     void createDonation_success_withEmptyCoverFile() {
         BookDonationRequest request = new BookDonationRequest(
-                "Clean Code", "Robert C. Martin", "9780132350884", 2
+                "Clean Code", "Robert C. Martin", "9780132350884", BookCategory.TECHNOLOGY, 2
         );
         MockMultipartFile emptyFile = new MockMultipartFile("file", "", "image/jpeg", new byte[0]);
 
@@ -927,7 +941,7 @@ class BookDonationServiceImplTest {
     @DisplayName("createDonation - Fails with 500 when S3Service throws IOException during file upload")
     void createDonation_fails_s3IOException() throws IOException {
         BookDonationRequest request = new BookDonationRequest(
-                "Clean Code", "Robert C. Martin", "9780132350884", 2
+                "Clean Code", "Robert C. Martin", "9780132350884", BookCategory.TECHNOLOGY, 2
         );
         MockMultipartFile file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "image-content".getBytes());
         when(userProviderRepository.findByProviderId("donor@example.com")).thenReturn(Optional.empty());
@@ -954,7 +968,7 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("updateDonation - Fails with 400 when title is blank")
     void updateDonation_fails_blankTitle() {
-        BookDonationRequest request = new BookDonationRequest("", "Author", "ISBN123", 2);
+        BookDonationRequest request = new BookDonationRequest("", "Author", "ISBN123", BookCategory.TECHNOLOGY, 2);
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.updateDonation("don-1", request, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
@@ -964,7 +978,7 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("updateDonation - Fails with 400 when author is blank")
     void updateDonation_fails_blankAuthor() {
-        BookDonationRequest request = new BookDonationRequest("Title", "", "ISBN123", 2);
+        BookDonationRequest request = new BookDonationRequest("Title", "", "ISBN123", BookCategory.TECHNOLOGY, 2);
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.updateDonation("don-1", request, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
@@ -974,7 +988,7 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("updateDonation - Fails with 400 when isbn is blank")
     void updateDonation_fails_blankIsbn() {
-        BookDonationRequest request = new BookDonationRequest("Title", "Author", "", 2);
+        BookDonationRequest request = new BookDonationRequest("Title", "Author", "", BookCategory.TECHNOLOGY, 2);
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.updateDonation("don-1", request, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
@@ -982,9 +996,19 @@ class BookDonationServiceImplTest {
     }
 
     @Test
+    @DisplayName("updateDonation - Fails with 400 when category is null")
+    void updateDonation_fails_missingCategory() {
+        BookDonationRequest request = new BookDonationRequest("Title", "Author", "ISBN123", null, 2);
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> bookDonationService.updateDonation("don-1", request, null, "user@example.com"));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Book category is required", ex.getReason());
+    }
+
+    @Test
     @DisplayName("updateDonation - Fails with 400 when copy count is invalid")
     void updateDonation_fails_invalidCopyCount() {
-        BookDonationRequest request = new BookDonationRequest("Title", "Author", "ISBN123", 0);
+        BookDonationRequest request = new BookDonationRequest("Title", "Author", "ISBN123", BookCategory.TECHNOLOGY, 0);
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> bookDonationService.updateDonation("don-1", request, null, "user@example.com"));
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
@@ -994,7 +1018,7 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("updateDonation - Fails with 403 when user is neither owner nor admin")
     void updateDonation_fails_forbidden() {
-        BookDonationRequest request = new BookDonationRequest("Title", "Author", "ISBN123", 1);
+        BookDonationRequest request = new BookDonationRequest("Title", "Author", "ISBN123", BookCategory.TECHNOLOGY, 1);
         User otherUser = User.builder().uuid("other-uuid").role(RoleEnum.USER).build();
         BookDonation don = BookDonation.builder()
                 .uuid("don-1")
@@ -1014,7 +1038,7 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("updateDonation - Fails with 400 when donation is not pending (APPROVED)")
     void updateDonation_fails_alreadyApproved() {
-        BookDonationRequest request = new BookDonationRequest("Title", "Author", "ISBN123", 1);
+        BookDonationRequest request = new BookDonationRequest("Title", "Author", "ISBN123", BookCategory.TECHNOLOGY, 1);
         BookDonation don = BookDonation.builder()
                 .uuid("don-1")
                 .user(standardUser)
@@ -1034,7 +1058,7 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("updateDonation - Success by owner without file")
     void updateDonation_success_byOwner_noFile() {
-        BookDonationRequest request = new BookDonationRequest("Updated Title", "Updated Author", "9781234567890", 3);
+        BookDonationRequest request = new BookDonationRequest("Updated Title", "Updated Author", "9781234567890", BookCategory.TECHNOLOGY, 3);
         BookDonation don = BookDonation.builder()
                 .id(1L)
                 .uuid("don-1")
@@ -1042,6 +1066,7 @@ class BookDonationServiceImplTest {
                 .title("Old Title")
                 .author("Old Author")
                 .isbn("Old ISBN")
+                .category(BookCategory.TECHNOLOGY)
                 .donatedBookCount(1)
                 .status(DonationStatus.PENDING)
                 .build();
@@ -1057,13 +1082,14 @@ class BookDonationServiceImplTest {
         assertEquals("Updated Title", response.title());
         assertEquals("Updated Author", response.author());
         assertEquals("9781234567890", response.isbn());
+        assertEquals(BookCategory.TECHNOLOGY, response.category());
         assertEquals(3, response.donatedBookCount());
     }
 
     @Test
     @DisplayName("updateDonation - Success by admin with cover image upload")
     void updateDonation_success_byAdmin_withCoverFile() throws IOException {
-        BookDonationRequest request = new BookDonationRequest("Updated Title", "Updated Author", "9781234567890", 3);
+        BookDonationRequest request = new BookDonationRequest("Updated Title", "Updated Author", "9781234567890", BookCategory.TECHNOLOGY, 3);
         BookDonation don = BookDonation.builder()
                 .id(1L)
                 .uuid("don-1")
@@ -1071,6 +1097,7 @@ class BookDonationServiceImplTest {
                 .title("Old Title")
                 .author("Old Author")
                 .isbn("Old ISBN")
+                .category(BookCategory.TECHNOLOGY)
                 .donatedBookCount(1)
                 .status(DonationStatus.PENDING)
                 .build();
@@ -1094,7 +1121,7 @@ class BookDonationServiceImplTest {
     @Test
     @DisplayName("updateDonation - Fails with 500 when S3Service throws IOException")
     void updateDonation_fails_s3IOException() throws IOException {
-        BookDonationRequest request = new BookDonationRequest("Updated Title", "Updated Author", "9781234567890", 3);
+        BookDonationRequest request = new BookDonationRequest("Updated Title", "Updated Author", "9781234567890", BookCategory.TECHNOLOGY, 3);
         BookDonation don = BookDonation.builder()
                 .id(1L)
                 .uuid("don-1")

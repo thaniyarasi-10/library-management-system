@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.dto;
 
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import com.kovanlabs.librarymanagement.database.enums.DonationStatus;
 import lombok.Builder;
 
@@ -15,6 +16,7 @@ public record BookDonationResponse(
         String title,
         String author,
         String isbn,
+        BookCategory category,
         String coverImageUrl,
         String coverImageKey,
         Integer donatedBookCount,

@@ -1,5 +1,6 @@
 package com.kovanlabs.librarymanagement.controller;
 
+import com.kovanlabs.librarymanagement.database.enums.BookCategory;
 import com.kovanlabs.librarymanagement.database.enums.DonationStatus;
 import com.kovanlabs.librarymanagement.dto.BookDonationRequest;
 import com.kovanlabs.librarymanagement.dto.BookDonationResponse;
@@ -48,6 +49,7 @@ class BookDonationControllerTest {
                 .title("Clean Architecture")
                 .author("Robert C. Martin")
                 .isbn("9780134494166")
+                .category(BookCategory.TECHNOLOGY)
                 .donatedBookCount(2)
                 .status(DonationStatus.PENDING)
                 .createdAt(LocalDateTime.now())
@@ -57,7 +59,7 @@ class BookDonationControllerTest {
     @Test
     @DisplayName("createDonationMultipart - with file and principal should return 201 Created")
     void createDonationMultipart_withFile_shouldReturnCreated() {
-        BookDonationRequest request = new BookDonationRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 2);
+        BookDonationRequest request = new BookDonationRequest("Clean Architecture", "Robert C. Martin", "9780134494166", BookCategory.TECHNOLOGY, 2);
         MockMultipartFile file = new MockMultipartFile(
                 "file", "cover.png", "image/png", "image-bytes".getBytes()
         );
@@ -75,7 +77,7 @@ class BookDonationControllerTest {
     @Test
     @DisplayName("createDonationMultipart - with null file and null principal should return 201 Created")
     void createDonationMultipart_withNullFileAndNullPrincipal_shouldReturnCreated() {
-        BookDonationRequest request = new BookDonationRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 2);
+        BookDonationRequest request = new BookDonationRequest("Clean Architecture", "Robert C. Martin", "9780134494166", BookCategory.TECHNOLOGY, 2);
         when(bookDonationService.createDonation(eq(request), isNull(), isNull())).thenReturn(sampleResponse);
 
         ResponseEntity<BookDonationResponse> result = controller.createDonationMultipart(request, null, null);
@@ -209,7 +211,7 @@ class BookDonationControllerTest {
     @Test
     @DisplayName("updateDonation - should call service with principal and with null principal")
     void updateDonation_shouldReturnOk() {
-        BookDonationRequest request = new BookDonationRequest("Clean Architecture", "Robert C. Martin", "9780134494166", 3);
+        BookDonationRequest request = new BookDonationRequest("Clean Architecture", "Robert C. Martin", "9780134494166", BookCategory.TECHNOLOGY, 3);
         MockMultipartFile file = new MockMultipartFile("file", "cover.png", "image/png", "bytes".getBytes());
         when(principal.getName()).thenReturn("donor@example.com");
         when(bookDonationService.updateDonation("1", request, file, "donor@example.com")).thenReturn(sampleResponse);
