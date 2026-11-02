@@ -5,7 +5,8 @@ import { jwtDecode } from 'jwt-decode';
 import {
   BookOpen, Users, LayoutDashboard, CreditCard, Award, Sun, Moon,
   Plus, Search, LogOut, X, ChevronDown, Check, Shield, FileText, Upload, RefreshCw,
-  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock, Clock, Landmark, ShieldCheck, Download
+  User as UserIcon, Edit2, Phone, Gift, Trash2, Bell, Lock, Clock, Landmark, ShieldCheck, Download,
+  Sparkles, Bot, AlertCircle, CheckCircle2, HelpCircle, Send, RotateCcw, ArrowUp
 } from 'lucide-react';
 import './styles.css';
 
@@ -141,6 +142,8 @@ export default function App() {
     '/membership': 'membership',
     '/payments': 'payments',
     '/donations': 'donations',
+    '/recommendations': 'recommendations',
+    '/ai-recommendations': 'recommendations',
   };
 
   const PAGE_TO_PATH = {
@@ -152,6 +155,7 @@ export default function App() {
     'membership': '/membership',
     'payments': '/payments',
     'donations': '/donations',
+    'recommendations': '/recommendations',
   };
 
   // Derive current page from URL; fall back to 'dashboard' for unknown paths
@@ -248,6 +252,12 @@ export default function App() {
 
   // Book Donations
   const [donations, setDonations] = useState([]);
+
+  // AI Book Recommendations Chatbot State
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const chatMessagesEndRef = useRef(null);
   const [donationFilter, setDonationFilter] = useState('ALL');
   const [donationForm, setDonationForm] = useState({ title: '', author: '', isbn: '', category: '', donatedBookCount: 1, coverFile: null, coverPreview: '' });
   const [editDonationForm, setEditDonationForm] = useState({ id: null, title: '', author: '', isbn: '', category: '', donatedBookCount: 1, coverFile: null, coverPreview: '', existingCoverUrl: '' });
@@ -589,6 +599,80 @@ export default function App() {
       loadFines();
     }
   }, [isAuthenticated, currentUser?.status, currentUser?.hasPendingFines]);
+
+  useEffect(() => {
+    if (currentPage === 'recommendations') {
+      chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, isChatLoading, currentPage]);
+
+  const handleSendChatMessage = async (customPrompt) => {
+    const textToSend = (typeof customPrompt === 'string' ? customPrompt : chatInput).trim();
+    if (!textToSend || isChatLoading) return;
+
+    const userMessage = {
+      id: 'user-' + Date.now(),
+      sender: 'user',
+      text: textToSend
+    };
+
+    setChatMessages(prev => [...prev, userMessage]);
+    setChatInput('');
+    setIsChatLoading(true);
+
+    try {
+      const res = await fetchApi('/api/ai/book-recommendations', {
+        method: 'POST',
+        body: JSON.stringify({ query: textToSend, maxResults: 5 }),
+      });
+
+      if (!res.ok) {
+        let errMessage = 'Unable to get recommendations right now. Please try again.';
+        if (res.data && res.data.message) {
+          errMessage = res.data.message;
+        }
+        setChatMessages(prev => [
+          ...prev,
+          {
+            id: 'bot-' + Date.now(),
+            sender: 'assistant',
+            isError: true,
+            text: errMessage
+          }
+        ]);
+        return;
+      }
+
+      const data = res.data;
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: 'bot-' + Date.now(),
+          sender: 'assistant',
+          text: data.message || "Here are some books you might enjoy:",
+          intent: data.intent,
+          recommendations: data.recommendations || []
+        }
+      ]);
+    } catch (err) {
+      console.error('Error fetching recommendations:', err);
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: 'bot-' + Date.now(),
+          sender: 'assistant',
+          isError: true,
+          text: 'Connection error. Please try again in a moment.'
+        }
+      ]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  const handleClearChat = () => {
+    setChatMessages([]);
+  };
 
   const handleSignOut = () => {
     userFetchedRef.current = false;
@@ -2763,6 +2847,14 @@ export default function App() {
             <Gift className="nav-icon" size={18} />
             <span>{userRole === 'ADMIN' ? 'Book Donations' : 'Donate Books'}</span>
           </button>
+
+          <button
+            className={`nav-link ${currentPage === 'recommendations' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('recommendations')}
+          >
+            <Bot className="nav-icon" size={18} />
+            <span>AI Recommendations</span>
+          </button>
         </nav>
 
         <div className="sidebar-profile">
@@ -2795,6 +2887,7 @@ export default function App() {
               {currentPage === 'membership' && 'Digital Membership'}
               {currentPage === 'payments' && 'Payment & Refund History'}
               {currentPage === 'donations' && (userRole === 'ADMIN' ? 'Donation Management' : 'Book Donations')}
+              {currentPage === 'recommendations' && 'AI Book Recommendations'}
             </h1>
           </div>
 
@@ -5001,6 +5094,195 @@ export default function App() {
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {currentPage === 'recommendations' && (
+            <div className="gpt-view">
+              <div className="gpt-chat-container">
+                {/* Messages Stream */}
+                <div className="gpt-messages-stream">
+                  {chatMessages.length === 0 ? (
+                    <div className="gpt-empty-hero">
+                      <h2 className="gpt-empty-title">What would you like to read?</h2>
+                      <p className="gpt-empty-subtitle">Ask for book recommendations based on your topics, interests, or favorite authors.</p>
+                      <div className="gpt-starters-grid">
+                        {[
+                          'Personal finance & investing',
+                          'Beginner Python and data science',
+                          'Psychological thrillers & mystery',
+                          'Habit building and focus'
+                        ].map((prompt) => (
+                          <button
+                            key={prompt}
+                            type="button"
+                            className="gpt-starter-card"
+                            onClick={() => handleSendChatMessage(prompt)}
+                            disabled={isChatLoading}
+                          >
+                            <span>{prompt}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {chatMessages.map((msg) => {
+                        const isUser = msg.sender === 'user';
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`gpt-turn ${isUser ? 'gpt-turn-user' : 'gpt-turn-assistant'}`}
+                          >
+                            <div className="gpt-turn-content">
+                              {isUser ? (
+                                <div className="gpt-user-bubble">
+                                  {msg.text}
+                                </div>
+                              ) : (
+                                <div className="gpt-assistant-body">
+                                  {msg.text && (
+                                    <div className="gpt-assistant-text">
+                                      {msg.text}
+                                    </div>
+                                  )}
+
+                                  {/* Recommendations List */}
+                                  {msg.recommendations && msg.recommendations.length > 0 && (
+                                    <div className="gpt-books-container">
+                                      {msg.recommendations.map((item, idx) => {
+                                        const status = item.availabilityStatus;
+                                        const isAvailable = status === 'AVAILABLE';
+                                        const isUnavailable = status === 'UNAVAILABLE';
+
+                                        return (
+                                          <div key={idx} className="gpt-book-card">
+                                            <div className="gpt-book-cover">
+                                              {item.coverImageUrl ? (
+                                                <img src={item.coverImageUrl} alt={item.title} />
+                                              ) : (
+                                                <div className="gpt-book-fallback">
+                                                  {(item.title || 'B').charAt(0).toUpperCase()}
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            <div className="gpt-book-info">
+                                              <div className="gpt-book-header">
+                                                <h4 className="gpt-book-title">{item.title}</h4>
+                                                <span className="gpt-book-author">by {item.author || 'Unknown'}</span>
+                                              </div>
+
+                                              <div className="gpt-book-tags">
+                                                {item.category && (
+                                                  <span className="gpt-tag-category">{item.category}</span>
+                                                )}
+                                                {isAvailable && (
+                                                  <span className="gpt-tag-status status-available">
+                                                    ● In Catalog • {item.availableCopies} available
+                                                  </span>
+                                                )}
+                                                {isUnavailable && (
+                                                  <span className="gpt-tag-status status-unavailable">
+                                                    ● In Catalog • Checked out
+                                                  </span>
+                                                )}
+                                                {!isAvailable && !isUnavailable && (
+                                                  <span className="gpt-tag-status status-not-catalog">
+                                                    ● Not in Catalog
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              {item.explanation && (
+                                                <p className="gpt-book-why">{item.explanation}</p>
+                                              )}
+
+                                              <div className="gpt-book-actions">
+                                                {isAvailable || isUnavailable ? (
+                                                  <button
+                                                    type="button"
+                                                    className="btn btn-secondary btn-sm"
+                                                    onClick={() => {
+                                                      setBookSearchQuery(item.title);
+                                                      setCurrentPage('books');
+                                                    }}
+                                                  >
+                                                    View in Catalog
+                                                  </button>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    className="btn btn-secondary btn-sm"
+                                                    onClick={() => setCurrentPage('donations')}
+                                                  >
+                                                    Suggest for Library
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Typing State */}
+                      {isChatLoading && (
+                        <div className="gpt-turn gpt-turn-assistant">
+                          <div className="gpt-turn-content">
+                            <div className="gpt-assistant-body">
+                              <div className="gpt-typing-dots">
+                                <span />
+                                <span />
+                                <span />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  <div ref={chatMessagesEndRef} />
+                </div>
+
+                {/* Fixed Bottom Input Bar (Floating like ChatGPT) */}
+                <div className="gpt-input-dock">
+                  <form
+                    className="gpt-input-pill"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSendChatMessage();
+                    }}
+                  >
+                    <input
+                      type="text"
+                      className="gpt-input-box"
+                      placeholder="Ask for book recommendations..."
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      disabled={isChatLoading}
+                    />
+                    <button
+                      type="submit"
+                      className="gpt-send-button"
+                      disabled={isChatLoading || !chatInput.trim()}
+                      title="Send prompt"
+                    >
+                      <ArrowUp size={18} />
+                    </button>
+                  </form>
+                  <p className="gpt-disclaimer">
+                    Recommendations prioritize books from our library catalog.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
         </main>

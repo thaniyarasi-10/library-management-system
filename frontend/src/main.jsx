@@ -18,10 +18,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         authorizationParams={{
           redirect_uri: window.location.origin,
           audience: audience || undefined,
-          scope: 'openid profile email offline_access'
+          scope: 'openid profile email'
         }}
         cacheLocation="localstorage"
-        useRefreshTokens={true}
+        useRefreshTokens={false}
       >
         <App />
       </Auth0Provider>
