@@ -104,6 +104,8 @@ public class SecurityConfig {
                         // Books Public Endpoints
                         .requestMatchers(HttpMethod.GET, "/api/books", "/api/books/**", "/books", "/books/**")
                         .permitAll()
+                        .requestMatchers("/api/ai/**", "/ai/**")
+                        .permitAll()
 
                         // Books Write / Delete (Permission or Admin Role)
                         .requestMatchers(HttpMethod.POST, "/api/books", "/api/books/**", "/books", "/books/**")
